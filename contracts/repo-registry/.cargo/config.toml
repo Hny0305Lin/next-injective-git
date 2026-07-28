@@ -1,0 +1,4 @@
+# wasm host functions (db_read/db_write/addr_validate/...) are runtime
+# imports provided by the CosmWasm VM; tell the linker to keep them undefined.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-arg=--allow-undefined"]

@@ -1,0 +1,50 @@
+// git-remote-inj is the git remote helper for the inj:// transport.
+// Git invokes it as: git-remote-inj <remote-name> <url>
+package main
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/chain"
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/config"
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/gitio"
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/ipfs"
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/remote"
+)
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "git-remote-inj: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	if len(os.Args) < 3 {
+		return fmt.Errorf("usage: git-remote-inj <remote-name> <url>")
+	}
+	repoURL, err := remote.ParseURL(os.Args[2])
+	if err != nil {
+		return err
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	if cfg.ContractAddress == "" {
+		return fmt.Errorf("contract_address not configured (run `igit config set contract_address <addr>`)")
+	}
+	gitRepo, err := gitio.FromEnv()
+	if err != nil {
+		return err
+	}
+	helper := remote.NewHelper(
+		repoURL,
+		chain.New(cfg),
+		ipfs.New(cfg.IPFSAPI, cfg.IPFSGateway),
+		gitRepo,
+		os.Stdin, os.Stdout, os.Stderr,
+	)
+	return helper.Run()
+}
