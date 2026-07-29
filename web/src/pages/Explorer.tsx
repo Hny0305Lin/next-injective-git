@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { useWallet } from "../lib/WalletContext";
+import { WalletModal } from "../components/WalletModal";
 import {
   contractActivity,
   contractConfig,
@@ -21,6 +23,9 @@ function ActionBadge({ action }: { action: string }) {
 // A compact, contract-scoped block explorer: recent activity + tx lookup.
 export default function Explorer() {
   const cfg = loadConfig();
+  const { address } = useWallet();
+  const [scope, setScope] = useState<"mine" | "all">("mine");
+  const [modal, setModal] = useState(false);
   const [cc, setCc] = useState<ContractConfig | null>(null);
   const [rows, setRows] = useState<ContractTx[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,25 +34,31 @@ export default function Explorer() {
   const [detail, setDetail] = useState<TxDetail | null | undefined>(undefined); // undefined = none, null = not found
   const [detailBusy, setDetailBusy] = useState(false);
 
+  const needConnect = scope === "mine" && !address;
+
   useEffect(() => {
-    (async () => {
-      setLoading(true);
-      setErr("");
-      try {
-        const [c, a] = await Promise.all([
-          contractConfig(cfg).catch(() => null),
-          contractActivity(cfg, 50),
-        ]);
-        setCc(c);
-        setRows(a);
-      } catch (e) {
-        setErr(String(e instanceof Error ? e.message : e));
-      } finally {
-        setLoading(false);
-      }
-    })();
+    contractConfig(cfg).then(setCc).catch(() => setCc(null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (needConnect) {
+      setRows([]);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setErr("");
+    contractActivity(cfg, 50, scope === "mine" ? address : undefined)
+      .then((a) => !cancelled && setRows(a))
+      .catch((e) => !cancelled && setErr(String(e instanceof Error ? e.message : e)))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope, address]);
 
   const lookup = async (h: string) => {
     const q = h.trim();
@@ -102,12 +113,28 @@ export default function Explorer() {
       {detail === null && <div className="muted">tx not found (or not indexed yet).</div>}
       {detail && <TxCard d={detail} />}
 
-      <h2 className="explorer-sub">Recent activity</h2>
+      <div className="explorer-scope">
+        <h2 className="explorer-sub">{scope === "mine" ? "Your activity" : "All activity"}</h2>
+        <div className="scope-toggle">
+          <button className={scope === "mine" ? "on" : ""} onClick={() => setScope("mine")}>Mine</button>
+          <button className={scope === "all" ? "on" : ""} onClick={() => setScope("all")}>All</button>
+        </div>
+      </div>
+      <p className="muted small privacy-note">
+        ℹ️ On-chain data is public — “Mine” only filters this view to your address; it does not hide anything from others.
+      </p>
       {err && <div className="error">{err}</div>}
-      {loading ? (
+      {needConnect ? (
+        <div className="sponsor-connect">
+          <span className="muted">Connect your wallet to see only your on-chain activity.</span>
+          <button onClick={() => setModal(true)}>Connect Wallet</button>
+        </div>
+      ) : loading ? (
         <div className="muted">loading…</div>
       ) : rows.length === 0 ? (
-        <div className="muted">no contract transactions found.</div>
+        <div className="muted">
+          {scope === "mine" ? "no activity from your address yet." : "no contract transactions found."}
+        </div>
       ) : (
         <table className="explorer-table">
           <thead>
@@ -133,6 +160,7 @@ export default function Explorer() {
           </tbody>
         </table>
       )}
+      {modal && <WalletModal onClose={() => setModal(false)} />}
     </div>
   );
 }

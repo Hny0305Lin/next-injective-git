@@ -330,9 +330,16 @@ interface RawTxResp {
   events?: { type: string; attributes?: { key: string; value: string }[] }[];
 }
 
-/** Every tx that touched the repo-registry contract, newest first. */
-export async function contractActivity(cfg: AppConfig, limit = 50): Promise<ContractTx[]> {
-  const query = `wasm._contract_address='${cfg.contract}'`;
+/** Every tx that touched the repo-registry contract, newest first.
+ *  Pass `sender` to scope the feed to a single address (personal view). */
+export async function contractActivity(
+  cfg: AppConfig,
+  limit = 50,
+  sender?: string,
+): Promise<ContractTx[]> {
+  const conds = [`wasm._contract_address='${cfg.contract}'`];
+  if (sender) conds.push(`message.sender='${sender}'`);
+  const query = conds.join(" AND ");
   const url =
     `${cfg.lcd.replace(/\/+$/, "")}/cosmos/tx/v1beta1/txs?query=${encodeURIComponent(query)}` +
     `&order_by=ORDER_BY_DESC&pagination.limit=${limit}`;

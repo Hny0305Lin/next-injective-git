@@ -1032,3 +1032,51 @@ table.plain th {
   overflow-x: auto;
   max-height: 320px;
 }
+.explorer-scope {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.scope-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.scope-toggle button {
+  background: var(--bg-inset);
+  border: none;
+  color: var(--fg-muted);
+  padding: 4px 14px;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.scope-toggle button.on {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.privacy-note {
+  margin: 2px 0 10px;
+}
+.my-repos {
+  margin-bottom: 8px;
+}
+.repo-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.repo-chip {
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 0.83rem;
+  color: var(--fg);
+  cursor: pointer;
+}
+.repo-chip:hover {
+  border-color: var(--accent);
+}

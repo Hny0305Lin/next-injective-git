@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { listRefs, loadConfig, resolveOwner } from "../lib/chain";
+import { useWallet } from "../lib/WalletContext";
+import { listRefs, listRepos, loadConfig, resolveOwner, type RepoInfo } from "../lib/chain";
 import { inspectCid, type CidInfo } from "../lib/gitstore";
 
 const fmtBytes = (n: number) =>
@@ -16,6 +17,7 @@ interface RepoCid extends CidInfo {
 // pinning health check — red rows are CIDs no reachable node is serving.
 export default function IpfsExplorer() {
   const cfg = loadConfig();
+  const { address } = useWallet();
   const [cid, setCid] = useState("");
   const [one, setOne] = useState<CidInfo | null>(null);
   const [oneBusy, setOneBusy] = useState(false);
@@ -24,6 +26,17 @@ export default function IpfsExplorer() {
   const [repoCids, setRepoCids] = useState<RepoCid[] | null>(null);
   const [repoBusy, setRepoBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [myRepos, setMyRepos] = useState<RepoInfo[]>([]);
+
+  // when a wallet is connected, list its repos for one-click auditing
+  useEffect(() => {
+    if (!address) {
+      setMyRepos([]);
+      return;
+    }
+    listRepos(cfg, address).then(setMyRepos).catch(() => setMyRepos([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address]);
 
   const inspectOne = async () => {
     if (!cid.trim()) return;
@@ -39,18 +52,13 @@ export default function IpfsExplorer() {
     }
   };
 
-  const inspectRepo = async () => {
-    const parts = repoRef.trim().replace(/^(igit|inj):\/\//, "").split("/");
-    if (parts.length < 2) {
-      setErr("enter as owner/repo (owner may be an inj1… address or username)");
-      return;
-    }
+  const runAudit = async (rawOwner: string, repo: string) => {
     setRepoBusy(true);
     setRepoCids(null);
     setErr("");
     try {
-      const owner = await resolveOwner(cfg, parts[0]);
-      const refs = await listRefs(cfg, owner, parts[1]);
+      const owner = await resolveOwner(cfg, rawOwner);
+      const refs = await listRefs(cfg, owner, repo);
       const seen = new Set<string>();
       const jobs: { ref: string; uri: string }[] = [];
       for (const r of refs) {
@@ -71,6 +79,15 @@ export default function IpfsExplorer() {
     }
   };
 
+  const inspectRepo = () => {
+    const parts = repoRef.trim().replace(/^(igit|inj):\/\//, "").split("/");
+    if (parts.length < 2) {
+      setErr("enter as owner/repo (owner may be an inj1… address or username)");
+      return;
+    }
+    void runAudit(parts[0], parts[1]);
+  };
+
   const alive = repoCids?.filter((c) => c.ok).length ?? 0;
 
   return (
@@ -85,6 +102,31 @@ export default function IpfsExplorer() {
         <Link to="/settings" className="muted">change</Link>
       </p>
       {err && <div className="error">{err}</div>}
+
+      {address && (
+        <div className="my-repos">
+          <h2 className="explorer-sub">Your repos ({myRepos.length})</h2>
+          {myRepos.length === 0 ? (
+            <div className="muted small">no repos under your address yet.</div>
+          ) : (
+            <div className="repo-chips">
+              {myRepos.map((r) => (
+                <button
+                  key={r.name}
+                  className="repo-chip"
+                  disabled={repoBusy}
+                  onClick={() => {
+                    setRepoRef(`${address}/${r.name}`);
+                    void runAudit(address, r.name);
+                  }}
+                >
+                  📦 {r.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <h2 className="explorer-sub">Inspect a CID</h2>
       <form className="explorer-search" onSubmit={(e) => { e.preventDefault(); inspectOne(); }}>
