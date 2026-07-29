@@ -253,3 +253,49 @@ export function decodeText(bytes: Uint8Array): string | null {
     return null;
   }
 }
+
+// ---- IPFS block explorer: fetch a CID and inspect the git packfile ----
+
+export interface CidInfo {
+  cid: string;
+  ok: boolean; // reachable through the gateway
+  status: number; // HTTP status
+  size: number; // bytes
+  isPack: boolean; // starts with the "PACK" magic
+  version: number | null;
+  objectCount: number | null; // parsed from the pack header
+  error?: string;
+}
+
+/**
+ * Fetch a pack URI (ipfs://<cid> or bare cid) through the configured gateway
+ * and inspect it: reachability, size, and — if it's a git packfile — the
+ * object count from the 12-byte header ("PACK" + u32 version + u32 count).
+ */
+export async function inspectCid(cfg: AppConfig, uri: string): Promise<CidInfo> {
+  const cid = uri.startsWith("ipfs://") ? uri.slice("ipfs://".length) : uri;
+  const info: CidInfo = { cid, ok: false, status: 0, size: 0, isPack: false, version: null, objectCount: null };
+  try {
+    const gw = cfg.ipfsGateway.replace(/\/+$/, "");
+    const resp = await fetch(`${gw}/ipfs/${cid}`);
+    info.status = resp.status;
+    if (!resp.ok) {
+      info.error = `gateway HTTP ${resp.status}`;
+      return info;
+    }
+    const bytes = new Uint8Array(await resp.arrayBuffer());
+    info.ok = true;
+    info.size = bytes.length;
+    if (bytes.length >= 12 && bytes[0] === 0x50 && bytes[1] === 0x41 && bytes[2] === 0x43 && bytes[3] === 0x4b) {
+      // "PACK" magic — read big-endian u32 version (4..8) and count (8..12)
+      const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      info.isPack = true;
+      info.version = dv.getUint32(4, false);
+      info.objectCount = dv.getUint32(8, false);
+    }
+    return info;
+  } catch (e) {
+    info.error = e instanceof Error ? e.message : String(e);
+    return info;
+  }
+}

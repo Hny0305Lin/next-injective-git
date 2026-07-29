@@ -158,8 +158,8 @@ export default function Repo() {
           </p>
         )}
         <div className="clone-box">
-          <code>git clone {cloneURL}</code>
-          <button onClick={() => navigator.clipboard.writeText(`git clone ${cloneURL}`)}>
+          <code>igit clone {cloneURL}</code>
+          <button onClick={() => navigator.clipboard.writeText(`igit clone ${cloneURL}`)}>
             copy
           </button>
         </div>

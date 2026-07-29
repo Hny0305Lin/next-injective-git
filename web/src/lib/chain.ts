@@ -308,3 +308,110 @@ export async function badgesByRepo(
   });
   return out.badges;
 }
+
+// ---- block explorer: contract-scoped tx feed + single tx detail ----
+
+export interface ContractTx {
+  txhash: string;
+  height: string;
+  timestamp: string;
+  code: number;
+  action: string; // wasm.action (create_repo / update_ref / sponsor / ...)
+  sender: string;
+  wasm: Record<string, string>; // remaining wasm attributes (repo, ref, sha, ...)
+}
+
+interface RawTxResp {
+  txhash: string;
+  height: string;
+  timestamp: string;
+  code: number;
+  raw_log?: string;
+  events?: { type: string; attributes?: { key: string; value: string }[] }[];
+}
+
+/** Every tx that touched the repo-registry contract, newest first. */
+export async function contractActivity(cfg: AppConfig, limit = 50): Promise<ContractTx[]> {
+  const query = `wasm._contract_address='${cfg.contract}'`;
+  const url =
+    `${cfg.lcd.replace(/\/+$/, "")}/cosmos/tx/v1beta1/txs?query=${encodeURIComponent(query)}` +
+    `&order_by=ORDER_BY_DESC&pagination.limit=${limit}`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`tx query failed (HTTP ${resp.status})`);
+  const json = await resp.json();
+  const out: ContractTx[] = [];
+  for (const tx of (json.tx_responses ?? []) as RawTxResp[]) {
+    const wasm: Record<string, string> = {};
+    let sender = "";
+    for (const ev of tx.events ?? []) {
+      if (ev.type === "wasm") {
+        for (const a of ev.attributes ?? []) {
+          if (a.key !== "_contract_address") wasm[a.key] = a.value;
+        }
+      } else if (ev.type === "message") {
+        for (const a of ev.attributes ?? []) if (a.key === "sender") sender = a.value;
+      }
+    }
+    out.push({
+      txhash: tx.txhash,
+      height: tx.height,
+      timestamp: tx.timestamp,
+      code: tx.code ?? 0,
+      action: wasm.action ?? "",
+      sender,
+      wasm,
+    });
+  }
+  return out;
+}
+
+export interface TxDetail {
+  txhash: string;
+  height: string;
+  timestamp: string;
+  code: number;
+  rawLog: string;
+  gasUsed: string;
+  gasWanted: string;
+  messages: { type: string; body: Record<string, unknown> }[];
+  extensionOptions: string[];
+  signMode: string;
+  pubkeyType: string;
+  events: { type: string; attributes: { key: string; value: string }[] }[];
+}
+
+/** Full detail of one tx by hash (null if not found / not indexed yet). */
+export async function txByHash(cfg: AppConfig, hash: string): Promise<TxDetail | null> {
+  const clean = hash.trim().replace(/^0x/, "").toUpperCase();
+  const url = `${cfg.lcd.replace(/\/+$/, "")}/cosmos/tx/v1beta1/txs/${clean}`;
+  const resp = await fetch(url);
+  if (resp.status === 404) return null;
+  if (!resp.ok) throw new Error(`tx lookup failed (HTTP ${resp.status})`);
+  const json = await resp.json();
+  const r = json.tx_response;
+  const body = json.tx?.body ?? {};
+  const auth = json.tx?.auth_info ?? {};
+  const signer = (auth.signer_infos ?? [])[0] ?? {};
+  return {
+    txhash: r.txhash,
+    height: r.height,
+    timestamp: r.timestamp,
+    code: r.code ?? 0,
+    rawLog: r.raw_log ?? "",
+    gasUsed: r.gas_used ?? "",
+    gasWanted: r.gas_wanted ?? "",
+    messages: (body.messages ?? []).map((m: Record<string, unknown>) => ({
+      type: String(m["@type"] ?? ""),
+      body: m,
+    })),
+    extensionOptions: (body.extension_options ?? []).map((e: Record<string, unknown>) =>
+      String(e["@type"] ?? ""),
+    ),
+    signMode: String(signer.mode_info?.single?.mode ?? ""),
+    pubkeyType: String(signer.public_key?.["@type"] ?? ""),
+    events: (r.events ?? []).map((e: { type: string; attributes?: { key: string; value: string }[] }) => ({
+      type: e.type,
+      attributes: e.attributes ?? [],
+    })),
+  };
+}

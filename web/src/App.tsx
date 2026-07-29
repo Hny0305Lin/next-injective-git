@@ -4,6 +4,8 @@ import Home from "./pages/Home";
 import Owner from "./pages/Owner";
 import Repo from "./pages/Repo";
 import Settings from "./pages/Settings";
+import Explorer from "./pages/Explorer";
+import IpfsExplorer from "./pages/IpfsExplorer";
 import { useWallet } from "./lib/WalletContext";
 import { WalletModal } from "./components/WalletModal";
 import { formatInj } from "./lib/chain";
@@ -41,6 +43,8 @@ export default function App() {
           />
         </form>
         <nav className="topnav">
+          <Link to="/explorer">Explorer</Link>
+          <Link to="/ipfs">IPFS</Link>
           <Link to="/settings">Settings</Link>
           <a href="https://github.com/Hny0305Lin/next-injective-git" target="_blank" rel="noreferrer">
             CLI
@@ -66,6 +70,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/explorer" element={<Explorer />} />
+          <Route path="/ipfs" element={<IpfsExplorer />} />
           <Route path="/:owner" element={<Owner />} />
           <Route path="/:owner/:repo/*" element={<Repo />} />
         </Routes>

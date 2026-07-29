@@ -17,7 +17,7 @@ export default function Home() {
     <div>
       <div className="hero">
         <h1>
-          Git, <span style={{ color: "var(--accent-2)" }}>on-chain</span>.
+          Git, <span className="accent-grad">on-chain</span>.
         </h1>
         <p className="muted">
           Repository metadata &amp; refs live on Injective; packfiles live on IPFS.
