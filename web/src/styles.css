@@ -237,6 +237,7 @@ input.field {
   border-bottom: 1px solid var(--border);
   margin: 16px 0;
 }
+.tabs a,
 .tabs button {
   background: none;
   border: none;
@@ -244,7 +245,13 @@ input.field {
   border-radius: 0;
   color: var(--fg-muted);
   padding: 8px 14px;
+  cursor: pointer;
 }
+.tabs a:hover {
+  color: var(--fg);
+  text-decoration: none;
+}
+.tabs a.on,
 .tabs button.on {
   color: var(--fg);
   border-bottom-color: #f78166;
@@ -278,12 +285,27 @@ input.field {
   border-bottom: 1px solid var(--border);
   background: var(--bg-raised);
   cursor: pointer;
+  color: var(--fg);
+  align-items: baseline;
+}
+.filelist .row:hover {
+  background: #1c2129;
+  text-decoration: none;
 }
 .filelist .row:last-child {
   border-bottom: none;
 }
-.filelist .row:hover {
+.filelist .head-row {
   background: #1c2129;
+  cursor: default;
+}
+.filelist .head-row .sha {
+  color: var(--accent);
+}
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .filelist .icon {
   width: 18px;
@@ -356,4 +378,132 @@ table.plain th {
   margin: 14px 0 4px;
   color: var(--fg-muted);
   font-size: 0.85rem;
+}
+
+/* ---- code view ---- */
+.code-grid {
+  display: flex;
+}
+.line-nums {
+  margin: 0;
+  padding: 14px 8px 14px 14px;
+  text-align: right;
+  color: #545d68;
+  user-select: none;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  border-right: 1px solid var(--border);
+}
+.code-body {
+  margin: 0;
+  padding: 14px 18px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  overflow-x: auto;
+  flex: 1;
+  background: transparent !important;
+}
+
+/* ---- README / markdown ---- */
+.readme {
+  margin-top: 20px;
+  padding: 0;
+  overflow: hidden;
+}
+.readme-head {
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+.markdown-body {
+  padding: 8px 24px 24px;
+  line-height: 1.6;
+}
+.markdown-body h1,
+.markdown-body h2 {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+}
+.markdown-body code {
+  background: rgba(110, 118, 129, 0.25);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 0.85em;
+}
+.markdown-body pre {
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  overflow-x: auto;
+}
+.markdown-body pre code {
+  background: none;
+  padding: 0;
+}
+.markdown-body table {
+  border-collapse: collapse;
+}
+.markdown-body td,
+.markdown-body th {
+  border: 1px solid var(--border);
+  padding: 5px 12px;
+}
+.markdown-body img {
+  max-width: 100%;
+}
+.markdown-body blockquote {
+  border-left: 3px solid var(--border);
+  margin-left: 0;
+  padding-left: 14px;
+  color: var(--fg-muted);
+}
+
+/* ---- diff view ---- */
+.diff-file {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+.diff-head {
+  padding: 8px 14px;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+}
+.diff-kind {
+  font-size: 0.72rem;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  margin-right: 6px;
+  text-transform: uppercase;
+}
+.diff-head.added .diff-kind { color: var(--accent-2); border-color: var(--accent-2); }
+.diff-head.removed .diff-kind { color: var(--danger); border-color: var(--danger); }
+.diff-head.modified .diff-kind { color: var(--warn); border-color: var(--warn); }
+.diff-body {
+  margin: 0;
+  padding: 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  overflow-x: auto;
+  background: var(--bg-inset);
+}
+.diff-line {
+  padding: 0 14px;
+  white-space: pre;
+}
+.diff-line.add {
+  background: rgba(63, 185, 80, 0.15);
+  color: #7ee2a8;
+}
+.diff-line.del {
+  background: rgba(248, 81, 73, 0.15);
+  color: #ffa198;
+}
+.diff-line.hunk {
+  background: rgba(68, 147, 248, 0.1);
+  color: var(--accent);
+  padding: 4px 14px;
 }

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   formatInj,
   listCollaborators,
@@ -10,23 +10,84 @@ import {
   revenueSplits,
   sponsorTotals,
   timeAgo,
+  type AppConfig,
   type CollaboratorInfo,
   type RefInfo,
   type RepoInfo,
   type SplitEntry,
   type SponsorTotal,
 } from "../lib/chain";
-import { decodeText, RepoStore, type CommitMeta, type TreeItem } from "../lib/gitstore";
+import {
+  decodeText,
+  getRepoStore,
+  type CommitMeta,
+  type FileChange,
+  type RepoStore,
+  type TreeItem,
+} from "../lib/gitstore";
+import { Markdown } from "../components/Markdown";
+import { CodeBlock } from "../components/CodeBlock";
 
-type Tab = "code" | "commits" | "refs" | "sponsors";
+// ---- URL helpers: GitHub-style deep links -------------------------------
+// /:owner/:repo                        -> tree @ default branch, root
+// /:owner/:repo/tree/<ref>/<path...>   -> directory listing
+// /:owner/:repo/blob/<ref>/<path...>   -> file view
+// /:owner/:repo/commits/<ref>          -> history
+// /:owner/:repo/commit/<sha>           -> single commit diff
+// /:owner/:repo/refs | /sponsors       -> tables
+
+function shortRef(refName: string): string {
+  if (refName.startsWith("refs/heads/")) return refName.slice("refs/heads/".length);
+  if (refName.startsWith("refs/")) return refName.slice("refs/".length);
+  return refName;
+}
+
+function findRef(refs: RefInfo[], short: string): RefInfo | undefined {
+  return (
+    refs.find((r) => r.ref_name === `refs/heads/${short}`) ??
+    refs.find((r) => r.ref_name === `refs/${short}`) ??
+    refs.find((r) => r.ref_name === short)
+  );
+}
+
+interface View {
+  kind: "tree" | "blob" | "commits" | "commit" | "refs" | "sponsors";
+  ref: string; // short ref name or commit sha (for kind=commit)
+  path: string;
+}
+
+function parseView(splat: string, fallbackRef: string): View {
+  const parts = splat.split("/").filter(Boolean);
+  const kind = parts[0] ?? "";
+  switch (kind) {
+    case "tree":
+    case "blob":
+      return {
+        kind,
+        ref: decodeURIComponent(parts[1] ?? fallbackRef),
+        path: parts.slice(2).map(decodeURIComponent).join("/"),
+      };
+    case "commits":
+      return { kind, ref: decodeURIComponent(parts[1] ?? fallbackRef), path: "" };
+    case "commit":
+      return { kind, ref: parts[1] ?? "", path: "" };
+    case "refs":
+    case "sponsors":
+      return { kind, ref: fallbackRef, path: "" };
+    default:
+      return { kind: "tree", ref: fallbackRef, path: "" };
+  }
+}
 
 export default function Repo() {
-  const { owner = "", repo = "" } = useParams();
+  const params = useParams();
+  const owner = params.owner ?? "";
+  const repo = params.repo ?? "";
+  const splat = params["*"] ?? "";
   const cfg = useMemo(loadConfig, []);
   const [addr, setAddr] = useState("");
   const [info, setInfo] = useState<RepoInfo | null>(null);
   const [refs, setRefs] = useState<RefInfo[]>([]);
-  const [tab, setTab] = useState<Tab>("code");
   const [err, setErr] = useState("");
 
   useEffect(() => {
@@ -49,13 +110,32 @@ export default function Repo() {
   if (err) return <div className="error">{err}</div>;
   if (!info) return <div className="spinner">querying chain…</div>;
 
+  const fallbackRef =
+    shortRef(
+      refs.find((r) => r.ref_name === `refs/heads/${info.default_branch}`)?.ref_name ??
+        refs[0]?.ref_name ??
+        "",
+    ) || info.default_branch;
+  const view = parseView(splat, fallbackRef);
+  const base = `/${owner}/${repo}`;
   const cloneURL = `inj://${owner}/${repo}`;
+  const store = getRepoStore(`${addr}/${repo}`);
+  const current = view.kind === "commit" ? undefined : findRef(refs, view.ref);
+
+  const tab =
+    view.kind === "tree" || view.kind === "blob"
+      ? "code"
+      : view.kind === "commit"
+        ? "commits"
+        : view.kind;
 
   return (
     <div>
       <div className="repo-head">
         <h2>
-          <a href={`#/${owner}`}>{owner.startsWith("inj1") ? `${owner.slice(0, 12)}…` : owner}</a>{" "}
+          <Link to={`/${owner}`}>
+            {owner.startsWith("inj1") ? `${owner.slice(0, 12)}…` : owner}
+          </Link>{" "}
           / <b>{repo}</b>{" "}
           <span className={`badge ${info.moderation_status}`}>{info.moderation_status}</span>
         </h2>
@@ -72,202 +152,315 @@ export default function Repo() {
       </div>
 
       <div className="tabs">
-        {(["code", "commits", "refs", "sponsors"] as Tab[]).map((t) => (
-          <button key={t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>
-            {t}
-          </button>
-        ))}
+        <Link className={tab === "code" ? "on" : ""} to={base}>
+          code
+        </Link>
+        <Link
+          className={tab === "commits" ? "on" : ""}
+          to={`${base}/commits/${encodeURIComponent(fallbackRef)}`}
+        >
+          commits
+        </Link>
+        <Link className={tab === "refs" ? "on" : ""} to={`${base}/refs`}>
+          refs
+        </Link>
+        <Link className={tab === "sponsors" ? "on" : ""} to={`${base}/sponsors`}>
+          sponsors
+        </Link>
       </div>
 
-      {tab === "code" && <CodeTab cfg={cfg} refs={refs} info={info} storeKey={`${addr}/${repo}`} />}
-      {tab === "commits" && (
-        <CommitsTab cfg={cfg} refs={refs} info={info} storeKey={`${addr}/${repo}`} />
+      {refs.length === 0 && tab === "code" ? (
+        <p className="muted">empty repository — push something first.</p>
+      ) : view.kind === "tree" && current ? (
+        <TreeView cfg={cfg} store={store} refs={refs} current={current} path={view.path} base={base} />
+      ) : view.kind === "blob" && current ? (
+        <BlobView cfg={cfg} store={store} current={current} path={view.path} base={base} />
+      ) : view.kind === "commits" && current ? (
+        <CommitsView cfg={cfg} store={store} refs={refs} current={current} base={base} />
+      ) : view.kind === "commit" ? (
+        <CommitView cfg={cfg} store={store} refs={refs} sha={view.ref} base={base} />
+      ) : view.kind === "refs" ? (
+        <RefsTab refs={refs} base={base} />
+      ) : view.kind === "sponsors" ? (
+        <SponsorsTab cfg={cfg} addr={addr} repo={repo} owner={owner} />
+      ) : (
+        <div className="error">ref not found: {view.ref}</div>
       )}
-      {tab === "refs" && <RefsTab refs={refs} />}
-      {tab === "sponsors" && <SponsorsTab cfg={cfg} addr={addr} repo={repo} owner={owner} />}
     </div>
   );
 }
 
-// pick the default branch's ref, else the first one
-function defaultRef(refs: RefInfo[], info: RepoInfo): RefInfo | undefined {
-  return refs.find((r) => r.ref_name === `refs/heads/${info.default_branch}`) ?? refs[0];
-}
+// ---- branch/tag selector --------------------------------------------------
 
-function useStore(storeKey: string) {
-  const ref = useRef<RepoStore | null>(null);
-  if (!ref.current) ref.current = new RepoStore(`igit-${storeKey}`);
-  return ref.current;
-}
-
-function CodeTab({
-  cfg,
+function RefSelect({
   refs,
-  info,
-  storeKey,
+  value,
+  onChange,
 }: {
-  cfg: ReturnType<typeof loadConfig>;
   refs: RefInfo[];
-  info: RepoInfo;
-  storeKey: string;
+  value: string;
+  onChange: (short: string) => void;
 }) {
-  const store = useStore(storeKey);
-  const [sel, setSel] = useState(() => defaultRef(refs, info)?.ref_name ?? "");
-  const [path, setPath] = useState("");
-  const [items, setItems] = useState<TreeItem[] | null>(null);
-  const [file, setFile] = useState<{ path: string; text: string | null; size: number } | null>(
-    null,
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)}>
+      {refs.map((r) => (
+        <option key={r.ref_name} value={shortRef(r.ref_name)}>
+          {r.ref_name.startsWith("refs/tags/") ? `⌂ ${shortRef(r.ref_name)}` : shortRef(r.ref_name)}
+        </option>
+      ))}
+    </select>
   );
+}
+
+function useLoadedRef(cfg: AppConfig, store: RepoStore, current: RefInfo) {
+  const [ready, setReady] = useState(false);
   const [status, setStatus] = useState("");
   const [err, setErr] = useState("");
+  useEffect(() => {
+    setReady(false);
+    setErr("");
+    store
+      .loadRef(cfg, current, setStatus)
+      .then(() => setReady(true))
+      .catch((e) => setErr(String(e)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current.ref_name, current.commit_sha]);
+  return { ready, status, err };
+}
 
-  const current = refs.find((r) => r.ref_name === sel);
+// ---- tree ------------------------------------------------------------------
+
+function TreeView({
+  cfg,
+  store,
+  refs,
+  current,
+  path,
+  base,
+}: {
+  cfg: AppConfig;
+  store: RepoStore;
+  refs: RefInfo[];
+  current: RefInfo;
+  path: string;
+  base: string;
+}) {
+  const nav = useNavigate();
+  const { ready, status, err } = useLoadedRef(cfg, store, current);
+  const [items, setItems] = useState<TreeItem[] | null>(null);
+  const [head, setHead] = useState<CommitMeta | null>(null);
+  const [readme, setReadme] = useState<string | null>(null);
+  const [err2, setErr2] = useState("");
+  const short = shortRef(current.ref_name);
 
   useEffect(() => {
-    if (!current) return;
-    setErr("");
+    if (!ready) return;
     setItems(null);
-    setFile(null);
+    setReadme(null);
+    setErr2("");
     (async () => {
       try {
-        await store.loadRef(cfg, current, setStatus);
-        setStatus("");
-        setItems(await store.listTree(current.commit_sha, path));
+        const list = await store.listTree(current.commit_sha, path);
+        setItems(list);
+        setHead((await store.log(current.commit_sha, 1))[0] ?? null);
+        const md = list.find((i) => i.type === "blob" && /^readme\.md$/i.test(i.name));
+        if (md) {
+          const bytes = await store.readFile(
+            current.commit_sha,
+            path ? `${path}/${md.name}` : md.name,
+          );
+          setReadme(decodeText(bytes));
+        }
       } catch (e) {
-        setErr(String(e));
+        setErr2(String(e));
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sel, path]);
-
-  const open = async (item: TreeItem) => {
-    if (!current) return;
-    const next = path ? `${path}/${item.name}` : item.name;
-    if (item.type === "tree") {
-      setPath(next);
-    } else {
-      const bytes = await store.readFile(current.commit_sha, next);
-      setFile({ path: next, text: decodeText(bytes), size: bytes.length });
-    }
-  };
-
-  if (refs.length === 0) return <p className="muted">empty repository — push something first.</p>;
+  }, [ready, path, current.commit_sha]);
 
   const crumbs = path.split("/").filter(Boolean);
+  const dirLink = (p: string) => `${base}/tree/${encodeURIComponent(short)}${p ? "/" + p : ""}`;
 
   return (
     <div>
       <div className="toolbar">
-        <select value={sel} onChange={(e) => { setSel(e.target.value); setPath(""); }}>
-          {refs.map((r) => (
-            <option key={r.ref_name} value={r.ref_name}>
-              {r.ref_name.replace("refs/heads/", "").replace("refs/tags/", "tag: ")}
-            </option>
-          ))}
-        </select>
+        <RefSelect refs={refs} value={short} onChange={(s) => nav(dirLink("").replace(encodeURIComponent(short), encodeURIComponent(s)))} />
         <span className="crumbs">
-          <a onClick={() => { setPath(""); setFile(null); }} style={{ cursor: "pointer" }}>
-            {info.name}
-          </a>
+          <Link to={dirLink("")}>{base.split("/")[2]}</Link>
           {crumbs.map((c, i) => (
             <span key={i}>
               {" / "}
-              <a
-                style={{ cursor: "pointer" }}
-                onClick={() => { setPath(crumbs.slice(0, i + 1).join("/")); setFile(null); }}
-              >
-                {c}
-              </a>
+              <Link to={dirLink(crumbs.slice(0, i + 1).join("/"))}>{c}</Link>
             </span>
           ))}
-          {file && <span> / <b>{file.path.split("/").pop()}</b></span>}
         </span>
-        {status && <span className="muted">{status}</span>}
+        {status && !ready && <span className="muted">{status}</span>}
       </div>
 
-      {err && <div className="error">{err}</div>}
+      {(err || err2) && <div className="error">{err || err2}</div>}
+      {!items && !err && !err2 && (
+        <div className="spinner">{status || "loading objects from IPFS…"}</div>
+      )}
 
-      {file ? (
-        <div className="fileview">
-          <pre>
-            {file.text ?? `binary file (${file.size} bytes) — not rendered`}
-          </pre>
-        </div>
-      ) : items ? (
+      {items && (
         <div className="filelist">
+          {head && (
+            <div className="row head-row">
+              <span className="icon">◉</span>
+              <Link to={`${base}/commit/${head.oid}`} className="mono sha">
+                {head.oid.slice(0, 8)}
+              </Link>
+              <span className="ellipsis" style={{ flex: 1 }}>
+                {head.message.split("\n")[0]}
+              </span>
+              <span className="muted">{head.author}</span>
+              <span className="muted">{timeAgo(head.timestamp)}</span>
+            </div>
+          )}
           {path && (
-            <div className="row" onClick={() => setPath(crumbs.slice(0, -1).join("/"))}>
+            <Link className="row" to={dirLink(crumbs.slice(0, -1).join("/"))}>
               <span className="icon">↩</span>
               <span>..</span>
-            </div>
+            </Link>
           )}
           {[...items]
             .sort((a, b) =>
               a.type === b.type ? a.name.localeCompare(b.name) : a.type === "tree" ? -1 : 1,
             )
-            .map((it) => (
-              <div className="row" key={it.oid + it.name} onClick={() => open(it)}>
-                <span className="icon">{it.type === "tree" ? "▸" : "·"}</span>
-                <span>{it.name}</span>
-              </div>
-            ))}
+            .map((it) => {
+              const p = path ? `${path}/${it.name}` : it.name;
+              const to =
+                it.type === "tree"
+                  ? dirLink(p)
+                  : `${base}/blob/${encodeURIComponent(short)}/${p}`;
+              return (
+                <Link className="row" key={it.oid + it.name} to={to}>
+                  <span className="icon">{it.type === "tree" ? "📁" : "📄"}</span>
+                  <span>{it.name}</span>
+                </Link>
+              );
+            })}
         </div>
-      ) : (
-        !err && <div className="spinner">{status || "loading objects from IPFS…"}</div>
+      )}
+
+      {readme && (
+        <div className="readme card">
+          <div className="readme-head muted">README.md</div>
+          <Markdown text={readme} />
+        </div>
       )}
     </div>
   );
 }
 
-function CommitsTab({
+// ---- blob ------------------------------------------------------------------
+
+function BlobView({
   cfg,
-  refs,
-  info,
-  storeKey,
+  store,
+  current,
+  path,
+  base,
 }: {
-  cfg: ReturnType<typeof loadConfig>;
-  refs: RefInfo[];
-  info: RepoInfo;
-  storeKey: string;
+  cfg: AppConfig;
+  store: RepoStore;
+  current: RefInfo;
+  path: string;
+  base: string;
 }) {
-  const store = useStore(`${storeKey}-log`);
-  const [sel, setSel] = useState(() => defaultRef(refs, info)?.ref_name ?? "");
-  const [commits, setCommits] = useState<CommitMeta[] | null>(null);
-  const [err, setErr] = useState("");
-  const current = refs.find((r) => r.ref_name === sel);
+  const { ready, status, err } = useLoadedRef(cfg, store, current);
+  const [data, setData] = useState<{ text: string | null; size: number } | null>(null);
+  const [err2, setErr2] = useState("");
+  const short = shortRef(current.ref_name);
 
   useEffect(() => {
-    if (!current) return;
-    setCommits(null);
-    setErr("");
-    (async () => {
-      try {
-        await store.loadRef(cfg, current);
-        setCommits(await store.log(current.commit_sha));
-      } catch (e) {
-        setErr(String(e));
-      }
-    })();
+    if (!ready) return;
+    setData(null);
+    store
+      .readFile(current.commit_sha, path)
+      .then((bytes) => setData({ text: decodeText(bytes), size: bytes.length }))
+      .catch((e) => setErr2(String(e)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sel]);
+  }, [ready, path, current.commit_sha]);
 
-  if (refs.length === 0) return <p className="muted">empty repository.</p>;
+  const crumbs = path.split("/").filter(Boolean);
+  const fileName = crumbs[crumbs.length - 1] ?? "";
+  const dirLink = (p: string) => `${base}/tree/${encodeURIComponent(short)}${p ? "/" + p : ""}`;
+
   return (
     <div>
       <div className="toolbar">
-        <select value={sel} onChange={(e) => setSel(e.target.value)}>
-          {refs.map((r) => (
-            <option key={r.ref_name} value={r.ref_name}>
-              {r.ref_name.replace("refs/heads/", "").replace("refs/tags/", "tag: ")}
-            </option>
+        <span className="crumbs">
+          <Link to={dirLink("")}>{base.split("/")[2]}</Link>
+          {crumbs.slice(0, -1).map((c, i) => (
+            <span key={i}>
+              {" / "}
+              <Link to={dirLink(crumbs.slice(0, i + 1).join("/"))}>{c}</Link>
+            </span>
           ))}
-        </select>
+          <span> / <b>{fileName}</b></span>
+        </span>
+        <span className="muted">{data ? `${data.size} bytes` : status}</span>
+      </div>
+      {(err || err2) && <div className="error">{err || err2}</div>}
+      {!data && !err && !err2 && <div className="spinner">loading…</div>}
+      {data &&
+        (data.text === null ? (
+          <div className="card muted">binary file ({data.size} bytes) — not rendered</div>
+        ) : /\.(md|markdown)$/i.test(fileName) ? (
+          <div className="readme card">
+            <Markdown text={data.text} />
+          </div>
+        ) : (
+          <CodeBlock code={data.text} fileName={fileName} />
+        ))}
+    </div>
+  );
+}
+
+// ---- commits ----------------------------------------------------------------
+
+function CommitsView({
+  cfg,
+  store,
+  refs,
+  current,
+  base,
+}: {
+  cfg: AppConfig;
+  store: RepoStore;
+  refs: RefInfo[];
+  current: RefInfo;
+  base: string;
+}) {
+  const nav = useNavigate();
+  const { ready, status, err } = useLoadedRef(cfg, store, current);
+  const [commits, setCommits] = useState<CommitMeta[] | null>(null);
+  const short = shortRef(current.ref_name);
+
+  useEffect(() => {
+    if (!ready) return;
+    setCommits(null);
+    store.log(current.commit_sha).then(setCommits).catch(() => setCommits([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, current.commit_sha]);
+
+  return (
+    <div>
+      <div className="toolbar">
+        <RefSelect
+          refs={refs}
+          value={short}
+          onChange={(s) => nav(`${base}/commits/${encodeURIComponent(s)}`)}
+        />
       </div>
       {err && <div className="error">{err}</div>}
-      {!commits && !err && <div className="spinner">reconstructing history…</div>}
+      {!commits && !err && <div className="spinner">{status || "reconstructing history…"}</div>}
       {commits?.map((c) => (
         <div className="commit" key={c.oid}>
-          <code className="sha">{c.oid.slice(0, 8)}</code>
+          <Link to={`${base}/commit/${c.oid}`} className="mono sha">
+            {c.oid.slice(0, 8)}
+          </Link>
           <span style={{ flex: 1 }}>{c.message.split("\n")[0]}</span>
           <span className="muted">{c.author}</span>
           <span className="muted">{timeAgo(c.timestamp)}</span>
@@ -277,7 +470,101 @@ function CommitsTab({
   );
 }
 
-function RefsTab({ refs }: { refs: RefInfo[] }) {
+// ---- single commit diff -------------------------------------------------------
+
+function CommitView({
+  cfg,
+  store,
+  refs,
+  sha,
+  base,
+}: {
+  cfg: AppConfig;
+  store: RepoStore;
+  refs: RefInfo[];
+  sha: string;
+  base: string;
+}) {
+  const [meta, setMeta] = useState<CommitMeta | null>(null);
+  const [changes, setChanges] = useState<FileChange[] | null>(null);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    setMeta(null);
+    setChanges(null);
+    setErr("");
+    (async () => {
+      try {
+        // the commit may live in any ref's packs: load them all (cached)
+        for (const r of refs) await store.loadRef(cfg, r);
+        setMeta(await store.commitMeta(sha));
+        setChanges(await store.diffCommit(sha));
+      } catch (e) {
+        setErr(String(e));
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sha]);
+
+  if (err) return <div className="error">{err}</div>;
+  if (!meta) return <div className="spinner">loading commit…</div>;
+
+  return (
+    <div>
+      <div className="card" style={{ marginBottom: 16 }}>
+        <b>{meta.message.split("\n")[0]}</b>
+        <div className="muted" style={{ marginTop: 6 }}>
+          <code className="mono">{meta.oid}</code> · {meta.author} · {timeAgo(meta.timestamp)}
+          {meta.parents.length > 0 && (
+            <>
+              {" · parent "}
+              <Link to={`${base}/commit/${meta.parents[0]}`} className="mono">
+                {meta.parents[0].slice(0, 8)}
+              </Link>
+            </>
+          )}
+        </div>
+      </div>
+      {!changes && <div className="spinner">computing diff…</div>}
+      {changes?.map((ch) => (
+        <div className="diff-file" key={ch.path}>
+          <div className={`diff-head ${ch.kind}`}>
+            <span className="diff-kind">{ch.kind}</span> <code>{ch.path}</code>
+          </div>
+          {ch.patch ? <DiffBody patch={ch.patch} /> : <div className="muted" style={{ padding: 10 }}>binary or oversized file</div>}
+        </div>
+      ))}
+      {changes && changes.length === 0 && <p className="muted">no changes (empty commit).</p>}
+    </div>
+  );
+}
+
+function DiffBody({ patch }: { patch: string }) {
+  // drop the file header lines, keep hunks
+  const lines = patch.split("\n").slice(4);
+  return (
+    <pre className="diff-body">
+      {lines.map((l, i) => {
+        const cls = l.startsWith("+")
+          ? "add"
+          : l.startsWith("-")
+            ? "del"
+            : l.startsWith("@@")
+              ? "hunk"
+              : "";
+        return (
+          <div key={i} className={`diff-line ${cls}`}>
+            {l || " "}
+          </div>
+        );
+      })}
+    </pre>
+  );
+}
+
+// ---- refs / sponsors (unchanged data, richer links) ----------------------------
+
+function RefsTab({ refs, base }: { refs: RefInfo[]; base: string }) {
   return (
     <table className="plain">
       <thead>
@@ -292,11 +579,21 @@ function RefsTab({ refs }: { refs: RefInfo[] }) {
       <tbody>
         {refs.map((r) => (
           <tr key={r.ref_name}>
-            <td><code>{r.ref_name}</code></td>
-            <td><code>{r.commit_sha.slice(0, 10)}</code></td>
+            <td>
+              <Link to={`${base}/tree/${encodeURIComponent(shortRef(r.ref_name))}`}>
+                <code>{r.ref_name}</code>
+              </Link>
+            </td>
+            <td>
+              <Link to={`${base}/commit/${r.commit_sha}`}>
+                <code>{r.commit_sha.slice(0, 10)}</code>
+              </Link>
+            </td>
             <td>{r.pack_uris.length}</td>
             <td>{timeAgo(r.updated_at)}</td>
-            <td><code>{r.updated_by.slice(0, 12)}…</code></td>
+            <td>
+              <code>{r.updated_by.slice(0, 12)}…</code>
+            </td>
           </tr>
         ))}
       </tbody>
@@ -312,7 +609,7 @@ function SponsorsTab({
   repo,
   owner,
 }: {
-  cfg: ReturnType<typeof loadConfig>;
+  cfg: AppConfig;
   addr: string;
   repo: string;
   owner: string;
@@ -369,19 +666,28 @@ function SponsorsTab({
             title={`${s.address} ${s.bps / 100}%`}
           />
         ))}
-        <div style={{ width: `${(10000 - splitTotal) / 100}%`, background: "#6e7681" }} title="owner" />
+        <div
+          style={{ width: `${(10000 - splitTotal) / 100}%`, background: "#6e7681" }}
+          title="owner"
+        />
       </div>
       <table className="plain">
         <tbody>
           {splits.map((s, i) => (
             <tr key={s.address}>
-              <td><span style={{ color: BAR_COLORS[i % BAR_COLORS.length] }}>■</span></td>
-              <td><code>{s.address}</code></td>
+              <td>
+                <span style={{ color: BAR_COLORS[i % BAR_COLORS.length] }}>■</span>
+              </td>
+              <td>
+                <code>{s.address}</code>
+              </td>
               <td>{s.bps / 100}%</td>
             </tr>
           ))}
           <tr>
-            <td><span style={{ color: "#6e7681" }}>■</span></td>
+            <td>
+              <span style={{ color: "#6e7681" }}>■</span>
+            </td>
             <td>owner (remainder)</td>
             <td>{(10000 - splitTotal) / 100}%</td>
           </tr>
@@ -395,7 +701,9 @@ function SponsorsTab({
             <tbody>
               {collabs.map((c) => (
                 <tr key={c.address}>
-                  <td><code>{c.address}</code></td>
+                  <td>
+                    <code>{c.address}</code>
+                  </td>
                   <td>{c.role}</td>
                 </tr>
               ))}

@@ -47,7 +47,7 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/:owner" element={<Owner />} />
-          <Route path="/:owner/:repo" element={<Repo />} />
+          <Route path="/:owner/:repo/*" element={<Repo />} />
         </Routes>
       </main>
       <footer className="footer">

@@ -17,6 +17,28 @@ export interface CommitMeta {
   message: string;
   author: string;
   timestamp: number;
+  parents: string[];
+}
+
+export type ChangeKind = "added" | "removed" | "modified";
+
+export interface FileChange {
+  path: string;
+  kind: ChangeKind;
+  /** unified diff for text files; null for binary/oversized */
+  patch: string | null;
+}
+
+// One RepoStore per owner/repo, shared across route changes so packs are
+// only downloaded and indexed once per page load.
+const stores = new Map<string, RepoStore>();
+export function getRepoStore(key: string): RepoStore {
+  let s = stores.get(key);
+  if (!s) {
+    s = new RepoStore(`igit-${key}`);
+    stores.set(key, s);
+  }
+  return s;
 }
 
 export class RepoStore {
@@ -122,7 +144,90 @@ export class RepoStore {
       message: e.commit.message,
       author: e.commit.author.name,
       timestamp: e.commit.author.timestamp,
+      parents: e.commit.parent,
     }));
+  }
+
+  /** Metadata of a single commit. */
+  async commitMeta(oid: string): Promise<CommitMeta> {
+    const { commit } = await git.readCommit({ fs: this.fs, dir: this.dir, oid });
+    return {
+      oid,
+      message: commit.message,
+      author: commit.author.name,
+      timestamp: commit.author.timestamp,
+      parents: commit.parent,
+    };
+  }
+
+  /** Changed files between a commit and its first parent (or empty tree). */
+  async diffCommit(oid: string): Promise<FileChange[]> {
+    const meta = await this.commitMeta(oid);
+    const parent = meta.parents[0];
+    const trees = parent
+      ? [git.TREE({ ref: parent }), git.TREE({ ref: oid })]
+      : [git.TREE({ ref: oid })]; // root commit: everything is an add
+
+    const { createTwoFilesPatch } = await import("diff");
+    const changes: FileChange[] = [];
+
+    const textOrNull = (b: Uint8Array | void | undefined) =>
+      b instanceof Uint8Array ? decodeText(b) : "";
+    const patchFor = (path: string, a: string | null, b: string | null): string | null => {
+      if (a === null || b === null) return null; // binary
+      if (a.length + b.length > 400_000) return null; // too large to render
+      return createTwoFilesPatch(path, path, a, b, "", "", { context: 3 });
+    };
+
+    if (!parent) {
+      // root commit: walk the single tree, mark every blob as added
+      await git.walk({
+        fs: this.fs,
+        dir: this.dir,
+        trees,
+        map: async (path, [entry]) => {
+          if (path === "." || !entry || (await entry.type()) !== "blob") return;
+          const content = textOrNull(await entry.content());
+          changes.push({ path, kind: "added", patch: patchFor(path, "", content) });
+        },
+      });
+      return changes;
+    }
+
+    await git.walk({
+      fs: this.fs,
+      dir: this.dir,
+      trees,
+      map: async (path, [a, b]) => {
+        if (path === ".") return;
+        const aType = a ? await a.type() : undefined;
+        const bType = b ? await b.type() : undefined;
+        if (aType === "tree" || bType === "tree") return; // recurse implicitly
+        const aOid = a ? await a.oid() : undefined;
+        const bOid = b ? await b.oid() : undefined;
+        if (aOid === bOid) return;
+        if (a && !b) {
+          changes.push({
+            path,
+            kind: "removed",
+            patch: patchFor(path, textOrNull(await a.content()), ""),
+          });
+        } else if (!a && b) {
+          changes.push({
+            path,
+            kind: "added",
+            patch: patchFor(path, "", textOrNull(await b.content())),
+          });
+        } else if (a && b) {
+          changes.push({
+            path,
+            kind: "modified",
+            patch: patchFor(path, textOrNull(await a.content()), textOrNull(await b.content())),
+          });
+        }
+      },
+    });
+    return changes;
   }
 
   private async treeOidAtPath(commit: string, path: string): Promise<string> {
