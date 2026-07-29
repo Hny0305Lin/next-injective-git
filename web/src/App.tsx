@@ -5,21 +5,14 @@ import Owner from "./pages/Owner";
 import Repo from "./pages/Repo";
 import Settings from "./pages/Settings";
 import { useWallet } from "./lib/WalletContext";
+import { WalletModal } from "./components/WalletModal";
 import { formatInj } from "./lib/chain";
 
 export default function App() {
   const nav = useNavigate();
   const [q, setQ] = useState("");
-  const { address, balance, connecting, connect, disconnect, available } = useWallet();
-  const [pickerOpen, setPickerOpen] = useState(false);
-
-  const onConnectClick = () => {
-    if (available.length === 1) {
-      connect(available[0].id);
-    } else {
-      setPickerOpen((v) => !v);
-    }
-  };
+  const { address, balance, connected, disconnect } = useWallet();
+  const [walletModal, setWalletModal] = useState(false);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,43 +48,20 @@ export default function App() {
           {address ? (
             <button
               className="wallet-btn connected"
-              title={`${address}\nclick to disconnect`}
+              title={`${connected?.label ?? ""} · ${address}\nclick to disconnect`}
               onClick={disconnect}
             >
               {balance ? `${formatInj(balance, "inj")} · ` : ""}
               {address.slice(0, 7)}…{address.slice(-4)}
             </button>
           ) : (
-            <div className="wallet-picker-wrap">
-              <button className="wallet-btn" onClick={onConnectClick} disabled={connecting}>
-                {connecting ? "connecting…" : "Connect Wallet"}
-              </button>
-              {pickerOpen && !connecting && (
-                <div className="wallet-menu">
-                  {available.length === 0 ? (
-                    <div className="wallet-menu-empty">
-                      No Cosmos wallet detected. Install Keplr, Leap or OKX.
-                    </div>
-                  ) : (
-                    available.map((w) => (
-                      <button
-                        key={w.id}
-                        className="wallet-menu-item"
-                        onClick={() => {
-                          setPickerOpen(false);
-                          connect(w.id);
-                        }}
-                      >
-                        {w.label}
-                      </button>
-                    ))
-                  )}
-                </div>
-              )}
-            </div>
+            <button className="wallet-btn" onClick={() => setWalletModal(true)}>
+              Connect Wallet
+            </button>
           )}
         </nav>
       </header>
+      {walletModal && <WalletModal onClose={() => setWalletModal(false)} />}
       <main className="content">
         <Routes>
           <Route path="/" element={<Home />} />

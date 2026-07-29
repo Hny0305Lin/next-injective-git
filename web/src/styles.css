@@ -570,6 +570,82 @@ table.plain th {
   font-size: 0.85rem;
 }
 
+/* ---- wallet modal ---- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(1, 4, 9, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+.modal {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 4px;
+  font-size: 1.05rem;
+}
+.modal-x {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  font-size: 1rem;
+  padding: 2px 6px;
+}
+.modal-sub {
+  padding: 0 16px 12px;
+  font-size: 0.82rem;
+}
+.wallet-list {
+  padding: 0 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.wallet-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-inset);
+}
+.wallet-ic {
+  font-size: 1.3rem;
+  width: 24px;
+  text-align: center;
+}
+.wallet-name {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.wallet-kind {
+  font-size: 0.7rem;
+}
+.wallet-connect {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  font-weight: 600;
+}
+.wallet-install {
+  color: var(--fg-muted);
+  font-size: 0.85rem;
+}
+
 /* ---- sponsor form ---- */
 .sponsor-form {
   margin-bottom: 20px;

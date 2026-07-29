@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useWallet } from "../lib/WalletContext";
+import { WalletModal } from "../components/WalletModal";
 import { sponsorWithKeplr } from "../lib/wallet";
 import {
   badgesByRepo,
@@ -770,9 +771,9 @@ function SponsorsTab({
   );
 }
 
-// In-browser sponsorship. Cosmos wallets (Keplr/Leap/OKX) go through the
-// audited CosmJS path; MetaMask goes through the EIP-712 SDK path
-// (dynamically imported so the heavy SDK stays out of the main bundle).
+// In-browser sponsorship. Routes by the connected wallet: Cosmos wallets
+// (Keplr/Leap/OKX) sign via the audited CosmJS path; MetaMask via the EIP-712
+// SDK path (dynamically imported so the heavy SDK stays out of the main bundle).
 function SponsorForm({
   cfg,
   addr,
@@ -782,73 +783,53 @@ function SponsorForm({
   addr: string;
   repo: string;
 }) {
-  const { wallet, connect, connecting, available, refreshBalance } = useWallet();
+  const { connected, refreshBalance } = useWallet();
   const [amount, setAmount] = useState("0.1");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [txhash, setTxhash] = useState("");
   const [err, setErr] = useState("");
-  const hasEth = typeof window !== "undefined" && !!(window as { ethereum?: unknown }).ethereum;
-  const isOwnRepo = wallet?.address === addr;
+  const [modal, setModal] = useState(false);
 
-  const run = async (fn: () => Promise<string>) => {
+  const isOwnRepo = connected?.address === addr;
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!connected) return;
     setBusy(true);
     setErr("");
     setTxhash("");
-    try {
-      setTxhash(await fn());
-      setMessage("");
-      void refreshBalance();
-    } catch (e) {
-      setErr(String(e instanceof Error ? e.message : e));
-    } finally {
-      setBusy(false);
-    }
+    (async () => {
+      try {
+        let hash: string;
+        if (connected.kind === "cosmos") {
+          hash = await sponsorWithKeplr(connected.cosmos, cfg, addr, repo, amount, message.trim());
+        } else {
+          const mm = await import("../lib/metamask");
+          hash = await mm.sponsorWithMetaMask(cfg, addr, repo, amount, message.trim());
+        }
+        setTxhash(hash);
+        setMessage("");
+        void refreshBalance();
+      } catch (e2) {
+        setErr(String(e2 instanceof Error ? e2.message : e2));
+      } finally {
+        setBusy(false);
+      }
+    })();
   };
-
-  const sponsorCosmos = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!wallet) return;
-    void run(() => sponsorWithKeplr(wallet, cfg, addr, repo, amount, message.trim()));
-  };
-
-  const sponsorMetaMask = () => {
-    void run(async () => {
-      const mm = await import("../lib/metamask");
-      return mm.sponsorWithMetaMask(cfg, addr, repo, amount, message.trim());
-    });
-  };
-
-  const canCosmos = !!wallet && !isOwnRepo;
-  const showConnect = !wallet && !hasEth;
 
   return (
     <div className="card sponsor-form">
       <div className="sponsor-form-title">💚 Sponsor this repository</div>
 
-      {isOwnRepo && (
-        <div className="muted" style={{ marginBottom: 8 }}>
-          Connected Cosmos wallet owns this repo — sponsor from another account or via MetaMask.
-        </div>
-      )}
-
-      {showConnect ? (
+      {!connected ? (
         <div className="sponsor-connect">
           <span className="muted">Connect a wallet to sponsor directly in the browser.</span>
-          {available.length <= 1 ? (
-            <button onClick={() => connect(available[0]?.id ?? "keplr")} disabled={connecting}>
-              {connecting ? "connecting…" : `Connect ${available[0]?.label ?? "Wallet"}`}
-            </button>
-          ) : (
-            available.map((w) => (
-              <button key={w.id} onClick={() => connect(w.id)} disabled={connecting}>
-                {w.label}
-              </button>
-            ))
-          )}
+          <button onClick={() => setModal(true)}>Connect Wallet</button>
         </div>
       ) : (
-        <form className="sponsor-fields" onSubmit={sponsorCosmos}>
+        <form className="sponsor-fields" onSubmit={submit}>
           <input
             className="field amount"
             value={amount}
@@ -864,17 +845,17 @@ function SponsorForm({
             placeholder="message for the sponsor wall (optional)"
             maxLength={256}
           />
-          {canCosmos && (
-            <button type="submit" disabled={busy}>
-              {busy ? "signing…" : `Sponsor (${wallet!.providerLabel})`}
-            </button>
-          )}
-          {hasEth && (
-            <button type="button" onClick={sponsorMetaMask} disabled={busy}>
-              {busy ? "signing…" : "Sponsor with MetaMask"}
-            </button>
-          )}
+          <button type="submit" disabled={busy}>
+            {busy ? "signing…" : `Sponsor via ${connected.label}`}
+          </button>
         </form>
+      )}
+
+      {isOwnRepo && (
+        <div className="muted" style={{ marginTop: 8 }}>
+          Note: this repo is owned by the connected wallet — you’d mostly be paying yourself
+          (minus the platform fee).
+        </div>
       )}
       {err && <div className="error" style={{ marginTop: 10 }}>{err}</div>}
       {txhash && (
@@ -883,6 +864,7 @@ function SponsorForm({
           to see it on the wall.
         </div>
       )}
+      {modal && <WalletModal onClose={() => setModal(false)} />}
     </div>
   );
 }

@@ -81,6 +81,34 @@ export interface WalletOption {
   label: string;
 }
 
+// Every wallet the app supports, for the picker UI (installed or not).
+// kind "cosmos" wallets sign via CosmJS; "evm" (MetaMask) via EIP-712.
+export interface SupportedWallet {
+  id: string;
+  label: string;
+  kind: "cosmos" | "evm";
+  icon: string; // emoji stand-in (no image assets needed)
+  installUrl: string;
+}
+
+export const SUPPORTED_WALLETS: SupportedWallet[] = [
+  { id: "keplr", label: "Keplr", kind: "cosmos", icon: "\u{1F311}", installUrl: "https://www.keplr.app/download" },
+  { id: "leap", label: "Leap", kind: "cosmos", icon: "\u{1F998}", installUrl: "https://www.leapwallet.io/download" },
+  { id: "okx", label: "OKX Wallet", kind: "cosmos", icon: "\u2B21", installUrl: "https://www.okx.com/web3" },
+  { id: "cosmostation", label: "Cosmostation", kind: "cosmos", icon: "\u2728", installUrl: "https://www.cosmostation.io/wallet" },
+  { id: "metamask", label: "MetaMask", kind: "evm", icon: "\u{1F98A}", installUrl: "https://metamask.io/download/" },
+];
+
+/** Whether a supported wallet's extension is currently injected. */
+export function isWalletInstalled(id: string): boolean {
+  if (id === "metamask") {
+    return !!(window as unknown as { ethereum?: unknown }).ethereum;
+  }
+  const p = PROVIDERS.find((x) => x.id === id);
+  const w = p?.get();
+  return !!w && typeof w.getKey === "function" && typeof w.signDirect === "function";
+}
+
 /** Wallets whose extension is actually installed and exposes the needed API. */
 export function availableWallets(): WalletOption[] {
   return PROVIDERS.filter((p) => {

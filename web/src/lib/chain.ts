@@ -145,6 +145,16 @@ export async function contractConfig(cfg: AppConfig): Promise<ContractConfig> {
   return smartQuery<ContractConfig>(cfg, { config: {} });
 }
 
+/** INJ balance (base units) of any address via the LCD bank module. */
+export async function injBalanceOf(cfg: AppConfig, address: string): Promise<string> {
+  const url = `${cfg.lcd.replace(/\/+$/, "")}/cosmos/bank/v1beta1/balances/${address}`;
+  const resp = await fetch(url);
+  if (!resp.ok) return "0";
+  const json = await resp.json();
+  const inj = (json.balances ?? []).find((c: { denom: string }) => c.denom === "inj");
+  return inj?.amount ?? "0";
+}
+
 export async function resolveUsername(cfg: AppConfig, name: string): Promise<string> {
   const out = await smartQuery<{ owner: string }>(cfg, {
     resolve_username: { name },

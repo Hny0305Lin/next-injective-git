@@ -1,20 +1,20 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import {
-  availableWallets,
-  connectWallet,
-  injBalance,
-  type Wallet,
-  type WalletOption,
-} from "../lib/wallet";
+import { connectWallet, type Wallet } from "../lib/wallet";
+import { injBalanceOf, loadConfig } from "../lib/chain";
+
+// A connected wallet is either a Cosmos wallet (signs via CosmJS) or an EVM
+// wallet (MetaMask, signs via EIP-712). Both expose an inj1 address.
+export type Connected =
+  | { kind: "cosmos"; id: string; label: string; address: string; cosmos: Wallet }
+  | { kind: "evm"; id: string; label: string; address: string; ethAddress: string };
 
 interface WalletState {
-  wallet: Wallet | null;
-  address: string;
+  connected: Connected | null;
+  address: string; // inj1 address of the connected wallet, "" if none
   balance: string; // base units, "" while unknown
   connecting: boolean;
   error: string;
-  available: WalletOption[];
-  connect: (providerId: string) => Promise<void>;
+  connect: (walletId: string) => Promise<void>;
   disconnect: () => void;
   refreshBalance: () => Promise<void>;
 }
@@ -23,41 +23,47 @@ const Ctx = createContext<WalletState | null>(null);
 const LS_PROVIDER = "igit-wallet-provider";
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
-  const [wallet, setWallet] = useState<Wallet | null>(null);
+  const [connected, setConnected] = useState<Connected | null>(null);
   const [balance, setBalance] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState("");
-  const [available, setAvailable] = useState<WalletOption[]>([]);
-
-  // wallets inject asynchronously; re-scan for a moment after load
-  useEffect(() => {
-    const scan = () => setAvailable(availableWallets());
-    scan();
-    const t = setInterval(scan, 500);
-    const stop = setTimeout(() => clearInterval(t), 3000);
-    return () => {
-      clearInterval(t);
-      clearTimeout(stop);
-    };
-  }, []);
 
   const refreshBalance = useCallback(async () => {
-    if (!wallet) return;
+    if (!connected) return;
     try {
-      setBalance(await injBalance(wallet));
+      setBalance(await injBalanceOf(loadConfig(), connected.address));
     } catch {
       /* leave stale balance */
     }
-  }, [wallet]);
+  }, [connected]);
 
-  const connect = useCallback(async (providerId: string) => {
+  const connect = useCallback(async (walletId: string) => {
     setConnecting(true);
     setError("");
     try {
-      const w = await connectWallet(providerId);
-      setWallet(w);
+      if (walletId === "metamask") {
+        // dynamic import keeps the heavy Injective SDK out of the main bundle
+        const mm = await import("../lib/metamask");
+        const { ethAddress, injectiveAddress } = await mm.connectMetaMask();
+        setConnected({
+          kind: "evm",
+          id: "metamask",
+          label: "MetaMask",
+          address: injectiveAddress,
+          ethAddress,
+        });
+      } else {
+        const w = await connectWallet(walletId);
+        setConnected({
+          kind: "cosmos",
+          id: walletId,
+          label: w.providerLabel,
+          address: w.address,
+          cosmos: w,
+        });
+      }
       try {
-        localStorage.setItem(LS_PROVIDER, providerId);
+        localStorage.setItem(LS_PROVIDER, walletId);
       } catch {
         /* ignore */
       }
@@ -69,7 +75,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const disconnect = useCallback(() => {
-    setWallet(null);
+    setConnected(null);
     setBalance("");
     try {
       localStorage.removeItem(LS_PROVIDER);
@@ -81,7 +87,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   // reconnect on load with the previously used wallet (still authorized)
   useEffect(() => {
     const prev = localStorage.getItem(LS_PROVIDER);
-    if (prev && !wallet) connect(prev);
+    if (prev && !connected) connect(prev);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -106,12 +112,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   return (
     <Ctx.Provider
       value={{
-        wallet,
-        address: wallet?.address ?? "",
+        connected,
+        address: connected?.address ?? "",
         balance,
         connecting,
         error,
-        available,
         connect,
         disconnect,
         refreshBalance,
