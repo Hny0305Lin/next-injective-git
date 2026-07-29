@@ -89,6 +89,14 @@ export async function sponsorWithMetaMask(
     funds: [{ denom: "inj", amount: micro }],
   });
 
+  // The EIP-712 v2 "context" the chain reconstructs includes fee + memo, so the
+  // signed typed data MUST carry the exact same fee + memo as the tx, or the
+  // recovered signature won't match (signature verification failed).
+  const fee = {
+    amount: [{ denom: "inj", amount: "560000000000000" }],
+    gas: "800000",
+  };
+
   // MsgExecuteContract requires EIP-712 v2 (the chain rejects v1/amino for it).
   const eip712TypedData = getEip712TypedDataV2({
     msgs: [msg],
@@ -97,7 +105,9 @@ export async function sponsorWithMetaMask(
       sequence: baseAccount.sequence.toString(),
       chainId: ChainId.Testnet,
       timeoutHeight: timeoutHeight.toFixed(),
+      memo: message,
     },
+    fee,
     evmChainId: EvmChainId.TestnetEvm, // 1439 == Injective testnet inEVM chainId (MetaMask's active network)
   });
 
@@ -115,10 +125,7 @@ export async function sponsorWithMetaMask(
     message: msg,
     memo: message,
     signMode: SIGN_EIP712_V2, // must match the v2 typed data the user signed
-    fee: {
-      amount: [{ denom: "inj", amount: "560000000000000" }],
-      gas: "800000",
-    },
+    fee,
     pubKey: publicKeyBase64,
     sequence: baseAccount.sequence,
     accountNumber: baseAccount.accountNumber,
