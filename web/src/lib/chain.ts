@@ -42,6 +42,7 @@ export interface RepoInfo {
   created_at: number;
   updated_at: number;
   moderation_status: "active" | "delisted" | "frozen";
+  forked_from: string | null;
 }
 
 export interface RefInfo {
@@ -180,4 +181,63 @@ export function timeAgo(seconds: number): string {
   if (diff < 86400) return `${Math.floor(diff / 3600)} h ago`;
   if (diff < 86400 * 30) return `${Math.floor(diff / 86400)} d ago`;
   return new Date(seconds * 1000).toISOString().slice(0, 10);
+}
+
+// ---- sponsor wall: individual sponsorship events from tx history ----
+
+export interface SponsorEvent {
+  txhash: string;
+  sponsor: string;
+  funds: string; // e.g. "50000000000000000inj"
+  message: string;
+  timestamp: string; // ISO
+}
+
+/** Query past `sponsor` executions for a repo straight from the LCD tx index. */
+export async function sponsorEvents(
+  cfg: AppConfig,
+  owner: string,
+  repo: string,
+): Promise<SponsorEvent[]> {
+  const query = [
+    `wasm.action='sponsor'`,
+    `wasm._contract_address='${cfg.contract}'`,
+    `wasm.owner='${owner}'`,
+    `wasm.repo='${repo}'`,
+  ].join(" AND ");
+  const url =
+    `${cfg.lcd.replace(/\/+$/, "")}/cosmos/tx/v1beta1/txs?query=${encodeURIComponent(query)}` +
+    `&order_by=ORDER_BY_DESC&pagination.limit=50`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`tx query failed (HTTP ${resp.status})`);
+  const json = await resp.json();
+  const out: SponsorEvent[] = [];
+  interface TxResp {
+    txhash: string;
+    timestamp: string;
+    events?: { type: string; attributes?: { key: string; value: string }[] }[];
+  }
+  for (const tx of (json.tx_responses ?? []) as TxResp[]) {
+    const attrs: Record<string, string> = {};
+    for (const ev of tx.events ?? []) {
+      if (ev.type !== "wasm") continue;
+      for (const a of ev.attributes ?? []) attrs[a.key] = a.value;
+    }
+    if (attrs.action !== "sponsor") continue;
+    out.push({
+      txhash: tx.txhash,
+      sponsor: attrs.sponsor ?? "",
+      funds: attrs.funds ?? "",
+      message: attrs.message ?? "",
+      timestamp: tx.timestamp,
+    });
+  }
+  return out;
+}
+
+/** "50000000000000000inj" -> "0.05 INJ" */
+export function formatFunds(funds: string): string {
+  const m = funds.match(/^(\d+)inj$/);
+  if (!m) return funds;
+  return formatInj(m[1], "inj");
 }

@@ -33,6 +33,7 @@ Usage:
                                        set moderation status (committee/admin)
   igit sponsor <owner> <repo> <inj-amount> [message...]
                                        sponsor a repository (e.g. 0.5 INJ)
+  igit fork <owner> <repo> [new-name]  fork a repository into your namespace
   igit splits set <repo> [addr:bps]... set revenue splits (owner only)
   igit splits show <owner> <repo>      show revenue splits
   igit username register <name>        claim a username (locks deposit)
@@ -86,6 +87,8 @@ func run(args []string) error {
 		return cmdMod(cfg, args[1:])
 	case "sponsor":
 		return cmdSponsor(cfg, args[1:])
+	case "fork":
+		return cmdFork(cfg, args[1:])
 	case "splits":
 		return cmdSplits(cfg, args[1:])
 	case "username":
@@ -368,6 +371,37 @@ func cmdSponsor(cfg config.Config, args []string) error {
 		return err
 	}
 	fmt.Printf("sponsored %s/%s with %s INJ — thank you!\n", args[0], args[1], args[2])
+	return nil
+}
+
+func cmdFork(cfg config.Config, args []string) error {
+	if len(args) < 2 {
+		return fmt.Errorf("usage: igit fork <owner> <repo> [new-name]")
+	}
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	cc := chain.New(cfg)
+	owner, err := resolveOwner(cc, args[0])
+	if err != nil {
+		return err
+	}
+	newName := ""
+	if len(args) > 2 {
+		newName = args[2]
+	}
+	if err := cc.ForkRepo(owner, args[1], newName); err != nil {
+		return err
+	}
+	self, err := cc.OwnerAddress()
+	if err != nil {
+		return err
+	}
+	if newName == "" {
+		newName = args[1]
+	}
+	fmt.Printf("forked %s/%s\n", args[0], args[1])
+	fmt.Printf("clone your fork: git clone inj://%s/%s\n", self, newName)
 	return nil
 }
 

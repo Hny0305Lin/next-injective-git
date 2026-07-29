@@ -104,6 +104,15 @@ pub enum ExecuteMsg {
         treasury: Option<String>,
         platform_fee_bps: Option<u16>,
     },
+    /// Fork a repository into the sender's namespace: repo metadata and all
+    /// refs (pack URI lists) are copied — the underlying IPFS content is
+    /// shared, so forking costs no storage re-upload.
+    ForkRepo {
+        owner: String,
+        repo: String,
+        /// Name under the sender; defaults to the source repo name.
+        name: Option<String>,
+    },
 }
 
 /// String-typed split entry used in messages (validated into `SplitEntry`).
@@ -175,6 +184,7 @@ pub struct RepoInfoResponse {
     pub created_at: u64,
     pub updated_at: u64,
     pub moderation_status: ModerationStatus,
+    pub forked_from: Option<String>,
 }
 
 #[cw_serde]

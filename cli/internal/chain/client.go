@@ -442,6 +442,15 @@ func (c *Client) ReleaseUsername() error {
 	return c.Execute(map[string]any{"release_username": map[string]any{}})
 }
 
+// ForkRepo copies owner/repo (metadata + refs) into the sender's namespace.
+func (c *Client) ForkRepo(owner, repo, newName string) error {
+	inner := map[string]any{"owner": owner, "repo": repo}
+	if newName != "" {
+		inner["name"] = newName
+	}
+	return c.Execute(map[string]any{"fork_repo": inner})
+}
+
 // ConfigInfo fetches the contract-level config (treasury, fee, deposit).
 func (c *Client) ConfigInfo() (*ConfigInfo, error) {
 	var out ConfigInfo

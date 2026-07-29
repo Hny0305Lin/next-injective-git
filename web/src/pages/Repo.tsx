@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
+  formatFunds,
   formatInj,
   listCollaborators,
   listRefs,
@@ -8,6 +9,7 @@ import {
   repoInfo,
   resolveOwner,
   revenueSplits,
+  sponsorEvents,
   sponsorTotals,
   timeAgo,
   type AppConfig,
@@ -15,6 +17,7 @@ import {
   type RefInfo,
   type RepoInfo,
   type SplitEntry,
+  type SponsorEvent,
   type SponsorTotal,
 } from "../lib/chain";
 import {
@@ -143,6 +146,11 @@ export default function Repo() {
           {info.description || <i>no description</i>} · created {timeAgo(info.created_at)} ·
           updated {timeAgo(info.updated_at)}
         </p>
+        {info.forked_from && (
+          <p className="muted" style={{ margin: "2px 0 8px" }}>
+            ⥂ forked from <Link to={`/${info.forked_from}`}>{info.forked_from}</Link>
+          </p>
+        )}
         <div className="clone-box">
           <code>git clone {cloneURL}</code>
           <button onClick={() => navigator.clipboard.writeText(`git clone ${cloneURL}`)}>
@@ -617,6 +625,7 @@ function SponsorsTab({
   const [totals, setTotals] = useState<SponsorTotal[] | null>(null);
   const [splits, setSplits] = useState<SplitEntry[]>([]);
   const [collabs, setCollabs] = useState<CollaboratorInfo[]>([]);
+  const [events, setEvents] = useState<SponsorEvent[]>([]);
   const [err, setErr] = useState("");
 
   useEffect(() => {
@@ -630,6 +639,8 @@ function SponsorsTab({
         setTotals(t);
         setSplits(s);
         setCollabs(c);
+        // best-effort: the tx index may lag or be pruned
+        setEvents(await sponsorEvents(cfg, addr, repo).catch(() => []));
       } catch (e) {
         setErr(String(e));
       }
@@ -655,6 +666,24 @@ function SponsorsTab({
             <b>{formatInj(t.amount, t.denom)}</b> <span className="muted">total received</span>
           </div>
         ))
+      )}
+
+      {events.length > 0 && (
+        <>
+          <h3>Sponsor wall</h3>
+          {events.map((e) => (
+            <div className="card sponsor-entry" key={e.txhash}>
+              <div>
+                <b>{formatFunds(e.funds)}</b>{" "}
+                <span className="muted">
+                  from <code>{e.sponsor.slice(0, 14)}…</code> ·{" "}
+                  {e.timestamp.slice(0, 16).replace("T", " ")}
+                </span>
+              </div>
+              {e.message && <div className="sponsor-msg">“{e.message}”</div>}
+            </div>
+          ))}
+        </>
       )}
 
       <h3>Revenue split</h3>

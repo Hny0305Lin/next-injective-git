@@ -507,3 +507,13 @@ table.plain th {
   color: var(--accent);
   padding: 4px 14px;
 }
+
+/* ---- sponsor wall ---- */
+.sponsor-entry {
+  margin-bottom: 8px;
+}
+.sponsor-msg {
+  margin-top: 6px;
+  color: var(--fg-muted);
+  font-style: italic;
+}

@@ -153,6 +153,9 @@ pub fn execute(
             treasury,
             platform_fee_bps,
         } => exec_set_fee_config(deps, info, treasury, platform_fee_bps),
+        ExecuteMsg::ForkRepo { owner, repo, name } => {
+            exec_fork_repo(deps, env, info, owner, repo, name)
+        }
     }
 }
 
@@ -270,6 +273,7 @@ fn exec_create_repo(
         created_at: now,
         updated_at: now,
         moderation_status: ModerationStatus::Active,
+        forked_from: None,
     };
     REPOS.save(deps.storage, (&info.sender, &name), &repo)?;
     Ok(Response::new()
@@ -800,6 +804,67 @@ fn exec_set_fee_config(
         .add_attribute("platform_fee_bps", cfg.platform_fee_bps.to_string()))
 }
 
+/// Fork owner/repo into the sender's namespace. Refs are copied by
+/// reference (same pack URIs) — IPFS content addressing dedupes storage.
+fn exec_fork_repo(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    owner: String,
+    repo: String,
+    name: Option<String>,
+) -> Result<Response, ContractError> {
+    let src_owner = deps.api.addr_validate(&owner)?;
+    let src = load_repo(deps.as_ref(), &src_owner, &repo)?;
+    // moderated content must not spread through forks
+    if src.moderation_status != ModerationStatus::Active {
+        return Err(ContractError::RepoFrozen {
+            owner: src_owner.to_string(),
+            name: repo,
+        });
+    }
+    let new_name = name.unwrap_or_else(|| repo.clone());
+    validate_repo_name(&new_name)?;
+    if src_owner == info.sender && new_name == repo {
+        return Err(ContractError::RepoExists { name: new_name });
+    }
+    if REPOS.has(deps.storage, (&info.sender, &new_name)) {
+        return Err(ContractError::RepoExists { name: new_name });
+    }
+
+    let now = env.block.time.seconds();
+    let fork = Repo {
+        owner: info.sender.clone(),
+        name: new_name.clone(),
+        description: src.description.clone(),
+        default_branch: src.default_branch.clone(),
+        created_at: now,
+        updated_at: now,
+        moderation_status: ModerationStatus::Active,
+        forked_from: Some(format!("{src_owner}/{repo}")),
+    };
+    REPOS.save(deps.storage, (&info.sender, &new_name), &fork)?;
+
+    let refs: Vec<(String, RefEntry)> = REFS
+        .prefix((&src_owner, &repo))
+        .range(deps.storage, None, None, Order::Ascending)
+        .collect::<StdResult<_>>()?;
+    let ref_count = refs.len();
+    for (ref_name, mut entry) in refs {
+        entry.updated_at = now;
+        entry.updated_by = info.sender.clone();
+        REFS.save(deps.storage, (&info.sender, &new_name, &ref_name), &entry)?;
+    }
+
+    Ok(Response::new()
+        .add_attribute("action", "fork_repo")
+        .add_attribute("source_owner", src_owner)
+        .add_attribute("source_repo", repo)
+        .add_attribute("owner", info.sender)
+        .add_attribute("repo", new_name)
+        .add_attribute("refs", ref_count.to_string()))
+}
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
@@ -894,6 +959,7 @@ fn repo_to_response(repo: Repo) -> RepoInfoResponse {
         created_at: repo.created_at,
         updated_at: repo.updated_at,
         moderation_status: repo.moderation_status,
+        forked_from: repo.forked_from,
     }
 }
 

@@ -69,6 +69,10 @@ pub struct Repo {
     pub updated_at: u64,
     /// Moderation state; only the committee can change it.
     pub moderation_status: ModerationStatus,
+    /// "owner/repo" this repository was forked from, if any.
+    /// serde(default) keeps pre-v0.3.1 stored entries readable after migrate.
+    #[serde(default)]
+    pub forked_from: Option<String>,
 }
 
 /// A single git ref (branch/tag) entry.

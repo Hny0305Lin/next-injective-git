@@ -789,6 +789,141 @@ fn migrate_same_contract_ok() {
         .unwrap();
 }
 
+#[test]
+fn fork_copies_refs_and_records_source() {
+    let mut env = setup();
+    let (alice, bob) = (env.alice.clone(), env.bob.clone());
+    create_repo(&mut env, &alice, "hello");
+    for (r, sha) in [("refs/heads/main", SHA_A), ("refs/tags/v1", SHA_B)] {
+        env.app
+            .execute_contract(
+                alice.clone(),
+                env.contract.clone(),
+                &update_ref_msg(&alice, "hello", r, sha, vec!["cid1"], None, false),
+                &[],
+            )
+            .unwrap();
+    }
+
+    // bob forks alice/hello
+    env.app
+        .execute_contract(
+            bob.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::ForkRepo {
+                owner: alice.to_string(),
+                repo: "hello".to_string(),
+                name: None,
+            },
+            &[],
+        )
+        .unwrap();
+
+    // fork metadata records the source
+    let info: RepoInfoResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::RepoInfo {
+                owner: bob.to_string(),
+                repo: "hello".to_string(),
+            },
+        )
+        .unwrap();
+    assert_eq!(info.forked_from, Some(format!("{alice}/hello")));
+
+    // refs (incl. pack uris) are copied
+    let resolved: ResolveRefResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::ResolveRef {
+                owner: bob.to_string(),
+                repo: "hello".to_string(),
+                ref_name: "refs/heads/main".to_string(),
+            },
+        )
+        .unwrap();
+    assert_eq!(resolved.commit_sha, SHA_A);
+    assert_eq!(resolved.pack_uris, vec!["ipfs://cid1"]);
+
+    // bob pushing to his fork does not touch the source
+    env.app
+        .execute_contract(
+            bob.clone(),
+            env.contract.clone(),
+            &update_ref_msg(&bob, "hello", "refs/heads/main", SHA_C, vec!["cid9"], Some(SHA_A), false),
+            &[],
+        )
+        .unwrap();
+    let src: ResolveRefResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::ResolveRef {
+                owner: alice.to_string(),
+                repo: "hello".to_string(),
+                ref_name: "refs/heads/main".to_string(),
+            },
+        )
+        .unwrap();
+    assert_eq!(src.commit_sha, SHA_A);
+
+    // forking again into the same name collides
+    let err = env
+        .app
+        .execute_contract(
+            bob.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::ForkRepo {
+                owner: alice.to_string(),
+                repo: "hello".to_string(),
+                name: None,
+            },
+            &[],
+        )
+        .unwrap_err();
+    assert!(matches!(
+        err.downcast::<ContractError>().unwrap(),
+        ContractError::RepoExists { .. }
+    ));
+
+    // frozen repos cannot be forked
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::SetModerationStatus {
+                owner: alice.to_string(),
+                repo: "hello".to_string(),
+                status: ModerationStatus::Frozen,
+                reason_hash: None,
+            },
+            &[],
+        )
+        .unwrap();
+    let err = env
+        .app
+        .execute_contract(
+            env.carol.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::ForkRepo {
+                owner: alice.to_string(),
+                repo: "hello".to_string(),
+                name: Some("hello2".to_string()),
+            },
+            &[],
+        )
+        .unwrap_err();
+    assert!(matches!(
+        err.downcast::<ContractError>().unwrap(),
+        ContractError::RepoFrozen { .. }
+    ));
+}
+
 // ---- v3: sponsorship, revenue splits, usernames ----
 
 const INJ: u128 = 1_000_000_000_000_000_000; // 1 INJ in base units
