@@ -1,4 +1,4 @@
-// MetaMask (EVM) sponsorship for Injective via EIP-712.
+    // MetaMask (EVM) sponsorship for Injective via EIP-712.
 //
 // MetaMask cannot sign Cosmos SignDocs; Injective accepts EIP-712 typed-data
 // signatures verified by its web3 ante handler. Building that typed data
@@ -14,12 +14,12 @@ import {
   createTransaction,
   createTxRawEIP712,
   createWeb3Extension,
-  getEip712TypedData,
+  getEip712TypedDataV2,
   getInjectiveAddress,
   hexToBase64,
   MsgExecuteContract,
   recoverTypedSignaturePubKey,
-  SIGN_AMINO,
+  SIGN_EIP712_V2,
   TxRestApi,
 } from "@injectivelabs/sdk-ts";
 import { ChainId, EvmChainId } from "@injectivelabs/ts-types";
@@ -89,7 +89,8 @@ export async function sponsorWithMetaMask(
     funds: [{ denom: "inj", amount: micro }],
   });
 
-  const eip712TypedData = getEip712TypedData({
+  // MsgExecuteContract requires EIP-712 v2 (the chain rejects v1/amino for it).
+  const eip712TypedData = getEip712TypedDataV2({
     msgs: [msg],
     tx: {
       accountNumber: baseAccount.accountNumber.toString(),
@@ -113,7 +114,7 @@ export async function sponsorWithMetaMask(
   const { txRaw } = createTransaction({
     message: msg,
     memo: message,
-    signMode: SIGN_AMINO,
+    signMode: SIGN_EIP712_V2, // must match the v2 typed data the user signed
     fee: {
       amount: [{ denom: "inj", amount: "560000000000000" }],
       gas: "800000",
