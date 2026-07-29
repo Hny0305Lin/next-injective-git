@@ -7,6 +7,10 @@ target/
 cli/bin/
 *.exe
 
+# Web
+web/node_modules/
+web/dist/
+
 # logs / scratch
 *.log
 
