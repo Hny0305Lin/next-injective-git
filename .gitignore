@@ -17,5 +17,6 @@ web/dist/
 # IDE / OS
 .vscode/
 .idea/
+.qoder/
 Thumbs.db
 .DS_Store
