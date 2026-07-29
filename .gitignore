@@ -24,3 +24,6 @@ Thumbs.db
 # scratch / dependency-inspection scripts (never committed)
 web/check-*.sh
 web/derive-addr.mjs
+
+# TS incremental build cache
+web/tsconfig.tsbuildinfo
