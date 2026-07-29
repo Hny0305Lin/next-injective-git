@@ -98,7 +98,7 @@ export async function sponsorWithMetaMask(
       chainId: ChainId.Testnet,
       timeoutHeight: timeoutHeight.toFixed(),
     },
-    evmChainId: EvmChainId.Injective, // 888 == injective-888 testnet
+    evmChainId: EvmChainId.TestnetEvm, // 1439 == Injective testnet inEVM chainId (MetaMask's active network)
   });
 
   // MetaMask signs the typed data
@@ -126,7 +126,7 @@ export async function sponsorWithMetaMask(
     timeoutHeight: timeoutHeight.toNumber(),
   });
 
-  const web3Extension = createWeb3Extension({ evmChainId: EvmChainId.Injective });
+  const web3Extension = createWeb3Extension({ evmChainId: EvmChainId.TestnetEvm });
   const txRawEip712 = createTxRawEIP712(txRaw, web3Extension);
 
   // attach the recovered signature and broadcast
