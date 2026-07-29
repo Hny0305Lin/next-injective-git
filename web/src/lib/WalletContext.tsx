@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { connectWallet, type Wallet } from "../lib/wallet";
+import { connectWallet, getEvmProvider, SUPPORTED_WALLETS, type Wallet } from "../lib/wallet";
 import { injBalanceOf, loadConfig, formatError } from "../lib/chain";
 
 // A connected wallet is either a Cosmos wallet (signs via CosmJS) or an EVM
@@ -41,14 +41,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setConnecting(true);
     setError("");
     try {
-      if (walletId === "metamask") {
+      const def = SUPPORTED_WALLETS.find((x) => x.id === walletId);
+      if (def?.kind === "evm") {
+        const provider = getEvmProvider(walletId);
+        if (!provider) throw new Error(`${def.label} not detected — install or enable it`);
         // dynamic import keeps the heavy Injective SDK out of the main bundle
         const mm = await import("../lib/metamask");
-        const { ethAddress, injectiveAddress } = await mm.connectMetaMask();
+        const { ethAddress, injectiveAddress } = await mm.connectEvm(provider);
         setConnected({
           kind: "evm",
-          id: "metamask",
-          label: "MetaMask",
+          id: walletId,
+          label: def.label,
           address: injectiveAddress,
           ethAddress,
         });

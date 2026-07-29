@@ -1,12 +1,11 @@
-    // MetaMask (EVM) sponsorship for Injective via EIP-712.
-//
-// MetaMask cannot sign Cosmos SignDocs; Injective accepts EIP-712 typed-data
-// signatures verified by its web3 ante handler. Building that typed data
-// correctly is intricate, so we delegate it to @injectivelabs/sdk-ts
-// (pinned 1.20.27 — the post-compromise clean release; 1.20.21 was the
-// malicious version and is deprecated on npm). This module is loaded via
-// dynamic import() so the heavy SDK stays out of the main bundle and off the
-// critical path of the audited CosmJS wallet flow.
+// EVM-wallet (MetaMask, Rabby, Trust, Coinbase, Bitget, Brave, ...) sponsorship
+// for Injective via EIP-712. These wallets can't sign Cosmos SignDocs; Injective
+// accepts EIP-712 typed-data signatures verified by its web3 ante handler.
+// Building that typed data correctly is intricate, so we delegate it to
+// @injectivelabs/sdk-ts (pinned 1.20.27 — the post-compromise clean release;
+// 1.20.21 was the malicious version and is deprecated on npm). This module is
+// loaded via dynamic import() so the heavy SDK stays out of the main bundle and
+// off the critical path of the audited CosmJS wallet flow.
 import {
   BaseAccount,
   ChainRestAuthApi,
@@ -25,48 +24,68 @@ import {
 import { ChainId, EvmChainId } from "@injectivelabs/ts-types";
 import { BigNumberInBase, DEFAULT_BLOCK_TIMEOUT_HEIGHT } from "@injectivelabs/utils";
 import type { AppConfig } from "./chain";
+import type { Eip1193 } from "./wallet";
 
-interface Eip712Window {
-  ethereum?: {
-    request(args: { method: string; params?: unknown[] }): Promise<unknown>;
-  };
+const INJECTIVE_EVM_CHAIN_ID_HEX = "0x59f"; // 1439 == Injective testnet inEVM
+
+// EVM wallets refuse to sign EIP-712 whose domain.chainId != the active network.
+// Prompt a switch to Injective testnet inEVM (1439), adding it if unknown.
+async function ensureInjectiveEvmChain(provider: Eip1193): Promise<void> {
+  try {
+    await provider.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: INJECTIVE_EVM_CHAIN_ID_HEX }],
+    });
+  } catch (e) {
+    const code = (e as { code?: number })?.code;
+    if (code === 4902) {
+      // chain unknown to the wallet — offer to add it (best-effort)
+      await provider
+        .request({
+          method: "wallet_addEthereumChain",
+          params: [
+            {
+              chainId: INJECTIVE_EVM_CHAIN_ID_HEX,
+              chainName: "Injective Testnet",
+              nativeCurrency: { name: "Injective", symbol: "INJ", decimals: 18 },
+              rpcUrls: ["https://k8s.testnet.json-rpc.injective.network/"],
+              blockExplorerUrls: ["https://testnet.blockscout.injective.network/"],
+            },
+          ],
+        })
+        .catch(() => undefined);
+    }
+    // any other switch error: let the sign attempt surface a clear message
+  }
 }
 
-function metamask() {
-  const eth = (window as unknown as Eip712Window).ethereum;
-  if (!eth) throw new Error("MetaMask not found — install the MetaMask extension");
-  return eth;
-}
-
-/** Is MetaMask (or an EVM injected provider) available? */
-export function hasMetaMask(): boolean {
-  return !!(window as unknown as Eip712Window).ethereum;
-}
-
-/** Connect MetaMask; returns the derived Injective (inj1) address. */
-export async function connectMetaMask(): Promise<{ ethAddress: string; injectiveAddress: string }> {
-  const eth = metamask();
-  const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
-  if (!accounts || accounts.length === 0) throw new Error("no MetaMask account");
+/** Connect an EVM wallet; returns the derived Injective (inj1) address. */
+export async function connectEvm(
+  provider: Eip1193,
+): Promise<{ ethAddress: string; injectiveAddress: string }> {
+  const accounts = (await provider.request({ method: "eth_requestAccounts" })) as string[];
+  if (!accounts || accounts.length === 0) throw new Error("no EVM account");
   return { ethAddress: accounts[0], injectiveAddress: getInjectiveAddress(accounts[0]) };
 }
 
 /**
- * Sponsor a repo through MetaMask.
- * Flow: build MsgExecuteContract -> EIP-712 typed data -> eth_signTypedData_v4
- * -> recover pubkey from the signature -> assemble the web3-extension tx ->
+ * Sponsor a repo through any EVM wallet.
+ * Flow: ensure the wallet is on Injective inEVM (1439) -> build
+ * MsgExecuteContract -> EIP-712 v2 typed data -> eth_signTypedData_v4 ->
+ * recover pubkey from the signature -> assemble the web3-extension tx ->
  * broadcast via the REST endpoint.
  */
-export async function sponsorWithMetaMask(
+export async function sponsorWithEvm(
+  provider: Eip1193,
   cfg: AppConfig,
   owner: string,
   repo: string,
   amountInj: string,
   message: string,
 ): Promise<string> {
-  const eth = metamask();
+  await ensureInjectiveEvmChain(provider);
   const micro = new BigNumberInBase(amountInj).toWei().toFixed();
-  const [ethAddress] = (await eth.request({ method: "eth_requestAccounts" })) as string[];
+  const [ethAddress] = (await provider.request({ method: "eth_requestAccounts" })) as string[];
   const injectiveAddress = getInjectiveAddress(ethAddress);
   const rest = cfg.lcd.replace(/\/+$/, "");
 
@@ -111,8 +130,8 @@ export async function sponsorWithMetaMask(
     evmChainId: EvmChainId.TestnetEvm, // 1439 == Injective testnet inEVM chainId (MetaMask's active network)
   });
 
-  // MetaMask signs the typed data
-  const signature = (await eth.request({
+  // the EVM wallet signs the typed data
+  const signature = (await provider.request({
     method: "eth_signTypedData_v4",
     params: [ethAddress, JSON.stringify(eip712TypedData)],
   })) as string;

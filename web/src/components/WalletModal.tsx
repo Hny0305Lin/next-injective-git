@@ -44,7 +44,7 @@ export function WalletModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         <div className="modal-sub muted">
-          Cosmos wallets sign natively; MetaMask signs via EIP-712.
+          Cosmos wallets sign natively; EVM wallets sign via EIP-712 (auto-switches to Injective inEVM).
         </div>
         <div className="wallet-list">
           {SUPPORTED_WALLETS.map((w) => {

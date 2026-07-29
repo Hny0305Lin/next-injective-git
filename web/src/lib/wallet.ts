@@ -96,13 +96,65 @@ export const SUPPORTED_WALLETS: SupportedWallet[] = [
   { id: "leap", label: "Leap", kind: "cosmos", icon: "\u{1F998}", installUrl: "https://www.leapwallet.io/download" },
   { id: "okx", label: "OKX Wallet", kind: "cosmos", icon: "\u2B21", installUrl: "https://www.okx.com/web3" },
   { id: "cosmostation", label: "Cosmostation", kind: "cosmos", icon: "\u2728", installUrl: "https://www.cosmostation.io/wallet" },
+  // EVM wallets — all sign through the same Injective EIP-712 path proven with
+  // MetaMask. They must be on the Injective testnet inEVM network (chainId
+  // 1439); the sponsor flow prompts a switch/add automatically.
   { id: "metamask", label: "MetaMask", kind: "evm", icon: "\u{1F98A}", installUrl: "https://metamask.io/download/" },
+  { id: "rabby", label: "Rabby", kind: "evm", icon: "\u{1F430}", installUrl: "https://rabby.io/" },
+  { id: "okxevm", label: "OKX Wallet (EVM)", kind: "evm", icon: "\u2B22", installUrl: "https://www.okx.com/web3" },
+  { id: "bitget", label: "Bitget Wallet", kind: "evm", icon: "\u{1F7E6}", installUrl: "https://web3.bitget.com/" },
+  { id: "trust", label: "Trust Wallet", kind: "evm", icon: "\u{1F6E1}\uFE0F", installUrl: "https://trustwallet.com/" },
+  { id: "coinbase", label: "Coinbase Wallet", kind: "evm", icon: "\u{1F535}", installUrl: "https://www.coinbase.com/wallet" },
+  { id: "brave", label: "Brave Wallet", kind: "evm", icon: "\u{1F981}", installUrl: "https://brave.com/wallet/" },
 ];
+
+// A minimal EIP-1193 provider (what every EVM wallet injects).
+export interface Eip1193 {
+  request(args: { method: string; params?: unknown[] }): Promise<unknown>;
+}
+
+// Some browsers expose several injected providers under window.ethereum.providers;
+// pick the one whose brand flag matches.
+function injectedByFlag(flag: string): Eip1193 | undefined {
+  const eth = (window as unknown as { ethereum?: { providers?: Record<string, unknown>[] } & Record<string, unknown> }).ethereum;
+  if (!eth) return undefined;
+  const list = Array.isArray(eth.providers) ? eth.providers : undefined;
+  if (list) {
+    const hit = list.find((p) => p[flag]);
+    if (hit) return hit as unknown as Eip1193;
+  }
+  return eth[flag] ? (eth as unknown as Eip1193) : undefined;
+}
+
+/** Resolve the EIP-1193 provider for an EVM wallet id (undefined if absent). */
+export function getEvmProvider(id: string): Eip1193 | undefined {
+  const w = window as unknown as Record<string, { ethereum?: Eip1193 } & Eip1193>;
+  switch (id) {
+    case "metamask":
+      return injectedByFlag("isMetaMask");
+    case "rabby":
+      return (w.rabby as Eip1193) ?? injectedByFlag("isRabby");
+    case "okxevm":
+      return w.okxwallet as unknown as Eip1193;
+    case "bitget":
+      return (w.bitkeep?.ethereum as Eip1193) ?? injectedByFlag("isBitKeep");
+    case "trust":
+      return (w.trustwallet as Eip1193) ?? injectedByFlag("isTrust") ?? injectedByFlag("isTrustWallet");
+    case "coinbase":
+      return (w.coinbaseWalletExtension as Eip1193) ?? injectedByFlag("isCoinbaseWallet");
+    case "brave":
+      return injectedByFlag("isBraveWallet");
+    default:
+      return undefined;
+  }
+}
+
+const EVM_IDS = new Set(SUPPORTED_WALLETS.filter((w) => w.kind === "evm").map((w) => w.id));
 
 /** Whether a supported wallet's extension is currently injected. */
 export function isWalletInstalled(id: string): boolean {
-  if (id === "metamask") {
-    return !!(window as unknown as { ethereum?: unknown }).ethereum;
+  if (EVM_IDS.has(id)) {
+    return !!getEvmProvider(id);
   }
   const p = PROVIDERS.find((x) => x.id === id);
   const w = p?.get();

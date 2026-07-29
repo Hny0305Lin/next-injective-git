@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useWallet } from "../lib/WalletContext";
 import { WalletModal } from "../components/WalletModal";
-import { sponsorWithKeplr } from "../lib/wallet";
+import { sponsorWithKeplr, getEvmProvider } from "../lib/wallet";
 import {
   badgesByRepo,
   formatFunds,
@@ -806,8 +806,10 @@ function SponsorForm({
         if (connected.kind === "cosmos") {
           hash = await sponsorWithKeplr(connected.cosmos, cfg, addr, repo, amount, message.trim());
         } else {
+          const provider = getEvmProvider(connected.id);
+          if (!provider) throw new Error(`${connected.label} not available`);
           const mm = await import("../lib/metamask");
-          hash = await mm.sponsorWithMetaMask(cfg, addr, repo, amount, message.trim());
+          hash = await mm.sponsorWithEvm(provider, cfg, addr, repo, amount, message.trim());
         }
         setTxhash(hash);
         setMessage("");

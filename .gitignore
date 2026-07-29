@@ -20,3 +20,7 @@ web/dist/
 .qoder/
 Thumbs.db
 .DS_Store
+
+# scratch / dependency-inspection scripts (never committed)
+web/check-*.sh
+web/derive-addr.mjs
