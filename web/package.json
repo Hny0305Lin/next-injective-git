@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@cosmjs/cosmwasm-stargate": "^0.38.1",
     "@isomorphic-git/lightning-fs": "^4.6.0",
     "buffer": "^6.0.3",
     "diff": "^9.0.0",

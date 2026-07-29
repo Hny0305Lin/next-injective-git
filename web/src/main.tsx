@@ -2,6 +2,7 @@ import { Buffer } from "buffer";
 import ReactDOM from "react-dom/client";
 import { HashRouter } from "react-router-dom";
 import App from "./App";
+import { WalletProvider } from "./lib/WalletContext";
 import "./styles.css";
 
 // isomorphic-git expects a Node-style Buffer global in the browser
@@ -11,6 +12,8 @@ import "./styles.css";
 // during pack indexing (AbortError: Lock broken by another request)
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <HashRouter>
-    <App />
+    <WalletProvider>
+      <App />
+    </WalletProvider>
   </HashRouter>,
 );

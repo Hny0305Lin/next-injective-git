@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { useWallet } from "../lib/WalletContext";
+import { sponsorWithKeplr } from "../lib/wallet";
 import {
   badgesByRepo,
   formatFunds,
@@ -659,6 +661,8 @@ function SponsorsTab({
 
   return (
     <div>
+      <SponsorForm cfg={cfg} addr={addr} repo={repo} />
+
       <h3>Lifetime sponsorship</h3>
       {totals.length === 0 ? (
         <p className="muted">
@@ -761,6 +765,89 @@ function SponsorsTab({
             </div>
           ))}
         </>
+      )}
+    </div>
+  );
+}
+
+// In-browser sponsorship: connect Keplr, sign a Sponsor tx, funds split
+// instantly in the contract. Turns the read-only wall into a write action.
+function SponsorForm({
+  cfg,
+  addr,
+  repo,
+}: {
+  cfg: AppConfig;
+  addr: string;
+  repo: string;
+}) {
+  const { wallet, connect, connecting, refreshBalance } = useWallet();
+  const [amount, setAmount] = useState("0.1");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [txhash, setTxhash] = useState("");
+  const [err, setErr] = useState("");
+
+  const isOwnRepo = wallet?.address === addr;
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!wallet) return;
+    setBusy(true);
+    setErr("");
+    setTxhash("");
+    try {
+      const hash = await sponsorWithKeplr(wallet, cfg, addr, repo, amount, message.trim());
+      setTxhash(hash);
+      setMessage("");
+      void refreshBalance();
+    } catch (e2) {
+      setErr(String(e2 instanceof Error ? e2.message : e2));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="card sponsor-form">
+      <div className="sponsor-form-title">💚 Sponsor this repository</div>
+      {!wallet ? (
+        <div className="sponsor-connect">
+          <span className="muted">Connect your wallet to sponsor directly in the browser.</span>
+          <button onClick={connect} disabled={connecting}>
+            {connecting ? "connecting…" : "Connect Keplr"}
+          </button>
+        </div>
+      ) : isOwnRepo ? (
+        <span className="muted">This is your own repository — sponsorships come from others.</span>
+      ) : (
+        <form className="sponsor-fields" onSubmit={submit}>
+          <input
+            className="field amount"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            inputMode="decimal"
+            aria-label="amount in INJ"
+          />
+          <span className="muted">INJ</span>
+          <input
+            className="field"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="message for the sponsor wall (optional)"
+            maxLength={256}
+          />
+          <button type="submit" disabled={busy}>
+            {busy ? "signing…" : "Sponsor"}
+          </button>
+        </form>
+      )}
+      {err && <div className="error" style={{ marginTop: 10 }}>{err}</div>}
+      {txhash && (
+        <div className="sponsor-ok">
+          ✅ sponsored! tx <code>{txhash.slice(0, 12)}…</code> — the split settled on-chain. Reload
+          to see it on the wall.
+        </div>
       )}
     </div>
   );

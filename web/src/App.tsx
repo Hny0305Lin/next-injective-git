@@ -4,10 +4,13 @@ import Home from "./pages/Home";
 import Owner from "./pages/Owner";
 import Repo from "./pages/Repo";
 import Settings from "./pages/Settings";
+import { useWallet } from "./lib/WalletContext";
+import { formatInj } from "./lib/chain";
 
 export default function App() {
   const nav = useNavigate();
   const [q, setQ] = useState("");
+  const { address, balance, connecting, connect, disconnect } = useWallet();
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,6 +43,20 @@ export default function App() {
           <a href="https://github.com/Hny0305Lin/next-injective-git" target="_blank" rel="noreferrer">
             CLI
           </a>
+          {address ? (
+            <button
+              className="wallet-btn connected"
+              title={`${address}\nclick to disconnect`}
+              onClick={disconnect}
+            >
+              {balance ? `${formatInj(balance, "inj")} · ` : ""}
+              {address.slice(0, 7)}…{address.slice(-4)}
+            </button>
+          ) : (
+            <button className="wallet-btn" onClick={connect} disabled={connecting}>
+              {connecting ? "connecting…" : "Connect Keplr"}
+            </button>
+          )}
         </nav>
       </header>
       <main className="content">
