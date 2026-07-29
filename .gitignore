@@ -27,3 +27,8 @@ web/derive-addr.mjs
 
 # TS incremental build cache
 web/tsconfig.tsbuildinfo
+
+# Vercel CLI (deploy scripts, logs, project link)
+web/.vercel-tmp/
+web/.vercel/
+.vercel/

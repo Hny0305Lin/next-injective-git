@@ -1,0 +1,15 @@
+{
+  "name": "injective-agent-skills",
+  "displayName": "Injective Agent Skills",
+  "version": "0.1.0",
+  "description": "Injective chain skills for Qoder: injectived CLI usage, INJ faucet operations, and bulk wallet management.",
+  "descriptionZh": "Injective 链 Qoder 技能包：injectived CLI 使用、INJ 水龙头操作与批量钱包管理。",
+  "author": { "name": "InjectiveLabs (packaged for Qoder)" },
+  "homepage": "https://github.com/InjectiveLabs/agent-skills",
+  "repository": "https://github.com/InjectiveLabs/agent-skills",
+  "logo": "./assets/avatar.svg",
+  "keywords": ["qoder-plugin", "skill", "injective", "blockchain", "cli", "wallet"],
+  "category": "developer-tools",
+  "tags": ["skill"],
+  "skills": "./skills/"
+}
