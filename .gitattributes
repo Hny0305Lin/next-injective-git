@@ -1,0 +1,7 @@
+# Shell scripts must stay LF — they execute inside WSL/Linux.
+*.sh text eol=lf
+
+# Lockfiles / Rust sources keep LF for cross-platform reproducible builds.
+Cargo.lock text eol=lf
+*.rs text eol=lf
+*.go text eol=lf

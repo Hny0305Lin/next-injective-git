@@ -1,10 +1,14 @@
 # Rust
 target/
-Cargo.lock
+# NOTE: contracts/*/Cargo.lock IS committed — pinned versions are required
+# for Rust 1.81-compatible wasm builds (see README build requirements).
 
 # Go
 cli/bin/
 *.exe
+
+# logs / scratch
+*.log
 
 # IDE / OS
 .vscode/
