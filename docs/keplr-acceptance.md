@@ -60,10 +60,17 @@
 4. MetaMask 弹出 **签名请求（Signature request，EIP-712 类型数据）**，确认签名。
 5. 期望：出现 `✅ sponsored! tx …`；刷新后赞助墙出现该笔。
 
-## 最可能的坑（若失败，按顺序排查）
-- **签名验证失败 / account not found**：该 inj 地址还没在链上激活（没余额）。先转点测试 INJ 过去再试。
-- **evmChainId 不对**：代码里用的是 `EvmChainId.Injective`(888) 对应 injective-888。若链上报 EIP-712 domain 不匹配，把 `web/src/lib/metamask.ts` 里两处 `EvmChainId.Injective` 调整后重试——这是最可能需要微调的点。
-- **broadcast 报错**：把 MetaMask 弹窗里的 EIP-712 内容 + 页面报错原文发我，我据此定位。
+## 状态：✅ 已验证（VERIFIED on injective-888）
+2026-07-29 实测打通，tx `3BD391ED289642723CA1D884D529D43857DA8190512D0004A715B65778F18002`（code=0）。
+链上铁证：
+- `extension_options` = `/injective.types.v1beta1.ExtensionOptionsWeb3Tx` —— 只有 EIP-712/MetaMask 交易才有
+- `sign_mode` = `SIGN_MODE_EIP712_V2`
+- `public_key` = `/injective.crypto.v1beta1.ethsecp256k1.PubKey`
 
-## 反馈给我
-把 tx hash（成功）或完整报错文案（失败）发我。因为这条路径我没法自己验证，你的这次实测就是唯一的正确性判据。
+验证脚本：`bash scripts/verify-metamask-tx.sh <txhash-prefix>`。
+
+## 踩过的坑（按递进顺序，均已修复）
+1. **EIP712_v1 is not supported for MsgExecuteContract** → 用 `getEip712TypedDataV2` + `signMode: SIGN_EIP712_V2`。
+2. **Provided chainId "888" must match the active chainId "1439"** → domain 与 web3 扩展用 `EvmChainId.TestnetEvm`(1439)，非 888。
+3. **signature verification failed (unauthorized)** → 签名的 typed-data `context` 必须与 tx **逐字一致**：必须把相同的 `fee` 和 `memo` 传给 `getEip712TypedDataV2`。
+4. 报错显示 `[object Object]` → 用 `formatError()` 提取真实信息。
