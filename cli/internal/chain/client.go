@@ -69,6 +69,39 @@ type listCollaboratorsResponse struct {
 	Collaborators []CollaboratorInfo `json:"collaborators"`
 }
 
+// Coin mirrors the cosmos coin JSON shape.
+type Coin struct {
+	Denom  string `json:"denom"`
+	Amount string `json:"amount"`
+}
+
+// ConfigInfo mirrors the contract's ConfigResponse.
+type ConfigInfo struct {
+	Admin               string `json:"admin"`
+	ModerationCommittee string `json:"moderation_committee"`
+	Treasury            string `json:"treasury"`
+	PlatformFeeBps      uint16 `json:"platform_fee_bps"`
+	UsernameDeposit     Coin   `json:"username_deposit"`
+}
+
+// SplitEntry mirrors the contract's revenue split entry.
+type SplitEntry struct {
+	Address string `json:"address"`
+	Bps     uint16 `json:"bps"`
+}
+
+type revenueSplitsResponse struct {
+	Splits []SplitEntry `json:"splits"`
+}
+
+type usernameResponse struct {
+	Owner string `json:"owner"`
+}
+
+type addressUsernameResponse struct {
+	Name *string `json:"name"`
+}
+
 // ---- smart queries via LCD ----
 
 type lcdSmartResponse struct {
@@ -197,6 +230,11 @@ func (c *Client) ListCollaborators(owner, repo string) ([]CollaboratorInfo, erro
 // contract-level rejections (frozen repo, ref conflict, unauthorized)
 // only show up once the tx is in a block.
 func (c *Client) Execute(execMsg any) error {
+	return c.ExecuteWithFunds(execMsg, "")
+}
+
+// ExecuteWithFunds is Execute with coins attached (e.g. "1000inj").
+func (c *Client) ExecuteWithFunds(execMsg any, amount string) error {
 	raw, err := json.Marshal(execMsg)
 	if err != nil {
 		return err
@@ -213,6 +251,9 @@ func (c *Client) Execute(execMsg any) error {
 		"--broadcast-mode", "sync",
 		"--output", "json",
 		"--yes",
+	}
+	if amount != "" {
+		args = append(args, "--amount", amount)
 	}
 	bin := c.cfg.InjectivedBin
 	if bin == "" {
@@ -371,6 +412,79 @@ func (c *Client) SetModerationStatus(owner, repo, status, reasonHash string) err
 		inner["reason_hash"] = reasonHash
 	}
 	return c.Execute(map[string]any{"set_moderation_status": inner})
+}
+
+// Sponsor sends funds to a repo; the contract splits them instantly.
+func (c *Client) Sponsor(owner, repo, message, amount string) error {
+	inner := map[string]any{"owner": owner, "repo": repo}
+	if message != "" {
+		inner["message"] = message
+	}
+	return c.ExecuteWithFunds(map[string]any{"sponsor": inner}, amount)
+}
+
+// SetRevenueSplits replaces the repo's split table. Owner only.
+func (c *Client) SetRevenueSplits(repo string, splits []SplitEntry) error {
+	return c.Execute(map[string]any{
+		"set_revenue_splits": map[string]any{"repo": repo, "splits": splits},
+	})
+}
+
+// RegisterUsername claims a username, attaching the configured deposit.
+func (c *Client) RegisterUsername(name, deposit string) error {
+	return c.ExecuteWithFunds(map[string]any{
+		"register_username": map[string]any{"name": name},
+	}, deposit)
+}
+
+// ReleaseUsername frees the sender's username and refunds the deposit.
+func (c *Client) ReleaseUsername() error {
+	return c.Execute(map[string]any{"release_username": map[string]any{}})
+}
+
+// ConfigInfo fetches the contract-level config (treasury, fee, deposit).
+func (c *Client) ConfigInfo() (*ConfigInfo, error) {
+	var out ConfigInfo
+	if err := c.SmartQuery(map[string]any{"config": map[string]any{}}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ResolveUsername resolves a registered username to its owner address.
+func (c *Client) ResolveUsername(name string) (string, error) {
+	var out usernameResponse
+	err := c.SmartQuery(map[string]any{
+		"resolve_username": map[string]any{"name": name},
+	}, &out)
+	if err != nil {
+		return "", fmt.Errorf("resolve username %q: %w", name, err)
+	}
+	return out.Owner, nil
+}
+
+// AddressUsername reverse-resolves an address to its username ("" if none).
+func (c *Client) AddressUsername(address string) (string, error) {
+	var out addressUsernameResponse
+	err := c.SmartQuery(map[string]any{
+		"address_username": map[string]any{"address": address},
+	}, &out)
+	if err != nil {
+		return "", err
+	}
+	if out.Name == nil {
+		return "", nil
+	}
+	return *out.Name, nil
+}
+
+// RevenueSplits fetches the split table of a repository.
+func (c *Client) RevenueSplits(owner, repo string) ([]SplitEntry, error) {
+	var out revenueSplitsResponse
+	err := c.SmartQuery(map[string]any{
+		"revenue_splits": map[string]any{"owner": owner, "repo": repo},
+	}, &out)
+	return out.Splits, err
 }
 
 // OwnerAddress returns the bech32 address of the configured key.

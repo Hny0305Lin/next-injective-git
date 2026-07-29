@@ -1,5 +1,5 @@
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::Addr;
+use cosmwasm_std::{Addr, Coin, Uint128};
 use cw_storage_plus::{Item, Map};
 
 /// Global contract config.
@@ -11,6 +11,38 @@ pub struct Config {
     /// unset. Kept separate from `admin` so upgrade power and content
     /// power can live in different multisigs (open-questions §5.3/§7).
     pub moderation_committee: Option<Addr>,
+    /// Treasury receiving the platform fee + username fees (§3).
+    pub treasury: Addr,
+    /// Platform cut of every sponsorship, in basis points.
+    /// Hard-capped by `MAX_PLATFORM_FEE_BPS`.
+    pub platform_fee_bps: u16,
+    /// Refundable deposit locked while a username is held (§4).
+    pub username_deposit: Coin,
+}
+
+/// Hard cap for the platform fee: 5% (§3 已定案).
+pub const MAX_PLATFORM_FEE_BPS: u16 = 500;
+/// Default platform fee: 3% (§3 已定案).
+pub const DEFAULT_PLATFORM_FEE_BPS: u16 = 300;
+
+/// One revenue-split recipient (§3). Shares are NOT transferable — the
+/// table can only be rewritten by the owner (L3/L4 forbidden by design).
+#[cw_serde]
+pub struct SplitEntry {
+    pub address: Addr,
+    /// Share of the post-fee amount in basis points; the table sums to
+    /// at most 10_000 and the remainder always goes to the repo owner.
+    pub bps: u16,
+}
+
+/// A registered username (§4): first-come-first-served, deposit-backed.
+#[cw_serde]
+pub struct UsernameRecord {
+    pub owner: Addr,
+    /// Deposit escrowed at registration, refunded on release.
+    pub deposit: Coin,
+    /// Block timestamp (seconds) of registration.
+    pub registered_at: u64,
 }
 
 /// Content moderation state of a repository (open-questions §5.3).
@@ -73,3 +105,16 @@ pub const REFS: Map<(&Addr, &str, &str), RefEntry> = Map::new("refs");
 
 /// (owner, repo_name, collaborator) => Role
 pub const COLLABORATORS: Map<(&Addr, &str, &Addr), Role> = Map::new("collaborators");
+
+/// (owner, repo_name) => revenue split table (absent = 100% to owner)
+pub const REVENUE_SPLITS: Map<(&Addr, &str), Vec<SplitEntry>> = Map::new("revenue_splits");
+
+/// username => record
+pub const USERNAMES: Map<&str, UsernameRecord> = Map::new("usernames");
+
+/// address => username (enforces one name per address)
+pub const ADDR_TO_NAME: Map<&Addr, String> = Map::new("addr_to_name");
+
+/// Lifetime sponsorship volume per repo, per denom: (owner, repo, denom) => total.
+/// Powers the sponsor wall / §14 copyright-subsidy metrics without an indexer.
+pub const SPONSOR_TOTALS: Map<(&Addr, &str, &str), Uint128> = Map::new("sponsor_totals");

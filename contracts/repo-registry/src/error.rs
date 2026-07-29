@@ -47,4 +47,28 @@ pub enum ContractError {
 
     #[error("owner cannot be a collaborator of their own repo")]
     OwnerAsCollaborator {},
+
+    #[error("platform fee {bps} bps exceeds hard cap {max} bps")]
+    FeeTooHigh { bps: u16, max: u16 },
+
+    #[error("sponsorship requires attached funds")]
+    NoFunds {},
+
+    #[error("revenue split table invalid: {reason}")]
+    InvalidSplits { reason: String },
+
+    #[error("invalid username: {name} (3-32 chars, [a-z0-9-], no leading/trailing '-', not an address)")]
+    InvalidUsername { name: String },
+
+    #[error("username already taken: {name}")]
+    UsernameTaken { name: String },
+
+    #[error("address already holds username: {name}")]
+    AlreadyHasUsername { name: String },
+
+    #[error("username not found: {name}")]
+    UsernameNotFound { name: String },
+
+    #[error("deposit mismatch: expected {expected}, got {actual}")]
+    DepositMismatch { expected: String, actual: String },
 }

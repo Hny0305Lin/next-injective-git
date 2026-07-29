@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/chain"
@@ -30,6 +31,13 @@ Usage:
   igit repo edit <repo> branch <name>  update repo metadata (owner only)
   igit mod <owner> <repo> <active|delisted|frozen> [reason-hash]
                                        set moderation status (committee/admin)
+  igit sponsor <owner> <repo> <inj-amount> [message...]
+                                       sponsor a repository (e.g. 0.5 INJ)
+  igit splits set <repo> [addr:bps]... set revenue splits (owner only)
+  igit splits show <owner> <repo>      show revenue splits
+  igit username register <name>        claim a username (locks deposit)
+  igit username release                release username, refund deposit
+  igit username show [name|address]    resolve a username / reverse lookup
   igit key show                        show the configured signing address
   igit key new <name>                  create a key in the injectived keyring
   igit config list                     show current configuration
@@ -76,6 +84,12 @@ func run(args []string) error {
 		return cmdRepo(cfg, args[1:])
 	case "mod":
 		return cmdMod(cfg, args[1:])
+	case "sponsor":
+		return cmdSponsor(cfg, args[1:])
+	case "splits":
+		return cmdSplits(cfg, args[1:])
+	case "username":
+		return cmdUsername(cfg, args[1:])
 	case "key":
 		return cmdKey(cfg, args[1:])
 	case "config":
@@ -301,6 +315,188 @@ func cmdMod(cfg config.Config, args []string) error {
 	}
 	fmt.Printf("%s/%s moderation status set to %s\n", args[0], args[1], status)
 	return nil
+}
+
+// resolveOwner turns a username into its address; addresses pass through.
+func resolveOwner(cc *chain.Client, owner string) (string, error) {
+	if strings.HasPrefix(owner, "inj1") {
+		return owner, nil
+	}
+	return cc.ResolveUsername(owner)
+}
+
+// parseINJ converts a decimal INJ amount ("0.5") into base units ("5...0inj").
+func parseINJ(s string) (string, error) {
+	whole, frac, _ := strings.Cut(strings.TrimSuffix(s, "inj"), ".")
+	if whole == "" {
+		whole = "0"
+	}
+	if len(frac) > 18 {
+		return "", fmt.Errorf("amount %q has more than 18 decimal places", s)
+	}
+	frac += strings.Repeat("0", 18-len(frac))
+	for _, c := range whole + frac {
+		if c < '0' || c > '9' {
+			return "", fmt.Errorf("invalid INJ amount %q", s)
+		}
+	}
+	base := strings.TrimLeft(whole+frac, "0")
+	if base == "" {
+		return "", fmt.Errorf("amount must be positive")
+	}
+	return base + "inj", nil
+}
+
+func cmdSponsor(cfg config.Config, args []string) error {
+	if len(args) < 3 {
+		return fmt.Errorf("usage: igit sponsor <owner> <repo> <inj-amount> [message...]")
+	}
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	cc := chain.New(cfg)
+	owner, err := resolveOwner(cc, args[0])
+	if err != nil {
+		return err
+	}
+	amount, err := parseINJ(args[2])
+	if err != nil {
+		return err
+	}
+	message := strings.Join(args[3:], " ")
+	if err := cc.Sponsor(owner, args[1], message, amount); err != nil {
+		return err
+	}
+	fmt.Printf("sponsored %s/%s with %s INJ — thank you!\n", args[0], args[1], args[2])
+	return nil
+}
+
+func cmdSplits(cfg config.Config, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: igit splits <set|show> ...")
+	}
+	cc := chain.New(cfg)
+	switch args[0] {
+	case "set":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: igit splits set <repo> [address:bps]...")
+		}
+		if err := cfg.Validate(); err != nil {
+			return err
+		}
+		var splits []chain.SplitEntry
+		for _, spec := range args[2:] {
+			addr, bpsStr, ok := strings.Cut(spec, ":")
+			if !ok {
+				return fmt.Errorf("invalid split %q (expected address:bps)", spec)
+			}
+			bps, err := strconv.ParseUint(bpsStr, 10, 16)
+			if err != nil {
+				return fmt.Errorf("invalid bps in %q: %w", spec, err)
+			}
+			resolved, err := resolveOwner(cc, addr)
+			if err != nil {
+				return err
+			}
+			splits = append(splits, chain.SplitEntry{Address: resolved, Bps: uint16(bps)})
+		}
+		if err := cc.SetRevenueSplits(args[1], splits); err != nil {
+			return err
+		}
+		fmt.Printf("revenue splits of %s updated (%d recipients)\n", args[1], len(splits))
+		return nil
+	case "show":
+		if len(args) != 3 {
+			return fmt.Errorf("usage: igit splits show <owner> <repo>")
+		}
+		owner, err := resolveOwner(cc, args[1])
+		if err != nil {
+			return err
+		}
+		splits, err := cc.RevenueSplits(owner, args[2])
+		if err != nil {
+			return err
+		}
+		if len(splits) == 0 {
+			fmt.Println("no splits (100% to owner after platform fee)")
+			return nil
+		}
+		total := uint16(0)
+		for _, s := range splits {
+			fmt.Printf("%5.1f%%  %s\n", float64(s.Bps)/100, s.Address)
+			total += s.Bps
+		}
+		fmt.Printf("%5.1f%%  (owner remainder)\n", float64(10000-total)/100)
+		return nil
+	default:
+		return fmt.Errorf("unknown splits subcommand %q", args[0])
+	}
+}
+
+func cmdUsername(cfg config.Config, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: igit username <register|release|show> ...")
+	}
+	cc := chain.New(cfg)
+	switch args[0] {
+	case "register":
+		if len(args) != 2 {
+			return fmt.Errorf("usage: igit username register <name>")
+		}
+		if err := cfg.Validate(); err != nil {
+			return err
+		}
+		info, err := cc.ConfigInfo()
+		if err != nil {
+			return fmt.Errorf("fetch deposit config: %w", err)
+		}
+		deposit := info.UsernameDeposit.Amount + info.UsernameDeposit.Denom
+		if err := cc.RegisterUsername(args[1], deposit); err != nil {
+			return err
+		}
+		fmt.Printf("username %q registered (deposit %s locked, refunded on release)\n", args[1], deposit)
+		fmt.Printf("your repos are now reachable as inj://%s/<repo>\n", args[1])
+		return nil
+	case "release":
+		if err := cfg.Validate(); err != nil {
+			return err
+		}
+		if err := cc.ReleaseUsername(); err != nil {
+			return err
+		}
+		fmt.Println("username released, deposit refunded")
+		return nil
+	case "show":
+		target := ""
+		if len(args) > 1 {
+			target = args[1]
+		} else {
+			var err error
+			if target, err = cc.OwnerAddress(); err != nil {
+				return err
+			}
+		}
+		if strings.HasPrefix(target, "inj1") {
+			name, err := cc.AddressUsername(target)
+			if err != nil {
+				return err
+			}
+			if name == "" {
+				fmt.Printf("%s holds no username\n", target)
+			} else {
+				fmt.Printf("%s -> %s\n", target, name)
+			}
+			return nil
+		}
+		owner, err := cc.ResolveUsername(target)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("%s -> %s\n", target, owner)
+		return nil
+	default:
+		return fmt.Errorf("unknown username subcommand %q", args[0])
+	}
 }
 
 func cmdKey(cfg config.Config, args []string) error {

@@ -15,9 +15,11 @@ func TestParseURL(t *testing.T) {
 		{"inj://" + owner + "/hello/", owner, "hello", false},
 		{"inj::" + owner + "/hello", owner, "hello", false},
 		{owner + "/hello", owner, "hello", false},
+		{"inj://alice-dev/hello", "alice-dev", "hello", false},
 		{"inj://onlyowner", "", "", true},
 		{"inj://a/b/c", "", "", true},
-		{"inj://notbech32/hello", "", "", true},
+		{"inj://Bad_Name!/hello", "", "", true},
+		{"inj://-abc/hello", "", "", true},
 		{"", "", "", true},
 	}
 	for _, tc := range cases {

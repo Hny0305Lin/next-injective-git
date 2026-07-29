@@ -1,9 +1,9 @@
-use cosmwasm_std::Addr;
+use cosmwasm_std::{coins, Addr};
 use cw_multi_test::{App, ContractWrapper, Executor};
 
 use repo_registry::msg::{
     ExecuteMsg, InstantiateMsg, ListRefsResponse, ListReposResponse, MigrateMsg, QueryMsg,
-    RepoInfoResponse, ResolveRefResponse,
+    RepoInfoResponse, ResolveRefResponse, SplitRecipient, SponsorTotalsResponse,
 };
 use repo_registry::state::{ModerationStatus, Role};
 use repo_registry::ContractError;
@@ -39,6 +39,9 @@ fn setup() -> TestEnv {
             &InstantiateMsg {
                 admin: None,
                 moderation_committee: None,
+                treasury: None,
+                platform_fee_bps: None,
+                username_deposit: None,
             },
             &[],
             "repo-registry",
@@ -783,5 +786,371 @@ fn migrate_same_contract_ok() {
     let new_code_id = env.app.store_code(Box::new(code));
     env.app
         .migrate_contract(alice, env.contract.clone(), &MigrateMsg {}, new_code_id)
+        .unwrap();
+}
+
+// ---- v3: sponsorship, revenue splits, usernames ----
+
+const INJ: u128 = 1_000_000_000_000_000_000; // 1 INJ in base units
+
+/// Funded environment: dave is the treasury, carol holds spendable INJ.
+fn setup_funded() -> (TestEnv, Addr) {
+    let mut app = App::new(|router, api, storage| {
+        for (name, amount) in [("alice", 10 * INJ), ("bob", 10 * INJ), ("carol", 10 * INJ)] {
+            router
+                .bank
+                .init_balance(storage, &api.addr_make(name), coins(amount, "inj"))
+                .unwrap();
+        }
+    });
+    let code = ContractWrapper::new(
+        repo_registry::contract::execute,
+        repo_registry::contract::instantiate,
+        repo_registry::contract::query,
+    )
+    .with_migrate(repo_registry::contract::migrate);
+    let code_id = app.store_code(Box::new(code));
+    let alice = app.api().addr_make("alice");
+    let bob = app.api().addr_make("bob");
+    let carol = app.api().addr_make("carol");
+    let dave = app.api().addr_make("dave");
+    let contract = app
+        .instantiate_contract(
+            code_id,
+            alice.clone(),
+            &InstantiateMsg {
+                admin: None,
+                moderation_committee: None,
+                treasury: Some(dave.to_string()),
+                platform_fee_bps: None, // default 300 = 3%
+                username_deposit: None, // default 0.1 INJ
+            },
+            &[],
+            "repo-registry",
+            Some(alice.to_string()),
+        )
+        .unwrap();
+    (
+        TestEnv {
+            app,
+            contract,
+            alice,
+            bob,
+            carol,
+        },
+        dave,
+    )
+}
+
+fn balance(env: &TestEnv, addr: &Addr) -> u128 {
+    env.app
+        .wrap()
+        .query_balance(addr, "inj")
+        .unwrap()
+        .amount
+        .u128()
+}
+
+#[test]
+fn sponsor_splits_fee_and_shares() {
+    let (mut env, dave) = setup_funded();
+    let (alice, bob, carol) = (env.alice.clone(), env.bob.clone(), env.carol.clone());
+    create_repo(&mut env, &alice, "hello");
+
+    // alice grants bob a 20% share
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::SetRevenueSplits {
+                repo: "hello".to_string(),
+                splits: vec![SplitRecipient {
+                    address: bob.to_string(),
+                    bps: 2000,
+                }],
+            },
+            &[],
+        )
+        .unwrap();
+
+    let (a0, b0, d0) = (balance(&env, &alice), balance(&env, &bob), balance(&env, &dave));
+
+    // carol sponsors 1 INJ
+    env.app
+        .execute_contract(
+            carol.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::Sponsor {
+                owner: alice.to_string(),
+                repo: "hello".to_string(),
+                message: Some("great work".to_string()),
+            },
+            &coins(INJ, "inj"),
+        )
+        .unwrap();
+
+    // fee 3% -> dave; of the rest, 20% -> bob, remainder -> alice
+    let fee = INJ * 300 / 10_000;
+    let distributable = INJ - fee;
+    let bob_share = distributable * 2000 / 10_000;
+    let alice_share = distributable - bob_share;
+    assert_eq!(balance(&env, &dave) - d0, fee);
+    assert_eq!(balance(&env, &bob) - b0, bob_share);
+    assert_eq!(balance(&env, &alice) - a0, alice_share);
+
+    // lifetime totals recorded
+    let totals: SponsorTotalsResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::SponsorTotals {
+                owner: alice.to_string(),
+                repo: "hello".to_string(),
+            },
+        )
+        .unwrap();
+    assert_eq!(totals.totals.len(), 1);
+    assert_eq!(totals.totals[0].amount.u128(), INJ);
+
+    // sponsoring with no funds is rejected
+    let err = env
+        .app
+        .execute_contract(
+            carol.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::Sponsor {
+                owner: alice.to_string(),
+                repo: "hello".to_string(),
+                message: None,
+            },
+            &[],
+        )
+        .unwrap_err();
+    assert!(matches!(
+        err.downcast::<ContractError>().unwrap(),
+        ContractError::NoFunds {}
+    ));
+}
+
+#[test]
+fn sponsor_frozen_repo_rejected() {
+    let (mut env, _dave) = setup_funded();
+    let (alice, bob, carol) = (env.alice.clone(), env.bob.clone(), env.carol.clone());
+    create_repo(&mut env, &bob, "bobrepo");
+    // alice is admin -> fallback moderator
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::SetModerationStatus {
+                owner: bob.to_string(),
+                repo: "bobrepo".to_string(),
+                status: ModerationStatus::Frozen,
+                reason_hash: None,
+            },
+            &[],
+        )
+        .unwrap();
+    let err = env
+        .app
+        .execute_contract(
+            carol.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::Sponsor {
+                owner: bob.to_string(),
+                repo: "bobrepo".to_string(),
+                message: None,
+            },
+            &coins(INJ, "inj"),
+        )
+        .unwrap_err();
+    assert!(matches!(
+        err.downcast::<ContractError>().unwrap(),
+        ContractError::RepoFrozen { .. }
+    ));
+}
+
+#[test]
+fn revenue_splits_validation() {
+    let (mut env, _dave) = setup_funded();
+    let (alice, bob) = (env.alice.clone(), env.bob.clone());
+    create_repo(&mut env, &alice, "hello");
+
+    // sum > 10000 rejected
+    let err = env
+        .app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::SetRevenueSplits {
+                repo: "hello".to_string(),
+                splits: vec![
+                    SplitRecipient {
+                        address: bob.to_string(),
+                        bps: 8000,
+                    },
+                    SplitRecipient {
+                        address: env.carol.to_string(),
+                        bps: 3000,
+                    },
+                ],
+            },
+            &[],
+        )
+        .unwrap_err();
+    assert!(matches!(
+        err.downcast::<ContractError>().unwrap(),
+        ContractError::InvalidSplits { .. }
+    ));
+
+    // owner in the table rejected (owner gets the remainder implicitly)
+    let err = env
+        .app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::SetRevenueSplits {
+                repo: "hello".to_string(),
+                splits: vec![SplitRecipient {
+                    address: alice.to_string(),
+                    bps: 1000,
+                }],
+            },
+            &[],
+        )
+        .unwrap_err();
+    assert!(matches!(
+        err.downcast::<ContractError>().unwrap(),
+        ContractError::InvalidSplits { .. }
+    ));
+
+    // only the owner may set splits
+    let err = env
+        .app
+        .execute_contract(
+            bob.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::SetRevenueSplits {
+                repo: "hello".to_string(),
+                splits: vec![],
+            },
+            &[],
+        )
+        .unwrap_err();
+    assert!(matches!(
+        err.downcast::<ContractError>().unwrap(),
+        ContractError::RepoNotFound { .. }
+    ));
+}
+
+#[test]
+fn username_register_and_release() {
+    let (mut env, _dave) = setup_funded();
+    let (alice, bob) = (env.alice.clone(), env.bob.clone());
+    let deposit = INJ / 10; // default 0.1 INJ
+
+    // wrong deposit rejected
+    let err = env
+        .app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::RegisterUsername {
+                name: "alice-dev".to_string(),
+            },
+            &coins(deposit / 2, "inj"),
+        )
+        .unwrap_err();
+    assert!(matches!(
+        err.downcast::<ContractError>().unwrap(),
+        ContractError::DepositMismatch { .. }
+    ));
+
+    // exact deposit registers
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::RegisterUsername {
+                name: "alice-dev".to_string(),
+            },
+            &coins(deposit, "inj"),
+        )
+        .unwrap();
+
+    // duplicate name rejected
+    let err = env
+        .app
+        .execute_contract(
+            bob.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::RegisterUsername {
+                name: "alice-dev".to_string(),
+            },
+            &coins(deposit, "inj"),
+        )
+        .unwrap_err();
+    assert!(matches!(
+        err.downcast::<ContractError>().unwrap(),
+        ContractError::UsernameTaken { .. }
+    ));
+
+    // one name per address
+    let err = env
+        .app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::RegisterUsername {
+                name: "alice-two".to_string(),
+            },
+            &coins(deposit, "inj"),
+        )
+        .unwrap_err();
+    assert!(matches!(
+        err.downcast::<ContractError>().unwrap(),
+        ContractError::AlreadyHasUsername { .. }
+    ));
+
+    // invalid names rejected
+    for bad in ["ab", "-abc", "abc-", "inj1abcdef", "Has-Upper"] {
+        let err = env
+            .app
+            .execute_contract(
+                bob.clone(),
+                env.contract.clone(),
+                &ExecuteMsg::RegisterUsername {
+                    name: bad.to_string(),
+                },
+                &coins(deposit, "inj"),
+            )
+            .unwrap_err();
+        assert!(matches!(
+            err.downcast::<ContractError>().unwrap(),
+            ContractError::InvalidUsername { .. }
+        ));
+    }
+
+    // release refunds the deposit and frees the name
+    let a0 = balance(&env, &alice);
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::ReleaseUsername {},
+            &[],
+        )
+        .unwrap();
+    assert_eq!(balance(&env, &alice) - a0, deposit);
+    env.app
+        .execute_contract(
+            bob.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::RegisterUsername {
+                name: "alice-dev".to_string(),
+            },
+            &coins(deposit, "inj"),
+        )
         .unwrap();
 }

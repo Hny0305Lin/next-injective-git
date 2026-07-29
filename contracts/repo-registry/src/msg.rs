@@ -1,6 +1,7 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
+use cosmwasm_std::{Coin, Uint128};
 
-use crate::state::{ModerationStatus, Role};
+use crate::state::{ModerationStatus, Role, SplitEntry};
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -8,6 +9,12 @@ pub struct InstantiateMsg {
     pub admin: Option<String>,
     /// Optional moderation committee; falls back to admin when unset.
     pub moderation_committee: Option<String>,
+    /// Treasury for platform fees + username fees; defaults to admin (§3).
+    pub treasury: Option<String>,
+    /// Platform fee in bps; defaults to 300, hard cap 500 (§3).
+    pub platform_fee_bps: Option<u16>,
+    /// Username deposit; defaults to 0.1 INJ (§4, testnet default).
+    pub username_deposit: Option<Coin>,
 }
 
 /// Migration message (cw2-gated; admin authority is enforced by the chain's
@@ -71,6 +78,39 @@ pub enum ExecuteMsg {
     },
     /// Replace the moderation committee address. Admin only.
     SetModerationCommittee { committee: Option<String> },
+    /// Sponsor a repository: attached funds are split instantly — platform
+    /// fee to the treasury, the rest per the repo's revenue-split table
+    /// (remainder to the owner). No funds are custodied (§3).
+    Sponsor {
+        owner: String,
+        repo: String,
+        /// Free-text note for the sponsor wall (≤256 chars, event-logged).
+        message: Option<String>,
+    },
+    /// Replace the repo's revenue-split table. Owner only; shares are not
+    /// transferable by recipients (§3, L3/L4 forbidden).
+    SetRevenueSplits {
+        repo: String,
+        splits: Vec<SplitRecipient>,
+    },
+    /// Register a username for the sender. First-come-first-served; the
+    /// exact configured deposit must be attached and is refunded on
+    /// release (§4).
+    RegisterUsername { name: String },
+    /// Release the sender's username and refund the deposit.
+    ReleaseUsername {},
+    /// Update treasury and/or fee. Admin only; fee hard-capped at 500 bps.
+    SetFeeConfig {
+        treasury: Option<String>,
+        platform_fee_bps: Option<u16>,
+    },
+}
+
+/// String-typed split entry used in messages (validated into `SplitEntry`).
+#[cw_serde]
+pub struct SplitRecipient {
+    pub address: String,
+    pub bps: u16,
 }
 
 #[cw_serde]
@@ -112,6 +152,18 @@ pub enum QueryMsg {
     /// Contract-level configuration (admin / committee).
     #[returns(ConfigResponse)]
     Config {},
+    /// Resolve a username to its owning address.
+    #[returns(UsernameResponse)]
+    ResolveUsername { name: String },
+    /// Reverse lookup: the username held by an address (if any).
+    #[returns(AddressUsernameResponse)]
+    AddressUsername { address: String },
+    /// Revenue-split table of a repository.
+    #[returns(RevenueSplitsResponse)]
+    RevenueSplits { owner: String, repo: String },
+    /// Lifetime sponsorship totals of a repository.
+    #[returns(SponsorTotalsResponse)]
+    SponsorTotals { owner: String, repo: String },
 }
 
 #[cw_serde]
@@ -155,6 +207,43 @@ pub struct ResolveRefResponse {
 pub struct ConfigResponse {
     pub admin: String,
     pub moderation_committee: Option<String>,
+    pub treasury: String,
+    pub platform_fee_bps: u16,
+    pub username_deposit: Coin,
+}
+
+#[cw_serde]
+pub struct UsernameResponse {
+    pub name: String,
+    pub owner: String,
+    pub registered_at: u64,
+}
+
+#[cw_serde]
+pub struct AddressUsernameResponse {
+    pub address: String,
+    pub name: Option<String>,
+}
+
+#[cw_serde]
+pub struct RevenueSplitsResponse {
+    pub owner: String,
+    pub repo: String,
+    /// Empty table means 100% to the owner (after platform fee).
+    pub splits: Vec<SplitEntry>,
+}
+
+#[cw_serde]
+pub struct SponsorTotal {
+    pub denom: String,
+    pub amount: Uint128,
+}
+
+#[cw_serde]
+pub struct SponsorTotalsResponse {
+    pub owner: String,
+    pub repo: String,
+    pub totals: Vec<SponsorTotal>,
 }
 
 #[cw_serde]

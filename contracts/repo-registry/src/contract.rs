@@ -1,18 +1,23 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
-    to_json_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Order, Response, StdResult,
+    to_json_binary, Addr, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo, Order, Response,
+    StdResult, Uint128,
 };
 use cw_storage_plus::Bound;
+use std::collections::BTreeMap;
 
 use crate::error::ContractError;
 use crate::msg::{
-    CollaboratorInfo, ConfigResponse, ExecuteMsg, InstantiateMsg, ListCollaboratorsResponse,
-    ListRefsResponse, ListReposResponse, MigrateMsg, QueryMsg, RefInfo, RepoInfoResponse,
-    ResolveRefResponse,
+    AddressUsernameResponse, CollaboratorInfo, ConfigResponse, ExecuteMsg, InstantiateMsg,
+    ListCollaboratorsResponse, ListRefsResponse, ListReposResponse, MigrateMsg, QueryMsg, RefInfo,
+    RepoInfoResponse, ResolveRefResponse, RevenueSplitsResponse, SplitRecipient, SponsorTotal,
+    SponsorTotalsResponse, UsernameResponse,
 };
 use crate::state::{
-    Config, ModerationStatus, Repo, RefEntry, Role, COLLABORATORS, CONFIG, REFS, REPOS,
+    Config, ModerationStatus, Repo, RefEntry, Role, SplitEntry, UsernameRecord, ADDR_TO_NAME,
+    COLLABORATORS, CONFIG, DEFAULT_PLATFORM_FEE_BPS, MAX_PLATFORM_FEE_BPS, REFS, REPOS,
+    REVENUE_SPLITS, SPONSOR_TOTALS, USERNAMES,
 };
 
 const CONTRACT_NAME: &str = "crates.io:igit-repo-registry";
@@ -37,11 +42,30 @@ pub fn instantiate(
         .moderation_committee
         .map(|c| deps.api.addr_validate(&c))
         .transpose()?;
+    let treasury = match msg.treasury {
+        Some(t) => deps.api.addr_validate(&t)?,
+        None => admin.clone(),
+    };
+    let platform_fee_bps = msg.platform_fee_bps.unwrap_or(DEFAULT_PLATFORM_FEE_BPS);
+    if platform_fee_bps > MAX_PLATFORM_FEE_BPS {
+        return Err(ContractError::FeeTooHigh {
+            bps: platform_fee_bps,
+            max: MAX_PLATFORM_FEE_BPS,
+        });
+    }
+    // testnet default: 0.1 INJ (18 decimals)
+    let username_deposit = msg.username_deposit.unwrap_or(Coin {
+        denom: "inj".to_string(),
+        amount: Uint128::new(100_000_000_000_000_000),
+    });
     CONFIG.save(
         deps.storage,
         &Config {
             admin: admin.clone(),
             moderation_committee,
+            treasury,
+            platform_fee_bps,
+            username_deposit,
         },
     )?;
     Ok(Response::new()
@@ -115,6 +139,20 @@ pub fn execute(
         ExecuteMsg::SetModerationCommittee { committee } => {
             exec_set_moderation_committee(deps, info, committee)
         }
+        ExecuteMsg::Sponsor {
+            owner,
+            repo,
+            message,
+        } => exec_sponsor(deps, info, owner, repo, message),
+        ExecuteMsg::SetRevenueSplits { repo, splits } => {
+            exec_set_revenue_splits(deps, info, repo, splits)
+        }
+        ExecuteMsg::RegisterUsername { name } => exec_register_username(deps, env, info, name),
+        ExecuteMsg::ReleaseUsername {} => exec_release_username(deps, info),
+        ExecuteMsg::SetFeeConfig {
+            treasury,
+            platform_fee_bps,
+        } => exec_set_fee_config(deps, info, treasury, platform_fee_bps),
     }
 }
 
@@ -409,6 +447,18 @@ fn exec_transfer_ownership(
         }
     }
 
+    // revenue splits do NOT follow the repo — the new owner decides anew (§3)
+    REVENUE_SPLITS.remove(deps.storage, (&info.sender, &repo));
+    // sponsorship history follows the repo (sponsor wall / §14 metrics)
+    let totals: Vec<(String, Uint128)> = SPONSOR_TOTALS
+        .prefix((&info.sender, &repo))
+        .range(deps.storage, None, None, Order::Ascending)
+        .collect::<StdResult<_>>()?;
+    for (denom, amount) in totals {
+        SPONSOR_TOTALS.remove(deps.storage, (&info.sender, &repo, &denom));
+        SPONSOR_TOTALS.save(deps.storage, (&new_owner, &repo, &denom), &amount)?;
+    }
+
     Ok(Response::new()
         .add_attribute("action", "transfer_ownership")
         .add_attribute("repo", repo)
@@ -491,6 +541,265 @@ fn exec_set_moderation_committee(
         ))
 }
 
+/// Sponsor a repo: split attached funds instantly, custody nothing (§3).
+fn exec_sponsor(
+    deps: DepsMut,
+    info: MessageInfo,
+    owner: String,
+    repo: String,
+    message: Option<String>,
+) -> Result<Response, ContractError> {
+    if info.funds.is_empty() || info.funds.iter().all(|c| c.amount.is_zero()) {
+        return Err(ContractError::NoFunds {});
+    }
+    let message = message.unwrap_or_default();
+    if message.len() > 256 {
+        return Err(ContractError::InvalidSplits {
+            reason: "sponsor message too long (max 256)".to_string(),
+        });
+    }
+    let owner = deps.api.addr_validate(&owner)?;
+    let repo_meta = load_repo(deps.as_ref(), &owner, &repo)?;
+    // Frozen repos must not keep earning (§5.3 L2: freeze the money flow).
+    ensure_not_frozen(&repo_meta)?;
+
+    let cfg = CONFIG.load(deps.storage)?;
+    let splits = REVENUE_SPLITS
+        .may_load(deps.storage, (&owner, &repo))?
+        .unwrap_or_default();
+
+    // recipient -> coins, deterministic order for stable msg output
+    let mut payouts: BTreeMap<Addr, Vec<Coin>> = BTreeMap::new();
+    let mut add_payout = |addr: &Addr, denom: &str, amount: Uint128| {
+        if amount.is_zero() {
+            return;
+        }
+        let coins = payouts.entry(addr.clone()).or_default();
+        match coins.iter_mut().find(|c| c.denom == denom) {
+            Some(c) => c.amount += amount,
+            None => coins.push(Coin {
+                denom: denom.to_string(),
+                amount,
+            }),
+        }
+    };
+
+    for coin in &info.funds {
+        if coin.amount.is_zero() {
+            continue;
+        }
+        let fee = coin.amount.multiply_ratio(cfg.platform_fee_bps, 10_000u128);
+        let distributable = coin.amount - fee;
+        add_payout(&cfg.treasury, &coin.denom, fee);
+
+        let mut assigned = Uint128::zero();
+        for s in &splits {
+            let share = distributable.multiply_ratio(s.bps, 10_000u128);
+            assigned += share;
+            add_payout(&s.address, &coin.denom, share);
+        }
+        // remainder (incl. rounding dust) always lands on the owner
+        add_payout(&owner, &coin.denom, distributable - assigned);
+
+        SPONSOR_TOTALS.update(
+            deps.storage,
+            (&owner, &repo, coin.denom.as_str()),
+            |t| -> StdResult<_> { Ok(t.unwrap_or_default() + coin.amount) },
+        )?;
+    }
+
+    let msgs: Vec<BankMsg> = payouts
+        .into_iter()
+        .map(|(to_address, amount)| BankMsg::Send {
+            to_address: to_address.into_string(),
+            amount,
+        })
+        .collect();
+
+    let funds_str = info
+        .funds
+        .iter()
+        .map(|c| format!("{}{}", c.amount, c.denom))
+        .collect::<Vec<_>>()
+        .join(",");
+    Ok(Response::new()
+        .add_messages(msgs)
+        .add_attribute("action", "sponsor")
+        .add_attribute("sponsor", info.sender)
+        .add_attribute("owner", owner)
+        .add_attribute("repo", repo)
+        .add_attribute("funds", funds_str)
+        .add_attribute("message", message))
+}
+
+/// Replace the revenue-split table (§3). Owner only.
+fn exec_set_revenue_splits(
+    deps: DepsMut,
+    info: MessageInfo,
+    repo: String,
+    splits: Vec<SplitRecipient>,
+) -> Result<Response, ContractError> {
+    load_repo(deps.as_ref(), &info.sender, &repo)?;
+    if splits.len() > 20 {
+        return Err(ContractError::InvalidSplits {
+            reason: "too many recipients (max 20)".to_string(),
+        });
+    }
+    let mut total: u32 = 0;
+    let mut validated: Vec<SplitEntry> = Vec::with_capacity(splits.len());
+    for s in splits {
+        let address = deps.api.addr_validate(&s.address)?;
+        if s.bps == 0 {
+            return Err(ContractError::InvalidSplits {
+                reason: format!("zero share for {address}"),
+            });
+        }
+        if address == info.sender {
+            return Err(ContractError::InvalidSplits {
+                reason: "owner receives the remainder implicitly".to_string(),
+            });
+        }
+        if validated.iter().any(|v| v.address == address) {
+            return Err(ContractError::InvalidSplits {
+                reason: format!("duplicate recipient {address}"),
+            });
+        }
+        total += u32::from(s.bps);
+        validated.push(SplitEntry {
+            address,
+            bps: s.bps,
+        });
+    }
+    if total > 10_000 {
+        return Err(ContractError::InvalidSplits {
+            reason: format!("shares sum to {total} bps (> 10000)"),
+        });
+    }
+    if validated.is_empty() {
+        REVENUE_SPLITS.remove(deps.storage, (&info.sender, &repo));
+    } else {
+        REVENUE_SPLITS.save(deps.storage, (&info.sender, &repo), &validated)?;
+    }
+    Ok(Response::new()
+        .add_attribute("action", "set_revenue_splits")
+        .add_attribute("owner", info.sender)
+        .add_attribute("repo", repo)
+        .add_attribute("total_bps", total.to_string()))
+}
+
+fn validate_username(name: &str) -> Result<(), ContractError> {
+    let ok = (3..=32).contains(&name.len())
+        && !name.starts_with('-')
+        && !name.ends_with('-')
+        && !name.starts_with("inj1") // never shadow bech32 addresses
+        && name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+    if ok {
+        Ok(())
+    } else {
+        Err(ContractError::InvalidUsername {
+            name: name.to_string(),
+        })
+    }
+}
+
+/// Register a deposit-backed username (§4).
+fn exec_register_username(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    name: String,
+) -> Result<Response, ContractError> {
+    validate_username(&name)?;
+    if USERNAMES.has(deps.storage, &name) {
+        return Err(ContractError::UsernameTaken { name });
+    }
+    if let Some(existing) = ADDR_TO_NAME.may_load(deps.storage, &info.sender)? {
+        return Err(ContractError::AlreadyHasUsername { name: existing });
+    }
+    let cfg = CONFIG.load(deps.storage)?;
+    let expected = &cfg.username_deposit;
+    let paid_ok = info.funds.len() == 1
+        && info.funds[0].denom == expected.denom
+        && info.funds[0].amount == expected.amount;
+    if !paid_ok {
+        return Err(ContractError::DepositMismatch {
+            expected: format!("{}{}", expected.amount, expected.denom),
+            actual: info
+                .funds
+                .iter()
+                .map(|c| format!("{}{}", c.amount, c.denom))
+                .collect::<Vec<_>>()
+                .join(","),
+        });
+    }
+    USERNAMES.save(
+        deps.storage,
+        &name,
+        &UsernameRecord {
+            owner: info.sender.clone(),
+            deposit: expected.clone(),
+            registered_at: env.block.time.seconds(),
+        },
+    )?;
+    ADDR_TO_NAME.save(deps.storage, &info.sender, &name)?;
+    Ok(Response::new()
+        .add_attribute("action", "register_username")
+        .add_attribute("name", name)
+        .add_attribute("owner", info.sender))
+}
+
+/// Release the sender's username and refund the escrowed deposit.
+fn exec_release_username(deps: DepsMut, info: MessageInfo) -> Result<Response, ContractError> {
+    let name = ADDR_TO_NAME
+        .may_load(deps.storage, &info.sender)?
+        .ok_or(ContractError::UsernameNotFound {
+            name: "<none held by sender>".to_string(),
+        })?;
+    let record = USERNAMES.load(deps.storage, &name)?;
+    USERNAMES.remove(deps.storage, &name);
+    ADDR_TO_NAME.remove(deps.storage, &info.sender);
+    Ok(Response::new()
+        .add_message(BankMsg::Send {
+            to_address: info.sender.to_string(),
+            amount: vec![record.deposit],
+        })
+        .add_attribute("action", "release_username")
+        .add_attribute("name", name)
+        .add_attribute("owner", info.sender))
+}
+
+/// Update treasury / fee within the hard cap. Admin only.
+fn exec_set_fee_config(
+    deps: DepsMut,
+    info: MessageInfo,
+    treasury: Option<String>,
+    platform_fee_bps: Option<u16>,
+) -> Result<Response, ContractError> {
+    let mut cfg = CONFIG.load(deps.storage)?;
+    if info.sender != cfg.admin {
+        return Err(ContractError::Unauthorized {});
+    }
+    if let Some(t) = treasury {
+        cfg.treasury = deps.api.addr_validate(&t)?;
+    }
+    if let Some(bps) = platform_fee_bps {
+        if bps > MAX_PLATFORM_FEE_BPS {
+            return Err(ContractError::FeeTooHigh {
+                bps,
+                max: MAX_PLATFORM_FEE_BPS,
+            });
+        }
+        cfg.platform_fee_bps = bps;
+    }
+    CONFIG.save(deps.storage, &cfg)?;
+    Ok(Response::new()
+        .add_attribute("action", "set_fee_config")
+        .add_attribute("treasury", cfg.treasury)
+        .add_attribute("platform_fee_bps", cfg.platform_fee_bps.to_string()))
+}
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
@@ -528,6 +837,49 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
             to_json_binary(&ConfigResponse {
                 admin: cfg.admin.to_string(),
                 moderation_committee: cfg.moderation_committee.map(|a| a.to_string()),
+                treasury: cfg.treasury.to_string(),
+                platform_fee_bps: cfg.platform_fee_bps,
+                username_deposit: cfg.username_deposit,
+            })
+        }
+        QueryMsg::ResolveUsername { name } => {
+            let rec = USERNAMES.load(deps.storage, &name)?;
+            to_json_binary(&UsernameResponse {
+                name,
+                owner: rec.owner.to_string(),
+                registered_at: rec.registered_at,
+            })
+        }
+        QueryMsg::AddressUsername { address } => {
+            let addr = deps.api.addr_validate(&address)?;
+            let name = ADDR_TO_NAME.may_load(deps.storage, &addr)?;
+            to_json_binary(&AddressUsernameResponse { address, name })
+        }
+        QueryMsg::RevenueSplits { owner, repo } => {
+            let owner_addr = deps.api.addr_validate(&owner)?;
+            let splits = REVENUE_SPLITS
+                .may_load(deps.storage, (&owner_addr, &repo))?
+                .unwrap_or_default();
+            to_json_binary(&RevenueSplitsResponse {
+                owner,
+                repo,
+                splits,
+            })
+        }
+        QueryMsg::SponsorTotals { owner, repo } => {
+            let owner_addr = deps.api.addr_validate(&owner)?;
+            let totals = SPONSOR_TOTALS
+                .prefix((&owner_addr, &repo))
+                .range(deps.storage, None, None, Order::Ascending)
+                .map(|item| {
+                    let (denom, amount) = item?;
+                    Ok(SponsorTotal { denom, amount })
+                })
+                .collect::<StdResult<_>>()?;
+            to_json_binary(&SponsorTotalsResponse {
+                owner,
+                repo,
+                totals,
             })
         }
     }

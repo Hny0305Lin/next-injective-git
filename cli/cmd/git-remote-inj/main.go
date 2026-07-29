@@ -35,13 +35,23 @@ func run() error {
 	if cfg.ContractAddress == "" {
 		return fmt.Errorf("contract_address not configured (run `igit config set contract_address <addr>`)")
 	}
+	cc := chain.New(cfg)
+	// URLs may carry a registered username instead of a bech32 address (§4)
+	if !repoURL.OwnerIsAddress() {
+		owner, err := cc.ResolveUsername(repoURL.Owner)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "git-remote-inj: %s -> %s\n", repoURL.Owner, owner)
+		repoURL.Owner = owner
+	}
 	gitRepo, err := gitio.FromEnv()
 	if err != nil {
 		return err
 	}
 	helper := remote.NewHelper(
 		repoURL,
-		chain.New(cfg),
+		cc,
 		ipfs.New(cfg.IPFSAPI, cfg.IPFSGateway),
 		gitRepo,
 		os.Stdin, os.Stdout, os.Stderr,
