@@ -770,8 +770,9 @@ function SponsorsTab({
   );
 }
 
-// In-browser sponsorship: connect Keplr, sign a Sponsor tx, funds split
-// instantly in the contract. Turns the read-only wall into a write action.
+// In-browser sponsorship. Cosmos wallets (Keplr/Leap/OKX) go through the
+// audited CosmJS path; MetaMask goes through the EIP-712 SDK path
+// (dynamically imported so the heavy SDK stays out of the main bundle).
 function SponsorForm({
   cfg,
   addr,
@@ -787,38 +788,55 @@ function SponsorForm({
   const [busy, setBusy] = useState(false);
   const [txhash, setTxhash] = useState("");
   const [err, setErr] = useState("");
-
+  const hasEth = typeof window !== "undefined" && !!(window as { ethereum?: unknown }).ethereum;
   const isOwnRepo = wallet?.address === addr;
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!wallet) return;
+  const run = async (fn: () => Promise<string>) => {
     setBusy(true);
     setErr("");
     setTxhash("");
     try {
-      const hash = await sponsorWithKeplr(wallet, cfg, addr, repo, amount, message.trim());
-      setTxhash(hash);
+      setTxhash(await fn());
       setMessage("");
       void refreshBalance();
-    } catch (e2) {
-      setErr(String(e2 instanceof Error ? e2.message : e2));
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
     } finally {
       setBusy(false);
     }
   };
 
+  const sponsorCosmos = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!wallet) return;
+    void run(() => sponsorWithKeplr(wallet, cfg, addr, repo, amount, message.trim()));
+  };
+
+  const sponsorMetaMask = () => {
+    void run(async () => {
+      const mm = await import("../lib/metamask");
+      return mm.sponsorWithMetaMask(cfg, addr, repo, amount, message.trim());
+    });
+  };
+
+  const canCosmos = !!wallet && !isOwnRepo;
+  const showConnect = !wallet && !hasEth;
+
   return (
     <div className="card sponsor-form">
       <div className="sponsor-form-title">💚 Sponsor this repository</div>
-      {!wallet ? (
+
+      {isOwnRepo && (
+        <div className="muted" style={{ marginBottom: 8 }}>
+          Connected Cosmos wallet owns this repo — sponsor from another account or via MetaMask.
+        </div>
+      )}
+
+      {showConnect ? (
         <div className="sponsor-connect">
           <span className="muted">Connect a wallet to sponsor directly in the browser.</span>
           {available.length <= 1 ? (
-            <button
-              onClick={() => connect(available[0]?.id ?? "keplr")}
-              disabled={connecting}
-            >
+            <button onClick={() => connect(available[0]?.id ?? "keplr")} disabled={connecting}>
               {connecting ? "connecting…" : `Connect ${available[0]?.label ?? "Wallet"}`}
             </button>
           ) : (
@@ -829,10 +847,8 @@ function SponsorForm({
             ))
           )}
         </div>
-      ) : isOwnRepo ? (
-        <span className="muted">This is your own repository — sponsorships come from others.</span>
       ) : (
-        <form className="sponsor-fields" onSubmit={submit}>
+        <form className="sponsor-fields" onSubmit={sponsorCosmos}>
           <input
             className="field amount"
             value={amount}
@@ -848,9 +864,16 @@ function SponsorForm({
             placeholder="message for the sponsor wall (optional)"
             maxLength={256}
           />
-          <button type="submit" disabled={busy}>
-            {busy ? "signing…" : "Sponsor"}
-          </button>
+          {canCosmos && (
+            <button type="submit" disabled={busy}>
+              {busy ? "signing…" : `Sponsor (${wallet!.providerLabel})`}
+            </button>
+          )}
+          {hasEth && (
+            <button type="button" onClick={sponsorMetaMask} disabled={busy}>
+              {busy ? "signing…" : "Sponsor with MetaMask"}
+            </button>
+          )}
         </form>
       )}
       {err && <div className="error" style={{ marginTop: 10 }}>{err}</div>}

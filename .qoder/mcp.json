@@ -1,0 +1,11 @@
+{
+	"mcpServers": {
+		"injective": {
+			"command": "pnpm",
+			"args": [
+				"-y",
+				"@injectivelabs/mcp-server"
+			]
+		}
+	}
+}

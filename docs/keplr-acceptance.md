@@ -37,3 +37,33 @@
 
 ## 反馈给我
 把第 5 步的 tx hash（或任何报错文案）发我，我据此确认闭环或修问题。
+
+---
+
+# MetaMask 网页赞助 — 手动验收（EIP-712）
+
+> MetaMask 走的是完全不同的路径（EIP-712，不是 Cosmos 签名），**这部分我无法自动验证**，
+> 只能靠你手动测。用 `@injectivelabs/sdk-ts@1.20.27`（投毒事件后的干净版；恶意版 1.20.21 已被 npm 弃用）
+> 生成 EIP-712 类型数据，直连 `window.ethereum` 的 `eth_signTypedData_v4` 签名。SDK 通过动态 import
+> 拆成独立 chunk，不影响已验证的 Cosmos 钱包路径。
+
+## 准备
+1. 浏览器装 [MetaMask](https://metamask.io/)，新建/选一个账户。
+2. 该账户对应的 Injective 地址：MetaMask 是 `0x...` 以太坊地址，Injective 会推导出对应的 `inj1...`。
+   页面点 “Sponsor with MetaMask” 时会自动推导；你也可以先转点测试 INJ 到那个 inj 地址（付 gas）。
+   - 拿 inj 地址：连接后控制台会显示，或用别的工具把 `0x` 转 bech32；实在不确定就先跑一次，报错会带出地址，再让我转测试币。
+
+## 验收步骤
+1. 打开某个**不是你自己**的仓库 sponsors 页，如 `#/inj1sh4v.../demo-showcase/sponsors`。
+2. 绿框卡片里除了 Cosmos 的 Sponsor 按钮，应多一个 **“Sponsor with MetaMask”**（仅当检测到 `window.ethereum`）。
+3. 填金额（如 `0.05`）+ 留言，点 **Sponsor with MetaMask**。
+4. MetaMask 弹出 **签名请求（Signature request，EIP-712 类型数据）**，确认签名。
+5. 期望：出现 `✅ sponsored! tx …`；刷新后赞助墙出现该笔。
+
+## 最可能的坑（若失败，按顺序排查）
+- **签名验证失败 / account not found**：该 inj 地址还没在链上激活（没余额）。先转点测试 INJ 过去再试。
+- **evmChainId 不对**：代码里用的是 `EvmChainId.Injective`(888) 对应 injective-888。若链上报 EIP-712 domain 不匹配，把 `web/src/lib/metamask.ts` 里两处 `EvmChainId.Injective` 调整后重试——这是最可能需要微调的点。
+- **broadcast 报错**：把 MetaMask 弹窗里的 EIP-712 内容 + 页面报错原文发我，我据此定位。
+
+## 反馈给我
+把 tx hash（成功）或完整报错文案（失败）发我。因为这条路径我没法自己验证，你的这次实测就是唯一的正确性判据。
