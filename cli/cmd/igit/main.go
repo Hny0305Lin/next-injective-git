@@ -21,6 +21,15 @@ Usage:
   igit clone-url <name>                print the inj:// URL of your repo
   igit repos [owner]                   list repositories of an owner
   igit refs <owner> <repo>             list on-chain refs of a repository
+  igit collab add <repo> <address> [maintainer|reader]
+                                       grant a collaborator role (owner only)
+  igit collab remove <repo> <address>  remove a collaborator (owner only)
+  igit collab list <owner> <repo>      list collaborators of a repository
+  igit transfer <repo> <new-owner>     transfer repository ownership
+  igit repo edit <repo> description <text...>
+  igit repo edit <repo> branch <name>  update repo metadata (owner only)
+  igit mod <owner> <repo> <active|delisted|frozen> [reason-hash]
+                                       set moderation status (committee/admin)
   igit key show                        show the configured signing address
   igit key new <name>                  create a key in the injectived keyring
   igit config list                     show current configuration
@@ -32,7 +41,7 @@ Config keys:
   injectived_bin gas_prices ipfs_api ipfs_gateway
 `
 
-const version = "0.1.0"
+const version = "0.2.0"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -59,6 +68,14 @@ func run(args []string) error {
 		return cmdRepos(cfg, args[1:])
 	case "refs":
 		return cmdRefs(cfg, args[1:])
+	case "collab":
+		return cmdCollab(cfg, args[1:])
+	case "transfer":
+		return cmdTransfer(cfg, args[1:])
+	case "repo":
+		return cmdRepo(cfg, args[1:])
+	case "mod":
+		return cmdMod(cfg, args[1:])
 	case "key":
 		return cmdKey(cfg, args[1:])
 	case "config":
@@ -158,6 +175,131 @@ func cmdRefs(cfg config.Config, args []string) error {
 	for _, r := range refs {
 		fmt.Printf("%s %-40s packfiles:%d\n", r.CommitSha, r.RefName, len(r.PackURIs))
 	}
+	return nil
+}
+
+func cmdCollab(cfg config.Config, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: igit collab <add|remove|list> ...")
+	}
+	cc := chain.New(cfg)
+	switch args[0] {
+	case "add":
+		if len(args) < 3 {
+			return fmt.Errorf("usage: igit collab add <repo> <address> [maintainer|reader]")
+		}
+		if err := cfg.Validate(); err != nil {
+			return err
+		}
+		role := "maintainer"
+		if len(args) > 3 {
+			role = args[3]
+		}
+		if role != "maintainer" && role != "reader" {
+			return fmt.Errorf("invalid role %q (maintainer|reader)", role)
+		}
+		if err := cc.SetCollaborator(args[1], args[2], role); err != nil {
+			return err
+		}
+		fmt.Printf("collaborator %s added to %s as %s\n", args[2], args[1], role)
+		return nil
+	case "remove":
+		if len(args) != 3 {
+			return fmt.Errorf("usage: igit collab remove <repo> <address>")
+		}
+		if err := cfg.Validate(); err != nil {
+			return err
+		}
+		if err := cc.SetCollaborator(args[1], args[2], ""); err != nil {
+			return err
+		}
+		fmt.Printf("collaborator %s removed from %s\n", args[2], args[1])
+		return nil
+	case "list":
+		if len(args) != 3 {
+			return fmt.Errorf("usage: igit collab list <owner> <repo>")
+		}
+		collabs, err := cc.ListCollaborators(args[1], args[2])
+		if err != nil {
+			return err
+		}
+		if len(collabs) == 0 {
+			fmt.Println("no collaborators")
+			return nil
+		}
+		for _, c := range collabs {
+			fmt.Printf("%-12s %s\n", c.Role, c.Address)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unknown collab subcommand %q", args[0])
+	}
+}
+
+func cmdTransfer(cfg config.Config, args []string) error {
+	if len(args) != 2 {
+		return fmt.Errorf("usage: igit transfer <repo> <new-owner>")
+	}
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	if !strings.HasPrefix(args[1], "inj1") {
+		return fmt.Errorf("new owner %q must be an inj1... bech32 address", args[1])
+	}
+	if err := chain.New(cfg).TransferOwnership(args[0], args[1]); err != nil {
+		return err
+	}
+	fmt.Printf("ownership of %s transferred to %s\n", args[0], args[1])
+	fmt.Printf("new clone URL: inj://%s/%s\n", args[1], args[0])
+	return nil
+}
+
+func cmdRepo(cfg config.Config, args []string) error {
+	if len(args) < 4 || args[0] != "edit" {
+		return fmt.Errorf("usage: igit repo edit <repo> <description|branch> <value...>")
+	}
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	repo := args[1]
+	var description, branch *string
+	switch args[2] {
+	case "description":
+		d := strings.Join(args[3:], " ")
+		description = &d
+	case "branch":
+		branch = &args[3]
+	default:
+		return fmt.Errorf("unknown field %q (description|branch)", args[2])
+	}
+	if err := chain.New(cfg).UpdateRepoInfo(repo, description, branch); err != nil {
+		return err
+	}
+	fmt.Printf("repo %s updated\n", repo)
+	return nil
+}
+
+func cmdMod(cfg config.Config, args []string) error {
+	if len(args) < 3 {
+		return fmt.Errorf("usage: igit mod <owner> <repo> <active|delisted|frozen> [reason-hash]")
+	}
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	status := args[2]
+	switch status {
+	case "active", "delisted", "frozen":
+	default:
+		return fmt.Errorf("invalid status %q (active|delisted|frozen)", status)
+	}
+	reason := ""
+	if len(args) > 3 {
+		reason = args[3]
+	}
+	if err := chain.New(cfg).SetModerationStatus(args[0], args[1], status, reason); err != nil {
+		return err
+	}
+	fmt.Printf("%s/%s moderation status set to %s\n", args[0], args[1], status)
 	return nil
 }
 

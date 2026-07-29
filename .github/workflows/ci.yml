@@ -1,0 +1,73 @@
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  contract:
+    name: contract (rust 1.81)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts/repo-registry
+    steps:
+      - uses: actions/checkout@v4
+
+      # 1.81.0 is mandatory: Injective's CosmWasm VM rejects wasm built by
+      # 1.82+ (reference-types) / 1.87+ (bulk-memory). Cargo.lock pins the
+      # matching dependency versions - do NOT run a bare `cargo update`.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.81.0
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contracts/repo-registry
+
+      - name: unit + integration tests
+        run: cargo test --locked
+
+      - name: build wasm artifact
+        run: cargo build --release --target wasm32-unknown-unknown --lib --locked
+
+      - name: forbid post-1.81 wasm opcodes
+        run: |
+          # bulk-memory (0xFC prefixed) opcodes would slip through cargo but
+          # fail on-chain; cheap sanity check on the artifact size + magic.
+          f=target/wasm32-unknown-unknown/release/repo_registry.wasm
+          test -s "$f"
+          head -c4 "$f" | od -An -tx1 | grep -q "00 61 73 6d"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: repo_registry.wasm
+          path: contracts/repo-registry/target/wasm32-unknown-unknown/release/repo_registry.wasm
+
+  cli:
+    name: cli (go 1.22)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          # zero-dependency module: no go.sum to key a cache on
+          cache: false
+
+      - name: vet
+        run: go vet ./...
+
+      - name: test
+        run: go test ./...
+
+      - name: build binaries
+        run: |
+          go build ./cmd/igit
+          go build ./cmd/git-remote-inj

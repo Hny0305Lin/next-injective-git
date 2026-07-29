@@ -59,6 +59,16 @@ type resolveRefResponse struct {
 	PackURIs  []string `json:"pack_uris"`
 }
 
+// CollaboratorInfo mirrors the contract's collaborator list item.
+type CollaboratorInfo struct {
+	Address string `json:"address"`
+	Role    string `json:"role"`
+}
+
+type listCollaboratorsResponse struct {
+	Collaborators []CollaboratorInfo `json:"collaborators"`
+}
+
 // ---- smart queries via LCD ----
 
 type lcdSmartResponse struct {
@@ -153,9 +163,39 @@ func (c *Client) RepoInfo(owner, repo string) (*RepoInfo, error) {
 	return &out, nil
 }
 
+// ListCollaborators returns all collaborators of owner/repo (handles pagination).
+func (c *Client) ListCollaborators(owner, repo string) ([]CollaboratorInfo, error) {
+	var all []CollaboratorInfo
+	var startAfter *string
+	for {
+		query := map[string]any{
+			"list_collaborators": map[string]any{
+				"owner":       owner,
+				"repo":        repo,
+				"start_after": startAfter,
+				"limit":       100,
+			},
+		}
+		var page listCollaboratorsResponse
+		if err := c.SmartQuery(query, &page); err != nil {
+			return nil, err
+		}
+		all = append(all, page.Collaborators...)
+		if len(page.Collaborators) < 100 {
+			return all, nil
+		}
+		last := page.Collaborators[len(page.Collaborators)-1].Address
+		startAfter = &last
+	}
+}
+
 // ---- transactions via injectived ----
 
-// Execute signs and broadcasts a wasm execute tx through injectived.
+// Execute signs and broadcasts a wasm execute tx through injectived,
+// then waits for inclusion and surfaces the DeliverTx result: with
+// --broadcast-mode sync the immediate response only covers CheckTx, so
+// contract-level rejections (frozen repo, ref conflict, unauthorized)
+// only show up once the tx is in a block.
 func (c *Client) Execute(execMsg any) error {
 	raw, err := json.Marshal(execMsg)
 	if err != nil {
@@ -195,7 +235,48 @@ func (c *Client) Execute(execMsg any) error {
 	if result.Code != 0 {
 		return fmt.Errorf("tx rejected (code %d): %s", result.Code, result.RawLog)
 	}
-	return nil
+	if result.TxHash == "" {
+		return fmt.Errorf("injectived returned no txhash:\n%s", out)
+	}
+	return c.waitTx(result.TxHash)
+}
+
+// waitTx polls the LCD until the tx is included and returns an error if
+// DeliverTx failed (e.g. the contract rejected the message).
+func (c *Client) waitTx(txHash string) error {
+	endpoint := fmt.Sprintf(
+		"%s/cosmos/tx/v1beta1/txs/%s",
+		strings.TrimRight(c.cfg.LCDEndpoint, "/"), url.PathEscape(txHash),
+	)
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		resp, err := c.http.Get(endpoint)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			var body struct {
+				TxResponse struct {
+					Code   int    `json:"code"`
+					RawLog string `json:"raw_log"`
+				} `json:"tx_response"`
+			}
+			err = json.NewDecoder(resp.Body).Decode(&body)
+			resp.Body.Close()
+			if err == nil {
+				if body.TxResponse.Code != 0 {
+					return fmt.Errorf(
+						"tx %s failed on chain (code %d): %s",
+						txHash, body.TxResponse.Code, body.TxResponse.RawLog,
+					)
+				}
+				return nil
+			}
+		} else if resp != nil {
+			resp.Body.Close()
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("tx %s not found on chain after 30s (network congestion?)", txHash)
+		}
+		time.Sleep(2 * time.Second)
+	}
 }
 
 // CreateRepo registers a new repository owned by the configured key.
@@ -240,6 +321,56 @@ func (c *Client) DeleteRef(owner, repo, refName string) error {
 			"ref_name": refName,
 		},
 	})
+}
+
+// SetCollaborator adds/updates a collaborator role ("maintainer"|"reader");
+// an empty role removes the collaborator. Owner only.
+func (c *Client) SetCollaborator(repo, collaborator, role string) error {
+	inner := map[string]any{
+		"repo":         repo,
+		"collaborator": collaborator,
+	}
+	if role != "" {
+		inner["role"] = role
+	}
+	return c.Execute(map[string]any{"set_collaborator": inner})
+}
+
+// TransferOwnership moves a repo owned by the configured key to newOwner.
+func (c *Client) TransferOwnership(repo, newOwner string) error {
+	return c.Execute(map[string]any{
+		"transfer_ownership": map[string]any{
+			"repo":      repo,
+			"new_owner": newOwner,
+		},
+	})
+}
+
+// UpdateRepoInfo updates description and/or default branch. Owner only;
+// nil pointers leave the field unchanged.
+func (c *Client) UpdateRepoInfo(repo string, description, defaultBranch *string) error {
+	inner := map[string]any{"repo": repo}
+	if description != nil {
+		inner["description"] = *description
+	}
+	if defaultBranch != nil {
+		inner["default_branch"] = *defaultBranch
+	}
+	return c.Execute(map[string]any{"update_repo_info": inner})
+}
+
+// SetModerationStatus changes a repo's moderation state
+// ("active"|"delisted"|"frozen"). Committee/admin only.
+func (c *Client) SetModerationStatus(owner, repo, status, reasonHash string) error {
+	inner := map[string]any{
+		"owner":  owner,
+		"repo":   repo,
+		"status": status,
+	}
+	if reasonHash != "" {
+		inner["reason_hash"] = reasonHash
+	}
+	return c.Execute(map[string]any{"set_moderation_status": inner})
 }
 
 // OwnerAddress returns the bech32 address of the configured key.
