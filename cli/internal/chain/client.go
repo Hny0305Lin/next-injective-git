@@ -31,21 +31,22 @@ func New(cfg config.Config) *Client {
 
 // RefInfo mirrors the contract's RefInfo response item.
 type RefInfo struct {
-	RefName      string   `json:"ref_name"`
-	CommitSha    string   `json:"commit_sha"`
-	PackfileCids []string `json:"packfile_cids"`
-	UpdatedAt    uint64   `json:"updated_at"`
-	UpdatedBy    string   `json:"updated_by"`
+	RefName   string   `json:"ref_name"`
+	CommitSha string   `json:"commit_sha"`
+	PackURIs  []string `json:"pack_uris"`
+	UpdatedAt uint64   `json:"updated_at"`
+	UpdatedBy string   `json:"updated_by"`
 }
 
 // RepoInfo mirrors the contract's RepoInfoResponse.
 type RepoInfo struct {
-	Owner         string `json:"owner"`
-	Name          string `json:"name"`
-	Description   string `json:"description"`
-	DefaultBranch string `json:"default_branch"`
-	CreatedAt     uint64 `json:"created_at"`
-	UpdatedAt     uint64 `json:"updated_at"`
+	Owner            string `json:"owner"`
+	Name             string `json:"name"`
+	Description      string `json:"description"`
+	DefaultBranch    string `json:"default_branch"`
+	CreatedAt        uint64 `json:"created_at"`
+	UpdatedAt        uint64 `json:"updated_at"`
+	ModerationStatus string `json:"moderation_status"`
 }
 
 type listRefsResponse struct {
@@ -53,9 +54,9 @@ type listRefsResponse struct {
 }
 
 type resolveRefResponse struct {
-	RefName      string   `json:"ref_name"`
-	CommitSha    string   `json:"commit_sha"`
-	PackfileCids []string `json:"packfile_cids"`
+	RefName   string   `json:"ref_name"`
+	CommitSha string   `json:"commit_sha"`
+	PackURIs  []string `json:"pack_uris"`
 }
 
 // ---- smart queries via LCD ----
@@ -124,7 +125,7 @@ func (c *Client) ListRefs(owner, repo string) ([]RefInfo, error) {
 	}
 }
 
-// ResolveRef resolves one ref to (sha, cids).
+// ResolveRef resolves one ref to (sha, pack URIs).
 func (c *Client) ResolveRef(owner, repo, refName string) (string, []string, error) {
 	query := map[string]any{
 		"resolve_ref": map[string]any{
@@ -137,7 +138,7 @@ func (c *Client) ResolveRef(owner, repo, refName string) (string, []string, erro
 	if err := c.SmartQuery(query, &out); err != nil {
 		return "", nil, err
 	}
-	return out.CommitSha, out.PackfileCids, nil
+	return out.CommitSha, out.PackURIs, nil
 }
 
 // RepoInfo fetches repository metadata.
@@ -215,14 +216,14 @@ func (c *Client) CreateRepo(name, description, defaultBranch string) error {
 }
 
 // UpdateRef pushes a new tip for a ref.
-func (c *Client) UpdateRef(owner, repo, refName, commitSha string, cids []string, expectedSha string, force bool) error {
+func (c *Client) UpdateRef(owner, repo, refName, commitSha string, uris []string, expectedSha string, force bool) error {
 	inner := map[string]any{
-		"owner":         owner,
-		"repo":          repo,
-		"ref_name":      refName,
-		"commit_sha":    commitSha,
-		"packfile_cids": cids,
-		"force":         force,
+		"owner":      owner,
+		"repo":       repo,
+		"ref_name":   refName,
+		"commit_sha": commitSha,
+		"pack_uris":  uris,
+		"force":      force,
 	}
 	if expectedSha != "" {
 		inner["expected_sha"] = expectedSha

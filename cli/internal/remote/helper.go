@@ -5,6 +5,7 @@ package remote
 import (
 	"bufio"
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"strings"
@@ -121,9 +122,9 @@ func (h *Helper) cmdFetchBatch(first string) error {
 		}
 	}
 
-	// collect the CID set across all requested refs, preserving order
+	// collect the pack URI set across all requested refs, preserving order
 	seen := map[string]bool{}
-	var cids []string
+	var uris []string
 	for _, w := range wanted {
 		parts := strings.Fields(w)
 		if len(parts) != 3 {
@@ -133,34 +134,46 @@ func (h *Helper) cmdFetchBatch(first string) error {
 		entry, ok := h.remoteRefs[refName]
 		if !ok {
 			// list may not have run in this process; resolve directly
-			_, refCids, err := h.chain.ResolveRef(h.url.Owner, h.url.Repo, refName)
+			_, refURIs, err := h.chain.ResolveRef(h.url.Owner, h.url.Repo, refName)
 			if err != nil {
 				return fmt.Errorf("resolve %s: %w", refName, err)
 			}
-			entry = chain.RefInfo{RefName: refName, PackfileCids: refCids}
+			entry = chain.RefInfo{RefName: refName, PackURIs: refURIs}
 		}
-		for _, cid := range entry.PackfileCids {
-			if !seen[cid] {
-				seen[cid] = true
-				cids = append(cids, cid)
+		for _, uri := range entry.PackURIs {
+			if !seen[uri] {
+				seen[uri] = true
+				uris = append(uris, uri)
 			}
 		}
 	}
 
-	for i, cid := range cids {
-		h.progress("downloading packfile %d/%d (%s)", i+1, len(cids), cid)
-		body, err := h.ipfs.Cat(cid)
+	for i, uri := range uris {
+		h.progress("downloading packfile %d/%d (%s)", i+1, len(uris), uri)
+		body, err := h.fetchPack(uri)
 		if err != nil {
 			return err
 		}
 		err = h.git.IndexPack(body)
 		body.Close()
 		if err != nil {
-			return fmt.Errorf("ingest packfile %s: %w", cid, err)
+			return fmt.Errorf("ingest packfile %s: %w", uri, err)
 		}
 	}
 	h.printf("\n")
 	return nil
+}
+
+// fetchPack downloads one pack by storage URI. Only ipfs:// is supported
+// today; bare CIDs are accepted for pre-URI on-chain entries.
+func (h *Helper) fetchPack(uri string) (io.ReadCloser, error) {
+	if cid, ok := strings.CutPrefix(uri, "ipfs://"); ok {
+		return h.ipfs.Cat(cid)
+	}
+	if strings.Contains(uri, "://") {
+		return nil, fmt.Errorf("unsupported pack uri scheme: %s", uri)
+	}
+	return h.ipfs.Cat(uri)
 }
 
 type pushSpec struct {
@@ -214,14 +227,18 @@ func (h *Helper) pushOne(spec pushSpec) error {
 		return fmt.Errorf("cannot resolve local ref %s", spec.src)
 	}
 
-	// build incremental pack: exclude every remote tip we already have
+	// build incremental pack: exclude every remote tip we already have.
+	// force pushes are the exception: the contract replaces the whole CID
+	// list, so the new pack must be self-contained (full history).
 	var exclude []string
 	expectedSha := ""
 	if prev, ok := h.remoteRefs[spec.dst]; ok {
 		expectedSha = prev.CommitSha
 	}
-	for _, r := range h.remoteRefs {
-		exclude = append(exclude, r.CommitSha)
+	if !spec.force {
+		for _, r := range h.remoteRefs {
+			exclude = append(exclude, r.CommitSha)
+		}
 	}
 
 	h.progress("packing objects for %s", spec.dst)
@@ -231,34 +248,44 @@ func (h *Helper) pushOne(spec pushSpec) error {
 	}
 
 	var cids []string
-	if len(pack) > 0 {
+	// A pack with zero objects means everything reachable from localSha is
+	// already covered by packs referenced from other refs. An existing ref
+	// keeps its URI list; a brand-new ref (tag / branch alias) must stay
+	// fetchable even if those other refs are deleted later, so it gets a
+	// self-contained full pack instead.
+	if packEmpty(pack) {
+		if prev, ok := h.remoteRefs[spec.dst]; ok {
+			cids = prev.PackURIs
+		} else {
+			h.progress("no new objects; building self-contained pack for %s", spec.dst)
+			if pack, err = h.git.PackObjects(localSha, nil); err != nil {
+				return err
+			}
+		}
+	}
+	if len(cids) == 0 {
 		h.progress("uploading packfile (%d bytes) to IPFS", len(pack))
 		cid, err := h.ipfs.Add(spec.dst+".pack", bytes.NewReader(pack))
 		if err != nil {
 			return err
 		}
-		cids = append(cids, cid)
+		cids = append(cids, "ipfs://"+cid)
 		h.progress("packfile pinned: %s", cid)
-	} else if prev, ok := h.remoteRefs[spec.dst]; ok {
-		// no new objects (e.g. pointing a new branch at existing history):
-		// reuse the previous CID list so the ref stays fetchable
-		cids = prev.PackfileCids
-	}
-	if len(cids) == 0 {
-		// brand-new ref over existing objects: reuse CIDs from any ref
-		for _, r := range h.remoteRefs {
-			cids = append(cids, r.PackfileCids...)
-			break
-		}
-	}
-	if len(cids) == 0 {
-		return fmt.Errorf("nothing to push for %s", spec.dst)
 	}
 
 	h.progress("broadcasting update_ref tx for %s -> %s", spec.dst, localSha[:8])
 	return h.chain.UpdateRef(
 		h.url.Owner, h.url.Repo, spec.dst, localSha, cids, expectedSha, spec.force,
 	)
+}
+
+// packEmpty reports whether a packfile stream contains zero objects
+// (object count lives in the big-endian uint32 at bytes 8..12).
+func packEmpty(pack []byte) bool {
+	if len(pack) < 12 {
+		return true
+	}
+	return binary.BigEndian.Uint32(pack[8:12]) == 0
 }
 
 // sanitizeErr flattens an error into the single-line form the protocol needs.

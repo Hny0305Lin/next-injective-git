@@ -1,6 +1,6 @@
 [package]
 name = "repo-registry"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Next Injective Git - on-chain repository registry for Injective (CosmWasm)"
 license = "Apache-2.0"

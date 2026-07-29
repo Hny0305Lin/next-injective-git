@@ -2,10 +2,10 @@ use cosmwasm_std::Addr;
 use cw_multi_test::{App, ContractWrapper, Executor};
 
 use repo_registry::msg::{
-    ExecuteMsg, InstantiateMsg, ListRefsResponse, ListReposResponse, QueryMsg, RepoInfoResponse,
-    ResolveRefResponse,
+    ExecuteMsg, InstantiateMsg, ListRefsResponse, ListReposResponse, MigrateMsg, QueryMsg,
+    RepoInfoResponse, ResolveRefResponse,
 };
-use repo_registry::state::Role;
+use repo_registry::state::{ModerationStatus, Role};
 use repo_registry::ContractError;
 
 const SHA_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -26,7 +26,8 @@ fn setup() -> TestEnv {
         repo_registry::contract::execute,
         repo_registry::contract::instantiate,
         repo_registry::contract::query,
-    );
+    )
+    .with_migrate(repo_registry::contract::migrate);
     let code_id = app.store_code(Box::new(code));
     let alice = app.api().addr_make("alice");
     let bob = app.api().addr_make("bob");
@@ -35,10 +36,13 @@ fn setup() -> TestEnv {
         .instantiate_contract(
             code_id,
             alice.clone(),
-            &InstantiateMsg { admin: None },
+            &InstantiateMsg {
+                admin: None,
+                moderation_committee: None,
+            },
             &[],
             "repo-registry",
-            None,
+            Some(alice.to_string()),
         )
         .unwrap();
     TestEnv {
@@ -79,7 +83,8 @@ fn update_ref_msg(
         repo: repo.to_string(),
         ref_name: ref_name.to_string(),
         commit_sha: sha.to_string(),
-        packfile_cids: cids.into_iter().map(String::from).collect(),
+        // tests pass bare CIDs; wrap them in the canonical ipfs:// scheme
+        pack_uris: cids.into_iter().map(|c| format!("ipfs://{c}")).collect(),
         expected_sha: expected.map(String::from),
         force,
     }
@@ -176,7 +181,7 @@ fn push_and_resolve_ref() {
         )
         .unwrap();
     assert_eq!(resolved.commit_sha, SHA_A);
-    assert_eq!(resolved.packfile_cids, vec!["cid1"]);
+    assert_eq!(resolved.pack_uris, vec!["ipfs://cid1"]);
 
     // incremental push appends CID
     env.app
@@ -208,7 +213,7 @@ fn push_and_resolve_ref() {
         )
         .unwrap();
     assert_eq!(resolved.commit_sha, SHA_B);
-    assert_eq!(resolved.packfile_cids, vec!["cid1", "cid2"]);
+    assert_eq!(resolved.pack_uris, vec!["ipfs://cid1", "ipfs://cid2"]);
 }
 
 #[test]
@@ -271,7 +276,7 @@ fn stale_push_rejected_force_push_allowed() {
         )
         .unwrap();
     assert_eq!(resolved.commit_sha, SHA_C);
-    assert_eq!(resolved.packfile_cids, vec!["cid9"]);
+    assert_eq!(resolved.pack_uris, vec!["ipfs://cid9"]);
 }
 
 #[test]
@@ -602,7 +607,30 @@ fn invalid_inputs_rejected() {
         .unwrap_err();
     assert!(matches!(
         err.downcast::<ContractError>().unwrap(),
-        ContractError::EmptyPackfileCids {}
+        ContractError::EmptyPackUris {}
+    ));
+
+    // bare CID without scheme rejected
+    let err = env
+        .app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::UpdateRef {
+                owner: alice.to_string(),
+                repo: "hello".to_string(),
+                ref_name: "refs/heads/main".to_string(),
+                commit_sha: SHA_A.to_string(),
+                pack_uris: vec!["bafyrawcid".to_string()],
+                expected_sha: None,
+                force: false,
+            },
+            &[],
+        )
+        .unwrap_err();
+    assert!(matches!(
+        err.downcast::<ContractError>().unwrap(),
+        ContractError::InvalidPackUri { .. }
     ));
 
     // push to nonexistent repo
@@ -619,4 +647,141 @@ fn invalid_inputs_rejected() {
         err.downcast::<ContractError>().unwrap(),
         ContractError::RepoNotFound { .. }
     ));
+}
+
+#[test]
+fn moderation_freeze_blocks_push() {
+    let mut env = setup();
+    // alice instantiated with admin: None -> admin (and fallback moderator) is alice
+    let (alice, bob) = (env.alice.clone(), env.bob.clone());
+    create_repo(&mut env, &bob, "bobrepo");
+    env.app
+        .execute_contract(
+            bob.clone(),
+            env.contract.clone(),
+            &update_ref_msg(&bob, "bobrepo", "refs/heads/main", SHA_A, vec!["cid1"], None, false),
+            &[],
+        )
+        .unwrap();
+
+    // non-moderator cannot change moderation status
+    let err = env
+        .app
+        .execute_contract(
+            bob.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::SetModerationStatus {
+                owner: bob.to_string(),
+                repo: "bobrepo".to_string(),
+                status: ModerationStatus::Frozen,
+                reason_hash: None,
+            },
+            &[],
+        )
+        .unwrap_err();
+    assert!(matches!(
+        err.downcast::<ContractError>().unwrap(),
+        ContractError::Unauthorized {}
+    ));
+
+    // admin freezes the repo
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::SetModerationStatus {
+                owner: bob.to_string(),
+                repo: "bobrepo".to_string(),
+                status: ModerationStatus::Frozen,
+                reason_hash: Some("deadbeef".to_string()),
+            },
+            &[],
+        )
+        .unwrap();
+
+    // even the owner cannot push or delete refs while frozen
+    let err = env
+        .app
+        .execute_contract(
+            bob.clone(),
+            env.contract.clone(),
+            &update_ref_msg(
+                &bob,
+                "bobrepo",
+                "refs/heads/main",
+                SHA_B,
+                vec!["cid2"],
+                Some(SHA_A),
+                false,
+            ),
+            &[],
+        )
+        .unwrap_err();
+    assert!(matches!(
+        err.downcast::<ContractError>().unwrap(),
+        ContractError::RepoFrozen { .. }
+    ));
+
+    // status is visible in repo info
+    let info: RepoInfoResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::RepoInfo {
+                owner: bob.to_string(),
+                repo: "bobrepo".to_string(),
+            },
+        )
+        .unwrap();
+    assert_eq!(info.moderation_status, ModerationStatus::Frozen);
+
+    // unfreeze -> push works again
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::SetModerationStatus {
+                owner: bob.to_string(),
+                repo: "bobrepo".to_string(),
+                status: ModerationStatus::Active,
+                reason_hash: None,
+            },
+            &[],
+        )
+        .unwrap();
+    env.app
+        .execute_contract(
+            bob.clone(),
+            env.contract.clone(),
+            &update_ref_msg(
+                &bob,
+                "bobrepo",
+                "refs/heads/main",
+                SHA_B,
+                vec!["cid2"],
+                Some(SHA_A),
+                false,
+            ),
+            &[],
+        )
+        .unwrap();
+}
+
+#[test]
+fn migrate_same_contract_ok() {
+    let mut env = setup();
+    let alice = env.alice.clone();
+    // re-store the same code and migrate the instance to it (alice is the
+    // wasm-level admin set in setup)
+    let code = ContractWrapper::new(
+        repo_registry::contract::execute,
+        repo_registry::contract::instantiate,
+        repo_registry::contract::query,
+    )
+    .with_migrate(repo_registry::contract::migrate);
+    let new_code_id = env.app.store_code(Box::new(code));
+    env.app
+        .migrate_contract(alice, env.contract.clone(), &MigrateMsg {}, new_code_id)
+        .unwrap();
 }

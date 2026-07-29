@@ -20,9 +20,10 @@ git push inj main
        1. list for-push        → 合约 list_refs 查询远端 tips
        2. push refs/heads/main:refs/heads/main
           a. git pack-objects --revs --thin --stdout
-             （want = 本地 tip；exclude = 所有远端 tips，即增量 pack）
-          b. POST Kubo /api/v0/add?pin=true   → CID
-          c. injectived tx wasm execute {update_ref: {commit_sha, packfile_cids,
+             （want = 本地 tip；exclude = 所有远端 tips，即增量 pack；
+              force push / 新 ref 无新对象时改打全量自包含 pack）
+          b. POST Kubo /api/v0/add?pin=true   → ipfs://<cid>
+          c. injectived tx wasm execute {update_ref: {commit_sha, pack_uris,
              expected_sha, force}}            → 链上确认
        3. 回报 ok/error 给 git
 ```
@@ -33,7 +34,7 @@ git push inj main
 git clone inj://<owner>/<repo>
   └─ git-remote-inj
        1. list                 → 合约 list_refs + repo_info（HEAD symref）
-       2. fetch <sha> <ref>    → 取该 ref 的 packfile_cids
+       2. fetch <sha> <ref>    → 取该 ref 的 pack_uris
           a. Kubo /api/v0/cat（失败则公共网关 GET /ipfs/<cid>）
           b. git index-pack --stdin --fix-thin  逐个注入对象库
        3. git 自行完成 checkout
@@ -43,15 +44,18 @@ git clone inj://<owner>/<repo>
 
 | 存储 | Key | Value |
 |---|---|---|
-| `REPOS` | `(owner, repo_name)` | `Repo { owner, name, description, default_branch, created_at, updated_at }` |
-| `REFS` | `(owner, repo_name, ref_name)` | `RefEntry { commit_sha, packfile_cids[], updated_at, updated_by }` |
+| `CONFIG` | - | `Config { admin, moderation_committee? }` |
+| `REPOS` | `(owner, repo_name)` | `Repo { owner, name, description, default_branch, created_at, updated_at, moderation_status }` |
+| `REFS` | `(owner, repo_name, ref_name)` | `RefEntry { commit_sha, pack_uris[], updated_at, updated_by }` |
 | `COLLABORATORS` | `(owner, repo_name, addr)` | `Role::Maintainer \| Role::Reader` |
 
 关键决策：
 
-- **`packfile_cids` 是有序追加列表**：普通 push 追加新 CID（增量历史），按顺序 `index-pack` 全部包即可重建完整历史。force push 替换整个列表（丢弃的历史由新 pack 全量覆盖）。
+- **`pack_uris` 是有序追加列表**（通用 URI，当前为 `ipfs://<cid>`，为 Arweave/Filecoin 留演进空间）：普通 push 追加新 URI（增量历史），按顺序 `index-pack` 全部包即可重建完整历史。force push 替换整个列表，helper 侧对应改打**全量自包含 pack**（否则旧历史对象丢失、新 clone 无法重建）。
 - **乐观并发（`expected_sha`）**：客户端声明它所认为的远端 tip；不匹配则拒绝，防止两个 maintainer 并发 push 互相覆盖。这是"链上 fast-forward 检查"的轻量替代——合约无法遍历 Git DAG 验证祖先关系，由客户端 Git 自身完成 FF 校验，链上只做防竞争。
 - **权限收敛在合约**：只有 owner/maintainer 的 `update_ref` 交易能通过，签名即身份，无需额外账号体系。
+- **内容治理占位（open-questions §5.3）**：`moderation_status`（Active/Delisted/Frozen）由内容委员会（未设时回退到 admin）通过 `set_moderation_status` 变更，屏蔽理由文档 hash 随交易事件上链；Frozen 状态下 `update_ref`/`delete_ref` 全部拒绝。
+- **可升级（open-questions §7）**：合约带 `migrate` 入口（cw2 版本门控），testnet 用单签 admin 部署，主网切技术多签 + 14 天时间锁。
 
 ## 4. CLI 设计（cli/）
 

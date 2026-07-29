@@ -36,8 +36,14 @@ pub enum ContractError {
     #[error("invalid commit sha: {sha} (expected 40 or 64 hex chars)")]
     InvalidCommitSha { sha: String },
 
-    #[error("packfile_cids must not be empty")]
-    EmptyPackfileCids {},
+    #[error("pack_uris must not be empty")]
+    EmptyPackUris {},
+
+    #[error("invalid pack uri: {uri} (expected <scheme>://<locator>, e.g. ipfs://<cid>)")]
+    InvalidPackUri { uri: String },
+
+    #[error("repo is frozen by moderation: {owner}/{name}")]
+    RepoFrozen { owner: String, name: String },
 
     #[error("owner cannot be a collaborator of their own repo")]
     OwnerAsCollaborator {},

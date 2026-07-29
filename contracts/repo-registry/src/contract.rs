@@ -7,10 +7,13 @@ use cw_storage_plus::Bound;
 
 use crate::error::ContractError;
 use crate::msg::{
-    CollaboratorInfo, ExecuteMsg, InstantiateMsg, ListCollaboratorsResponse, ListRefsResponse,
-    ListReposResponse, QueryMsg, RefInfo, RepoInfoResponse, ResolveRefResponse,
+    CollaboratorInfo, ConfigResponse, ExecuteMsg, InstantiateMsg, ListCollaboratorsResponse,
+    ListRefsResponse, ListReposResponse, MigrateMsg, QueryMsg, RefInfo, RepoInfoResponse,
+    ResolveRefResponse,
 };
-use crate::state::{Config, Repo, RefEntry, Role, COLLABORATORS, CONFIG, REFS, REPOS};
+use crate::state::{
+    Config, ModerationStatus, Repo, RefEntry, Role, COLLABORATORS, CONFIG, REFS, REPOS,
+};
 
 const CONTRACT_NAME: &str = "crates.io:igit-repo-registry";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -30,10 +33,35 @@ pub fn instantiate(
         Some(a) => deps.api.addr_validate(&a)?,
         None => info.sender,
     };
-    CONFIG.save(deps.storage, &Config { admin: admin.clone() })?;
+    let moderation_committee = msg
+        .moderation_committee
+        .map(|c| deps.api.addr_validate(&c))
+        .transpose()?;
+    CONFIG.save(
+        deps.storage,
+        &Config {
+            admin: admin.clone(),
+            moderation_committee,
+        },
+    )?;
     Ok(Response::new()
         .add_attribute("action", "instantiate")
         .add_attribute("admin", admin))
+}
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
+    // reject wasm blobs of a different contract; version-specific state
+    // transforms hook in here as the schema evolves.
+    let stored = cw2::get_contract_version(deps.storage)?;
+    if stored.contract != CONTRACT_NAME {
+        return Err(ContractError::Unauthorized {});
+    }
+    cw2::set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
+    Ok(Response::new()
+        .add_attribute("action", "migrate")
+        .add_attribute("from_version", stored.version)
+        .add_attribute("to_version", CONTRACT_VERSION))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -54,11 +82,11 @@ pub fn execute(
             repo,
             ref_name,
             commit_sha,
-            packfile_cids,
+            pack_uris,
             expected_sha,
             force,
         } => exec_update_ref(
-            deps, env, info, owner, repo, ref_name, commit_sha, packfile_cids, expected_sha, force,
+            deps, env, info, owner, repo, ref_name, commit_sha, pack_uris, expected_sha, force,
         ),
         ExecuteMsg::DeleteRef {
             owner,
@@ -78,6 +106,15 @@ pub fn execute(
             description,
             default_branch,
         } => exec_update_repo_info(deps, env, info, repo, description, default_branch),
+        ExecuteMsg::SetModerationStatus {
+            owner,
+            repo,
+            status,
+            reason_hash,
+        } => exec_set_moderation_status(deps, env, info, owner, repo, status, reason_hash),
+        ExecuteMsg::SetModerationCommittee { committee } => {
+            exec_set_moderation_committee(deps, info, committee)
+        }
     }
 }
 
@@ -121,6 +158,32 @@ fn validate_commit_sha(sha: &str) -> Result<(), ContractError> {
             sha: sha.to_string(),
         })
     }
+}
+
+/// URIs must look like `<scheme>://<locator>` (e.g. "ipfs://bafy...").
+fn validate_pack_uri(uri: &str) -> Result<(), ContractError> {
+    let ok = uri.len() <= 512
+        && matches!(uri.split_once("://"), Some((scheme, rest))
+            if !scheme.is_empty() && !rest.is_empty()
+                && scheme.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()));
+    if ok {
+        Ok(())
+    } else {
+        Err(ContractError::InvalidPackUri {
+            uri: uri.to_string(),
+        })
+    }
+}
+
+/// Frozen repos accept no ref writes (open-questions §5.3, L2).
+fn ensure_not_frozen(repo: &Repo) -> Result<(), ContractError> {
+    if repo.moderation_status == ModerationStatus::Frozen {
+        return Err(ContractError::RepoFrozen {
+            owner: repo.owner.to_string(),
+            name: repo.name.clone(),
+        });
+    }
+    Ok(())
 }
 
 fn load_repo(deps: Deps, owner: &Addr, name: &str) -> Result<Repo, ContractError> {
@@ -168,6 +231,7 @@ fn exec_create_repo(
         default_branch: default_branch.unwrap_or_else(|| "main".to_string()),
         created_at: now,
         updated_at: now,
+        moderation_status: ModerationStatus::Active,
     };
     REPOS.save(deps.storage, (&info.sender, &name), &repo)?;
     Ok(Response::new()
@@ -185,17 +249,21 @@ fn exec_update_ref(
     repo: String,
     ref_name: String,
     commit_sha: String,
-    packfile_cids: Vec<String>,
+    pack_uris: Vec<String>,
     expected_sha: Option<String>,
     force: bool,
 ) -> Result<Response, ContractError> {
     let owner = deps.api.addr_validate(&owner)?;
     validate_ref_name(&ref_name)?;
     validate_commit_sha(&commit_sha)?;
-    if packfile_cids.is_empty() {
-        return Err(ContractError::EmptyPackfileCids {});
+    if pack_uris.is_empty() {
+        return Err(ContractError::EmptyPackUris {});
+    }
+    for uri in &pack_uris {
+        validate_pack_uri(uri)?;
     }
     let mut repo_meta = load_repo(deps.as_ref(), &owner, &repo)?;
+    ensure_not_frozen(&repo_meta)?;
     ensure_can_push(deps.as_ref(), &owner, &repo, &info.sender)?;
 
     let existing = REFS.may_load(deps.storage, (&owner, &repo, &ref_name))?;
@@ -215,22 +283,22 @@ fn exec_update_ref(
 
     let now = env.block.time.seconds();
     // non-force pushes append packfiles (incremental history);
-    // force pushes replace the CID list entirely.
-    let cids = match (&existing, force) {
+    // force pushes replace the URI list entirely.
+    let uris = match (&existing, force) {
         (Some(prev), false) => {
-            let mut all = prev.packfile_cids.clone();
-            for cid in packfile_cids {
-                if !all.contains(&cid) {
-                    all.push(cid);
+            let mut all = prev.pack_uris.clone();
+            for uri in pack_uris {
+                if !all.contains(&uri) {
+                    all.push(uri);
                 }
             }
             all
         }
-        _ => packfile_cids,
+        _ => pack_uris,
     };
     let entry = RefEntry {
         commit_sha: commit_sha.clone(),
-        packfile_cids: cids,
+        pack_uris: uris,
         updated_at: now,
         updated_by: info.sender.clone(),
     };
@@ -257,6 +325,7 @@ fn exec_delete_ref(
 ) -> Result<Response, ContractError> {
     let owner = deps.api.addr_validate(&owner)?;
     let mut repo_meta = load_repo(deps.as_ref(), &owner, &repo)?;
+    ensure_not_frozen(&repo_meta)?;
     ensure_can_push(deps.as_ref(), &owner, &repo, &info.sender)?;
     if !REFS.has(deps.storage, (&owner, &repo, &ref_name)) {
         return Err(ContractError::RefNotFound { ref_name });
@@ -370,6 +439,58 @@ fn exec_update_repo_info(
         .add_attribute("repo", repo))
 }
 
+#[allow(clippy::too_many_arguments)]
+fn exec_set_moderation_status(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    owner: String,
+    repo: String,
+    status: ModerationStatus,
+    reason_hash: Option<String>,
+) -> Result<Response, ContractError> {
+    let cfg = CONFIG.load(deps.storage)?;
+    let moderator = cfg.moderation_committee.as_ref().unwrap_or(&cfg.admin);
+    if info.sender != *moderator {
+        return Err(ContractError::Unauthorized {});
+    }
+    let owner = deps.api.addr_validate(&owner)?;
+    let mut repo_meta = load_repo(deps.as_ref(), &owner, &repo)?;
+    let status_str = format!("{status:?}").to_lowercase();
+    repo_meta.moderation_status = status;
+    repo_meta.updated_at = env.block.time.seconds();
+    REPOS.save(deps.storage, (&owner, &repo), &repo_meta)?;
+    Ok(Response::new()
+        .add_attribute("action", "set_moderation_status")
+        .add_attribute("owner", owner)
+        .add_attribute("repo", repo)
+        .add_attribute("status", status_str)
+        .add_attribute("reason_hash", reason_hash.unwrap_or_default()))
+}
+
+fn exec_set_moderation_committee(
+    deps: DepsMut,
+    info: MessageInfo,
+    committee: Option<String>,
+) -> Result<Response, ContractError> {
+    let mut cfg = CONFIG.load(deps.storage)?;
+    if info.sender != cfg.admin {
+        return Err(ContractError::Unauthorized {});
+    }
+    cfg.moderation_committee = committee
+        .map(|c| deps.api.addr_validate(&c))
+        .transpose()?;
+    CONFIG.save(deps.storage, &cfg)?;
+    Ok(Response::new()
+        .add_attribute("action", "set_moderation_committee")
+        .add_attribute(
+            "committee",
+            cfg.moderation_committee
+                .map(|a| a.to_string())
+                .unwrap_or_default(),
+        ))
+}
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
@@ -402,6 +523,13 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
             start_after,
             limit,
         )?),
+        QueryMsg::Config {} => {
+            let cfg = CONFIG.load(deps.storage)?;
+            to_json_binary(&ConfigResponse {
+                admin: cfg.admin.to_string(),
+                moderation_committee: cfg.moderation_committee.map(|a| a.to_string()),
+            })
+        }
     }
 }
 
@@ -413,6 +541,7 @@ fn repo_to_response(repo: Repo) -> RepoInfoResponse {
         default_branch: repo.default_branch,
         created_at: repo.created_at,
         updated_at: repo.updated_at,
+        moderation_status: repo.moderation_status,
     }
 }
 
@@ -441,7 +570,7 @@ fn query_list_refs(
             Ok(RefInfo {
                 ref_name,
                 commit_sha: e.commit_sha,
-                packfile_cids: e.packfile_cids,
+                pack_uris: e.pack_uris,
                 updated_at: e.updated_at,
                 updated_by: e.updated_by.to_string(),
             })
@@ -482,7 +611,7 @@ fn query_resolve_ref(
     Ok(ResolveRefResponse {
         ref_name,
         commit_sha: entry.commit_sha,
-        packfile_cids: entry.packfile_cids,
+        pack_uris: entry.pack_uris,
     })
 }
 

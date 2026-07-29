@@ -156,7 +156,7 @@ func cmdRefs(cfg config.Config, args []string) error {
 		return nil
 	}
 	for _, r := range refs {
-		fmt.Printf("%s %-40s packfiles:%d\n", r.CommitSha, r.RefName, len(r.PackfileCids))
+		fmt.Printf("%s %-40s packfiles:%d\n", r.CommitSha, r.RefName, len(r.PackURIs))
 	}
 	return nil
 }

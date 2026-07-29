@@ -1,12 +1,19 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
 
-use crate::state::Role;
+use crate::state::{ModerationStatus, Role};
 
 #[cw_serde]
 pub struct InstantiateMsg {
     /// Optional admin; defaults to the instantiator.
     pub admin: Option<String>,
+    /// Optional moderation committee; falls back to admin when unset.
+    pub moderation_committee: Option<String>,
 }
+
+/// Migration message (cw2-gated; admin authority is enforced by the chain's
+/// wasm module via the contract-level admin).
+#[cw_serde]
+pub struct MigrateMsg {}
 
 #[cw_serde]
 pub enum ExecuteMsg {
@@ -25,7 +32,8 @@ pub enum ExecuteMsg {
         repo: String,
         ref_name: String,
         commit_sha: String,
-        packfile_cids: Vec<String>,
+        /// Storage URIs ("ipfs://<cid>", future "ar://...") of the packfiles.
+        pack_uris: Vec<String>,
         expected_sha: Option<String>,
         force: bool,
     },
@@ -52,6 +60,17 @@ pub enum ExecuteMsg {
         description: Option<String>,
         default_branch: Option<String>,
     },
+    /// Set the moderation status of any repository. Committee only
+    /// (admin when no committee is configured). Reasons live off-chain;
+    /// `reason_hash` anchors the decision document (open-questions §5.3).
+    SetModerationStatus {
+        owner: String,
+        repo: String,
+        status: ModerationStatus,
+        reason_hash: Option<String>,
+    },
+    /// Replace the moderation committee address. Admin only.
+    SetModerationCommittee { committee: Option<String> },
 }
 
 #[cw_serde]
@@ -75,7 +94,7 @@ pub enum QueryMsg {
         start_after: Option<String>,
         limit: Option<u32>,
     },
-    /// Resolve a single ref to its commit sha + packfile CIDs.
+    /// Resolve a single ref to its commit sha + pack URIs.
     #[returns(ResolveRefResponse)]
     ResolveRef {
         owner: String,
@@ -90,6 +109,9 @@ pub enum QueryMsg {
         start_after: Option<String>,
         limit: Option<u32>,
     },
+    /// Contract-level configuration (admin / committee).
+    #[returns(ConfigResponse)]
+    Config {},
 }
 
 #[cw_serde]
@@ -100,13 +122,14 @@ pub struct RepoInfoResponse {
     pub default_branch: String,
     pub created_at: u64,
     pub updated_at: u64,
+    pub moderation_status: ModerationStatus,
 }
 
 #[cw_serde]
 pub struct RefInfo {
     pub ref_name: String,
     pub commit_sha: String,
-    pub packfile_cids: Vec<String>,
+    pub pack_uris: Vec<String>,
     pub updated_at: u64,
     pub updated_by: String,
 }
@@ -125,7 +148,13 @@ pub struct ListReposResponse {
 pub struct ResolveRefResponse {
     pub ref_name: String,
     pub commit_sha: String,
-    pub packfile_cids: Vec<String>,
+    pub pack_uris: Vec<String>,
+}
+
+#[cw_serde]
+pub struct ConfigResponse {
+    pub admin: String,
+    pub moderation_committee: Option<String>,
 }
 
 #[cw_serde]
