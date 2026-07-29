@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
+  badgesByRepo,
   formatFunds,
   formatInj,
   listCollaborators,
@@ -13,6 +14,7 @@ import {
   sponsorTotals,
   timeAgo,
   type AppConfig,
+  type BadgeInfo,
   type CollaboratorInfo,
   type RefInfo,
   type RepoInfo,
@@ -626,6 +628,7 @@ function SponsorsTab({
   const [splits, setSplits] = useState<SplitEntry[]>([]);
   const [collabs, setCollabs] = useState<CollaboratorInfo[]>([]);
   const [events, setEvents] = useState<SponsorEvent[]>([]);
+  const [badges, setBadges] = useState<BadgeInfo[]>([]);
   const [err, setErr] = useState("");
 
   useEffect(() => {
@@ -641,6 +644,7 @@ function SponsorsTab({
         setCollabs(c);
         // best-effort: the tx index may lag or be pruned
         setEvents(await sponsorEvents(cfg, addr, repo).catch(() => []));
+        setBadges(await badgesByRepo(cfg, addr, repo).catch(() => []));
       } catch (e) {
         setErr(String(e));
       }
@@ -738,6 +742,24 @@ function SponsorsTab({
               ))}
             </tbody>
           </table>
+        </>
+      )}
+
+      {badges.length > 0 && (
+        <>
+          <h3>🏆 Badges awarded</h3>
+          {badges.map((b) => (
+            <div className="card sponsor-entry" key={b.id}>
+              <div>
+                <b>#{b.id}</b>{" "}
+                <span className="muted">
+                  to <Link to={`/${b.recipient}`}>{b.recipient.slice(0, 14)}…</Link> ·{" "}
+                  {timeAgo(b.awarded_at)}
+                </span>
+              </div>
+              <div className="sponsor-msg">“{b.reason}”</div>
+            </div>
+          ))}
         </>
       )}
     </div>

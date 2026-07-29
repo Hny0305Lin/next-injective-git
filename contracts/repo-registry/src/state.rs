@@ -99,6 +99,22 @@ pub enum Role {
     Reader,
 }
 
+/// A contribution badge (§3 L1): a non-transferable, purely honorary token
+/// awarded by a repo owner to a contributor. No monetary rights attached
+/// (L3/L4 forbidden by design), hence no transfer mechanics exist.
+#[cw_serde]
+pub struct Badge {
+    pub id: u64,
+    pub repo_owner: Addr,
+    pub repo_name: String,
+    pub recipient: Addr,
+    /// Free-text reason (≤256 chars); v3 will reference on-chain issue/PR ids.
+    pub reason: String,
+    pub awarded_by: Addr,
+    /// Block timestamp (seconds).
+    pub awarded_at: u64,
+}
+
 pub const CONFIG: Item<Config> = Item::new("config");
 
 /// (owner, repo_name) => Repo
@@ -122,3 +138,15 @@ pub const ADDR_TO_NAME: Map<&Addr, String> = Map::new("addr_to_name");
 /// Lifetime sponsorship volume per repo, per denom: (owner, repo, denom) => total.
 /// Powers the sponsor wall / §14 copyright-subsidy metrics without an indexer.
 pub const SPONSOR_TOTALS: Map<(&Addr, &str, &str), Uint128> = Map::new("sponsor_totals");
+
+/// Monotonic badge id.
+pub const NEXT_BADGE_ID: Item<u64> = Item::new("next_badge_id");
+
+/// id => Badge
+pub const BADGES: Map<u64, Badge> = Map::new("badges");
+
+/// (recipient, id) => () — contributor trophy wall index
+pub const BADGES_BY_RECIPIENT: Map<(&Addr, u64), ()> = Map::new("badges_by_recipient");
+
+/// (repo_owner, repo_name, id) => () — per-repo awarded index
+pub const BADGES_BY_REPO: Map<(&Addr, &str, u64), ()> = Map::new("badges_by_repo");

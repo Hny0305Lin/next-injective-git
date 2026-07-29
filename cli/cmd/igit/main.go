@@ -34,6 +34,9 @@ Usage:
   igit sponsor <owner> <repo> <inj-amount> [message...]
                                        sponsor a repository (e.g. 0.5 INJ)
   igit fork <owner> <repo> [new-name]  fork a repository into your namespace
+  igit badge award <repo> <recipient> <reason...>
+                                       award a contribution badge (owner only)
+  igit badge list [address|username]   show a contributor's trophy wall
   igit splits set <repo> [addr:bps]... set revenue splits (owner only)
   igit splits show <owner> <repo>      show revenue splits
   igit username register <name>        claim a username (locks deposit)
@@ -89,6 +92,8 @@ func run(args []string) error {
 		return cmdSponsor(cfg, args[1:])
 	case "fork":
 		return cmdFork(cfg, args[1:])
+	case "badge":
+		return cmdBadge(cfg, args[1:])
 	case "splits":
 		return cmdSplits(cfg, args[1:])
 	case "username":
@@ -403,6 +408,59 @@ func cmdFork(cfg config.Config, args []string) error {
 	fmt.Printf("forked %s/%s\n", args[0], args[1])
 	fmt.Printf("clone your fork: git clone inj://%s/%s\n", self, newName)
 	return nil
+}
+
+func cmdBadge(cfg config.Config, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: igit badge <award|list> ...")
+	}
+	cc := chain.New(cfg)
+	switch args[0] {
+	case "award":
+		if len(args) < 4 {
+			return fmt.Errorf("usage: igit badge award <repo> <recipient> <reason...>")
+		}
+		if err := cfg.Validate(); err != nil {
+			return err
+		}
+		recipient, err := resolveOwner(cc, args[2])
+		if err != nil {
+			return err
+		}
+		reason := strings.Join(args[3:], " ")
+		if err := cc.AwardBadge(args[1], recipient, reason); err != nil {
+			return err
+		}
+		fmt.Printf("badge awarded to %s for %q\n", args[2], reason)
+		return nil
+	case "list":
+		target := ""
+		if len(args) > 1 {
+			var err error
+			if target, err = resolveOwner(cc, args[1]); err != nil {
+				return err
+			}
+		} else {
+			var err error
+			if target, err = cc.OwnerAddress(); err != nil {
+				return err
+			}
+		}
+		badges, err := cc.BadgesByRecipient(target)
+		if err != nil {
+			return err
+		}
+		if len(badges) == 0 {
+			fmt.Println("no badges yet")
+			return nil
+		}
+		for _, b := range badges {
+			fmt.Printf("#%-4d %s/%s: %q\n", b.ID, b.RepoOwner[:12]+"…", b.RepoName, b.Reason)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unknown badge subcommand %q", args[0])
+	}
 }
 
 func cmdSplits(cfg config.Config, args []string) error {

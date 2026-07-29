@@ -451,6 +451,38 @@ func (c *Client) ForkRepo(owner, repo, newName string) error {
 	return c.Execute(map[string]any{"fork_repo": inner})
 }
 
+// AwardBadge grants a non-transferable contribution badge. Owner only.
+func (c *Client) AwardBadge(repo, recipient, reason string) error {
+	return c.Execute(map[string]any{
+		"award_badge": map[string]any{
+			"repo":      repo,
+			"recipient": recipient,
+			"reason":    reason,
+		},
+	})
+}
+
+// Badge mirrors the contract's Badge struct.
+type Badge struct {
+	ID        uint64 `json:"id"`
+	RepoOwner string `json:"repo_owner"`
+	RepoName  string `json:"repo_name"`
+	Recipient string `json:"recipient"`
+	Reason    string `json:"reason"`
+	AwardedAt uint64 `json:"awarded_at"`
+}
+
+// BadgesByRecipient lists a contributor's trophy wall.
+func (c *Client) BadgesByRecipient(recipient string) ([]Badge, error) {
+	var out struct {
+		Badges []Badge `json:"badges"`
+	}
+	err := c.SmartQuery(map[string]any{
+		"badges_by_recipient": map[string]any{"recipient": recipient, "limit": 100},
+	}, &out)
+	return out.Badges, err
+}
+
 // ConfigInfo fetches the contract-level config (treasury, fee, deposit).
 func (c *Client) ConfigInfo() (*ConfigInfo, error) {
 	var out ConfigInfo

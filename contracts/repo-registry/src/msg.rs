@@ -1,7 +1,7 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Coin, Uint128};
 
-use crate::state::{ModerationStatus, Role, SplitEntry};
+use crate::state::{Badge, ModerationStatus, Role, SplitEntry};
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -113,6 +113,14 @@ pub enum ExecuteMsg {
         /// Name under the sender; defaults to the source repo name.
         name: Option<String>,
     },
+    /// Award a non-transferable contribution badge (§3 L1). Repo owner only;
+    /// honorary, carries no monetary rights.
+    AwardBadge {
+        repo: String,
+        recipient: String,
+        /// Why this contributor earned it (≤256 chars).
+        reason: String,
+    },
 }
 
 /// String-typed split entry used in messages (validated into `SplitEntry`).
@@ -173,6 +181,21 @@ pub enum QueryMsg {
     /// Lifetime sponsorship totals of a repository.
     #[returns(SponsorTotalsResponse)]
     SponsorTotals { owner: String, repo: String },
+    /// Badges held by a contributor (trophy wall), newest-id pagination.
+    #[returns(BadgesResponse)]
+    BadgesByRecipient {
+        recipient: String,
+        start_after: Option<u64>,
+        limit: Option<u32>,
+    },
+    /// Badges awarded by a repository.
+    #[returns(BadgesResponse)]
+    BadgesByRepo {
+        owner: String,
+        repo: String,
+        start_after: Option<u64>,
+        limit: Option<u32>,
+    },
 }
 
 #[cw_serde]
@@ -254,6 +277,11 @@ pub struct SponsorTotalsResponse {
     pub owner: String,
     pub repo: String,
     pub totals: Vec<SponsorTotal>,
+}
+
+#[cw_serde]
+pub struct BadgesResponse {
+    pub badges: Vec<Badge>,
 }
 
 #[cw_serde]

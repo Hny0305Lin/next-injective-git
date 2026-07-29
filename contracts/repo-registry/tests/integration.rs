@@ -2,8 +2,8 @@ use cosmwasm_std::{coins, Addr};
 use cw_multi_test::{App, ContractWrapper, Executor};
 
 use repo_registry::msg::{
-    ExecuteMsg, InstantiateMsg, ListRefsResponse, ListReposResponse, MigrateMsg, QueryMsg,
-    RepoInfoResponse, ResolveRefResponse, SplitRecipient, SponsorTotalsResponse,
+    BadgesResponse, ExecuteMsg, InstantiateMsg, ListRefsResponse, ListReposResponse, MigrateMsg,
+    QueryMsg, RepoInfoResponse, ResolveRefResponse, SplitRecipient, SponsorTotalsResponse,
 };
 use repo_registry::state::{ModerationStatus, Role};
 use repo_registry::ContractError;
@@ -925,6 +925,136 @@ fn fork_copies_refs_and_records_source() {
 }
 
 // ---- v3: sponsorship, revenue splits, usernames ----
+
+#[test]
+fn award_badge_and_trophy_wall() {
+    let mut env = setup();
+    let (alice, bob, carol) = (env.alice.clone(), env.bob.clone(), env.carol.clone());
+    create_repo(&mut env, &alice, "hello");
+
+    // owner awards bob twice, carol once
+    for (rcpt, reason) in [
+        (&bob, "fixed the flaky CI"),
+        (&carol, "great bug report"),
+        (&bob, "reviewed the v2 refactor"),
+    ] {
+        env.app
+            .execute_contract(
+                alice.clone(),
+                env.contract.clone(),
+                &ExecuteMsg::AwardBadge {
+                    repo: "hello".to_string(),
+                    recipient: rcpt.to_string(),
+                    reason: reason.to_string(),
+                },
+                &[],
+            )
+            .unwrap();
+    }
+
+    // bob's trophy wall has 2 badges with reasons
+    let wall: BadgesResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::BadgesByRecipient {
+                recipient: bob.to_string(),
+                start_after: None,
+                limit: None,
+            },
+        )
+        .unwrap();
+    assert_eq!(wall.badges.len(), 2);
+    assert_eq!(wall.badges[0].reason, "fixed the flaky CI");
+    assert_eq!(wall.badges[0].repo_name, "hello");
+
+    // repo index sees all 3
+    let by_repo: BadgesResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::BadgesByRepo {
+                owner: alice.to_string(),
+                repo: "hello".to_string(),
+                start_after: None,
+                limit: None,
+            },
+        )
+        .unwrap();
+    assert_eq!(by_repo.badges.len(), 3);
+
+    // self-award rejected
+    let err = env
+        .app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::AwardBadge {
+                repo: "hello".to_string(),
+                recipient: alice.to_string(),
+                reason: "me".to_string(),
+            },
+            &[],
+        )
+        .unwrap_err();
+    assert!(matches!(
+        err.downcast::<ContractError>().unwrap(),
+        ContractError::OwnerAsCollaborator {}
+    ));
+
+    // non-owner cannot award
+    let err = env
+        .app
+        .execute_contract(
+            bob.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::AwardBadge {
+                repo: "hello".to_string(),
+                recipient: carol.to_string(),
+                reason: "nope".to_string(),
+            },
+            &[],
+        )
+        .unwrap_err();
+    assert!(matches!(
+        err.downcast::<ContractError>().unwrap(),
+        ContractError::RepoNotFound { .. }
+    ));
+
+    // frozen repo stops issuing badges (alice is fallback moderator)
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::SetModerationStatus {
+                owner: alice.to_string(),
+                repo: "hello".to_string(),
+                status: ModerationStatus::Frozen,
+                reason_hash: None,
+            },
+            &[],
+        )
+        .unwrap();
+    let err = env
+        .app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::AwardBadge {
+                repo: "hello".to_string(),
+                recipient: bob.to_string(),
+                reason: "frozen".to_string(),
+            },
+            &[],
+        )
+        .unwrap_err();
+    assert!(matches!(
+        err.downcast::<ContractError>().unwrap(),
+        ContractError::RepoFrozen { .. }
+    ));
+}
 
 const INJ: u128 = 1_000_000_000_000_000_000; // 1 INJ in base units
 

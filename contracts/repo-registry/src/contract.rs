@@ -9,15 +9,16 @@ use std::collections::BTreeMap;
 
 use crate::error::ContractError;
 use crate::msg::{
-    AddressUsernameResponse, CollaboratorInfo, ConfigResponse, ExecuteMsg, InstantiateMsg,
-    ListCollaboratorsResponse, ListRefsResponse, ListReposResponse, MigrateMsg, QueryMsg, RefInfo,
-    RepoInfoResponse, ResolveRefResponse, RevenueSplitsResponse, SplitRecipient, SponsorTotal,
-    SponsorTotalsResponse, UsernameResponse,
+    AddressUsernameResponse, BadgesResponse, CollaboratorInfo, ConfigResponse, ExecuteMsg,
+    InstantiateMsg, ListCollaboratorsResponse, ListRefsResponse, ListReposResponse, MigrateMsg,
+    QueryMsg, RefInfo, RepoInfoResponse, ResolveRefResponse, RevenueSplitsResponse,
+    SplitRecipient, SponsorTotal, SponsorTotalsResponse, UsernameResponse,
 };
 use crate::state::{
-    Config, ModerationStatus, Repo, RefEntry, Role, SplitEntry, UsernameRecord, ADDR_TO_NAME,
-    COLLABORATORS, CONFIG, DEFAULT_PLATFORM_FEE_BPS, MAX_PLATFORM_FEE_BPS, REFS, REPOS,
-    REVENUE_SPLITS, SPONSOR_TOTALS, USERNAMES,
+    Badge, Config, ModerationStatus, Repo, RefEntry, Role, SplitEntry, UsernameRecord,
+    ADDR_TO_NAME, BADGES, BADGES_BY_RECIPIENT, BADGES_BY_REPO, COLLABORATORS, CONFIG,
+    DEFAULT_PLATFORM_FEE_BPS, MAX_PLATFORM_FEE_BPS, NEXT_BADGE_ID, REFS, REPOS, REVENUE_SPLITS,
+    SPONSOR_TOTALS, USERNAMES,
 };
 
 const CONTRACT_NAME: &str = "crates.io:igit-repo-registry";
@@ -156,6 +157,11 @@ pub fn execute(
         ExecuteMsg::ForkRepo { owner, repo, name } => {
             exec_fork_repo(deps, env, info, owner, repo, name)
         }
+        ExecuteMsg::AwardBadge {
+            repo,
+            recipient,
+            reason,
+        } => exec_award_badge(deps, env, info, repo, recipient, reason),
     }
 }
 
@@ -865,6 +871,56 @@ fn exec_fork_repo(
         .add_attribute("refs", ref_count.to_string()))
 }
 
+/// Award a non-transferable contribution badge (§3 L1). Owner only.
+fn exec_award_badge(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    repo: String,
+    recipient: String,
+    reason: String,
+) -> Result<Response, ContractError> {
+    let recipient = deps.api.addr_validate(&recipient)?;
+    let repo_meta = load_repo(deps.as_ref(), &info.sender, &repo)?;
+    // frozen repos stop issuing badges (§5.3 L2 sanctions)
+    if repo_meta.moderation_status != ModerationStatus::Active {
+        return Err(ContractError::RepoFrozen {
+            owner: info.sender.to_string(),
+            name: repo,
+        });
+    }
+    if recipient == info.sender {
+        return Err(ContractError::OwnerAsCollaborator {});
+    }
+    if reason.is_empty() || reason.len() > 256 {
+        return Err(ContractError::InvalidSplits {
+            reason: "badge reason must be 1..=256 chars".to_string(),
+        });
+    }
+
+    let id = NEXT_BADGE_ID.may_load(deps.storage)?.unwrap_or(1);
+    NEXT_BADGE_ID.save(deps.storage, &(id + 1))?;
+    let badge = Badge {
+        id,
+        repo_owner: info.sender.clone(),
+        repo_name: repo.clone(),
+        recipient: recipient.clone(),
+        reason,
+        awarded_by: info.sender.clone(),
+        awarded_at: env.block.time.seconds(),
+    };
+    BADGES.save(deps.storage, id, &badge)?;
+    BADGES_BY_RECIPIENT.save(deps.storage, (&recipient, id), &())?;
+    BADGES_BY_REPO.save(deps.storage, (&info.sender, &repo, id), &())?;
+
+    Ok(Response::new()
+        .add_attribute("action", "award_badge")
+        .add_attribute("id", id.to_string())
+        .add_attribute("owner", info.sender)
+        .add_attribute("repo", repo)
+        .add_attribute("recipient", recipient))
+}
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
@@ -946,6 +1002,45 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
                 repo,
                 totals,
             })
+        }
+        QueryMsg::BadgesByRecipient {
+            recipient,
+            start_after,
+            limit,
+        } => {
+            let recipient = deps.api.addr_validate(&recipient)?;
+            let limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
+            let start = start_after.map(Bound::exclusive);
+            let badges = BADGES_BY_RECIPIENT
+                .prefix(&recipient)
+                .range(deps.storage, start, None, Order::Ascending)
+                .take(limit)
+                .map(|item| {
+                    let (id, ()) = item?;
+                    BADGES.load(deps.storage, id)
+                })
+                .collect::<StdResult<_>>()?;
+            to_json_binary(&BadgesResponse { badges })
+        }
+        QueryMsg::BadgesByRepo {
+            owner,
+            repo,
+            start_after,
+            limit,
+        } => {
+            let owner = deps.api.addr_validate(&owner)?;
+            let limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
+            let start = start_after.map(Bound::exclusive);
+            let badges = BADGES_BY_REPO
+                .prefix((&owner, &repo))
+                .range(deps.storage, start, None, Order::Ascending)
+                .take(limit)
+                .map(|item| {
+                    let (id, ()) = item?;
+                    BADGES.load(deps.storage, id)
+                })
+                .collect::<StdResult<_>>()?;
+            to_json_binary(&BadgesResponse { badges })
         }
     }
 }

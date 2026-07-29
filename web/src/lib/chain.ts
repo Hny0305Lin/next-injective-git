@@ -241,3 +241,32 @@ export function formatFunds(funds: string): string {
   if (!m) return funds;
   return formatInj(m[1], "inj");
 }
+
+// ---- contribution badges (§3 L1) ----
+
+export interface BadgeInfo {
+  id: number;
+  repo_owner: string;
+  repo_name: string;
+  recipient: string;
+  reason: string;
+  awarded_at: number;
+}
+
+export async function badgesByRecipient(cfg: AppConfig, recipient: string): Promise<BadgeInfo[]> {
+  const out = await smartQuery<{ badges: BadgeInfo[] }>(cfg, {
+    badges_by_recipient: { recipient, limit: 100 },
+  });
+  return out.badges;
+}
+
+export async function badgesByRepo(
+  cfg: AppConfig,
+  owner: string,
+  repo: string,
+): Promise<BadgeInfo[]> {
+  const out = await smartQuery<{ badges: BadgeInfo[] }>(cfg, {
+    badges_by_repo: { owner, repo, limit: 100 },
+  });
+  return out.badges;
+}
