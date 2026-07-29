@@ -125,7 +125,7 @@ export default function Repo() {
     ) || info.default_branch;
   const view = parseView(splat, fallbackRef);
   const base = `/${owner}/${repo}`;
-  const cloneURL = `inj://${owner}/${repo}`;
+  const cloneURL = `igit://${owner}/${repo}`;
   const store = getRepoStore(`${addr}/${repo}`);
   const current = view.kind === "commit" ? undefined : findRef(refs, view.ref);
 

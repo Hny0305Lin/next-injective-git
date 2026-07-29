@@ -1,5 +1,7 @@
-// git-remote-inj is the git remote helper for the inj:// transport.
-// Git invokes it as: git-remote-inj <remote-name> <url>
+// git-remote-igit is the git remote helper for the igit:// transport
+// (the legacy inj:// scheme is still accepted). Git invokes it by convention
+// as git-remote-<scheme>, i.e. git-remote-igit for igit:// URLs — the same
+// binary should also be installed as git-remote-inj for inj:// compatibility.
 package main
 
 import (
@@ -15,14 +17,14 @@ import (
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintf(os.Stderr, "git-remote-inj: %v\n", err)
+		fmt.Fprintf(os.Stderr, "git-remote-igit: %v\n", err)
 		os.Exit(1)
 	}
 }
 
 func run() error {
 	if len(os.Args) < 3 {
-		return fmt.Errorf("usage: git-remote-inj <remote-name> <url>")
+		return fmt.Errorf("usage: git-remote-igit <remote-name> <url>")
 	}
 	repoURL, err := remote.ParseURL(os.Args[2])
 	if err != nil {
@@ -42,7 +44,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(os.Stderr, "git-remote-inj: %s -> %s\n", repoURL.Owner, owner)
+		fmt.Fprintf(os.Stderr, "git-remote-igit: %s -> %s\n", repoURL.Owner, owner)
 		repoURL.Owner = owner
 	}
 	gitRepo, err := gitio.FromEnv()

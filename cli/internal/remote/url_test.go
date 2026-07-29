@@ -11,6 +11,10 @@ func TestParseURL(t *testing.T) {
 		wantErr bool
 	}{
 		{"inj://" + owner + "/hello", owner, "hello", false},
+		{"igit://" + owner + "/hello", owner, "hello", false},
+		{"igit://" + owner + "/hello.git", owner, "hello", false},
+		{"igit::" + owner + "/hello", owner, "hello", false},
+		{"igit://alice-dev/hello", "alice-dev", "hello", false},
 		{"inj://" + owner + "/hello.git", owner, "hello", false},
 		{"inj://" + owner + "/hello/", owner, "hello", false},
 		{"inj::" + owner + "/hello", owner, "hello", false},

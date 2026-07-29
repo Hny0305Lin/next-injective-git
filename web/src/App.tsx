@@ -26,7 +26,7 @@ export default function App() {
     const s = q.trim();
     if (!s) return;
     // "owner/repo" jumps straight into the repo, otherwise owner page
-    const parts = s.replace(/^inj:\/\//, "").split("/").filter(Boolean);
+    const parts = s.replace(/^(igit|inj):\/\//, "").split("/").filter(Boolean);
     if (parts.length >= 2) nav(`/${parts[0]}/${parts[1]}`);
     else nav(`/${parts[0]}`);
     setQ("");

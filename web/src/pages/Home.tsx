@@ -26,7 +26,7 @@ export default function Home() {
           <code>owner/repo</code>.
         </p>
         <div className="cmd">
-          {`igit init my-repo "hello chain"\ngit push inj main\ngit clone inj://alice/my-repo`}
+          {`igit init my-repo "hello chain"\nigit push inj main\nigit clone igit://alice/my-repo`}
         </div>
       </div>
 

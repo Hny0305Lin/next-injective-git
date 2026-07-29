@@ -70,4 +70,4 @@ jobs:
       - name: build binaries
         run: |
           go build ./cmd/igit
-          go build ./cmd/git-remote-inj
+          go build ./cmd/git-remote-igit

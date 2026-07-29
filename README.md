@@ -4,8 +4,8 @@
 
 ```
 igit init my-repo "hello chain"
-git clone inj://inj1abc.../my-repo
-git push inj main
+igit push inj main
+igit clone igit://alice/my-repo
 ```
 
 ## 架构一览
@@ -62,7 +62,11 @@ injectived tx wasm instantiate <CODE_ID> '{"admin":"'$ADMIN'"}' \
 ```bash
 cd cli
 go build ./...
-go install ./cmd/igit ./cmd/git-remote-inj    # 两个二进制都需在 PATH 中
+# igit + the remote helper must be on PATH. Install the helper under both
+# names so igit:// (canonical) and inj:// (legacy) URLs both resolve.
+go install ./cmd/igit
+go build -o "$(go env GOPATH)/bin/git-remote-igit" ./cmd/git-remote-igit
+cp "$(go env GOPATH)/bin/git-remote-igit" "$(go env GOPATH)/bin/git-remote-inj"
 ```
 
 ### 3. 配置并使用
@@ -73,14 +77,17 @@ igit key new dev                               # 或 igit config set key_name <�
 igit init hello "my first on-chain repo"
 
 cd my-project
-git remote add inj inj://$(injectived keys show dev -a)/hello
-git push inj main                              # packfile→IPFS, ref→链上
-git clone inj://inj1.../hello                  # 任何人可克隆
+git remote add inj igit://$(injectived keys show dev -a)/hello
+igit push inj main                             # packfile→IPFS, ref→链上
+igit clone igit://alice/hello                  # 任何人可克隆（用户名或裸地址）
 ```
+
+> `igit push` / `igit clone` / `igit pull` 是对 `git` 的轻包装——你只用 `igit` 一个命令即可；
+> 原生 `git push` / `git clone igit://...` 同样有效（走 `git-remote-igit` 助手）。
 
 ## 工作原理
 
-- **push**：`git-remote-inj` 调 `git pack-objects` 生成增量 packfile → 上传本地 Kubo 并 pin（得到 `ipfs://<cid>` URI）→ 通过 `injectived` 签名广播 `update_ref` 交易（携带 commit SHA + pack URI）。合约校验推送者为 owner 或 maintainer，并用 `expected_sha` 做乐观并发检查（force push 跳过，且改打全量自包含 pack 替换整个 URI 列表）。
+- **push**：`git-remote-igit` 调 `git pack-objects` 生成增量 packfile → 上传本地 Kubo 并 pin（得到 `ipfs://<cid>` URI）→ 通过 `injectived` 签名广播 `update_ref` 交易（携带 commit SHA + pack URI）。合约校验推送者为 owner 或 maintainer，并用 `expected_sha` 做乐观并发检查（force push 跳过，且改打全量自包含 pack 替换整个 URI 列表）。
 - **clone/fetch**：查询合约 `list_refs` / `resolve_ref` → 按 pack URI 从 IPFS（本地节点，失败则公共网关）下载 packfile → `git index-pack` 注入本地对象库。
 - **权限**：owner 可管理协作者（Maintainer 可推送、Reader 只读标记）、转移所有权；内容委员会（未设时为 admin）可设置 `moderation_status`，Frozen 状态下合约拒绝一切 ref 写入。
 

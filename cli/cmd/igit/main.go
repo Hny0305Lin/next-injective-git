@@ -1,6 +1,6 @@
 // igit is the Next Injective Git companion CLI: repo creation, key helpers and
 // configuration management. Pushing/fetching is done by git itself through
-// the git-remote-inj helper.
+// the git-remote-igit helper.
 package main
 
 import (
@@ -19,7 +19,10 @@ const usage = `igit - Next Injective Git (Injective + IPFS)
 
 Usage:
   igit init <name> [description]       create an on-chain repository
-  igit clone-url <name>                print the inj:// URL of your repo
+  igit clone <owner>/<repo> [dir]      clone a repo (igit://owner/repo also ok)
+  igit push [remote] [refspec...]      push current repo on-chain (wraps git)
+  igit pull [remote] [refspec...]      pull from chain (wraps git)
+  igit clone-url <name>                print the igit:// URL of your repo
   igit repos [owner]                   list repositories of an owner
   igit refs <owner> <repo>             list on-chain refs of a repository
   igit collab add <repo> <address> [maintainer|reader]
@@ -74,6 +77,12 @@ func run(args []string) error {
 	switch args[0] {
 	case "init":
 		return cmdInit(cfg, args[1:])
+	case "clone":
+		return cmdClone(cfg, args[1:])
+	case "push":
+		return cmdGitPassthrough("push", args[1:])
+	case "pull":
+		return cmdGitPassthrough("pull", args[1:])
 	case "clone-url":
 		return cmdCloneURL(cfg, args[1:])
 	case "repos":
@@ -132,9 +141,38 @@ func cmdInit(cfg config.Config, args []string) error {
 	}
 	fmt.Printf("repository created on chain.\n\n")
 	fmt.Printf("add it as a git remote:\n")
-	fmt.Printf("  git remote add inj inj://%s/%s\n", owner, name)
-	fmt.Printf("  git push inj main\n")
+	fmt.Printf("  git remote add inj igit://%s/%s\n", owner, name)
+	fmt.Printf("  igit push inj main\n")
 	return nil
+}
+
+// cmdClone wraps `git clone`, accepting a bare "owner/repo" (turned into an
+// igit:// URL) or any full igit:// / inj:// URL.
+func cmdClone(_ config.Config, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: igit clone <owner>/<repo> [dir]")
+	}
+	url := args[0]
+	if !strings.Contains(url, "://") && !strings.Contains(url, "::") {
+		url = "igit://" + strings.TrimPrefix(url, "/")
+	}
+	gitArgs := append([]string{"clone", url}, args[1:]...)
+	return runGit(gitArgs)
+}
+
+// cmdGitPassthrough forwards a subcommand (push/pull) straight to git in the
+// current repository, so users can drive everything through `igit`.
+func cmdGitPassthrough(sub string, args []string) error {
+	return runGit(append([]string{sub}, args...))
+}
+
+// runGit execs the local git, inheriting stdio so prompts/progress pass through.
+func runGit(args []string) error {
+	cmd := exec.Command("git", args...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 func cmdCloneURL(cfg config.Config, args []string) error {
@@ -148,7 +186,7 @@ func cmdCloneURL(cfg config.Config, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("inj://%s/%s\n", owner, args[0])
+	fmt.Printf("igit://%s/%s\n", owner, args[0])
 	return nil
 }
 
@@ -272,7 +310,7 @@ func cmdTransfer(cfg config.Config, args []string) error {
 		return err
 	}
 	fmt.Printf("ownership of %s transferred to %s\n", args[0], args[1])
-	fmt.Printf("new clone URL: inj://%s/%s\n", args[1], args[0])
+	fmt.Printf("new clone URL: igit://%s/%s\n", args[1], args[0])
 	return nil
 }
 
@@ -406,7 +444,7 @@ func cmdFork(cfg config.Config, args []string) error {
 		newName = args[1]
 	}
 	fmt.Printf("forked %s/%s\n", args[0], args[1])
-	fmt.Printf("clone your fork: git clone inj://%s/%s\n", self, newName)
+	fmt.Printf("clone your fork: git clone igit://%s/%s\n", self, newName)
 	return nil
 }
 
@@ -547,7 +585,7 @@ func cmdUsername(cfg config.Config, args []string) error {
 			return err
 		}
 		fmt.Printf("username %q registered (deposit %s locked, refunded on release)\n", args[1], deposit)
-		fmt.Printf("your repos are now reachable as inj://%s/<repo>\n", args[1])
+		fmt.Printf("your repos are now reachable as igit://%s/<repo>\n", args[1])
 		return nil
 	case "release":
 		if err := cfg.Validate(); err != nil {

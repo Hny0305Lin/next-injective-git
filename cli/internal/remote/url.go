@@ -36,21 +36,22 @@ func ValidUsername(name string) bool {
 	return true
 }
 
-// ParseURL parses "inj://<owner>/<repo>" (also accepts "inj::<owner>/<repo>"
-// which git produces for the `git clone inj::...` transport syntax).
+// ParseURL parses "igit://<owner>/<repo>" (the canonical scheme) and the
+// "igit::<owner>/<repo>" transport form git produces for `git clone igit::...`.
+// The legacy "inj://" / "inj::" schemes stay accepted for backward compat.
 // Owner may be a bech32 address or a registered username (§4).
 func ParseURL(raw string) (RepoURL, error) {
 	s := raw
-	switch {
-	case strings.HasPrefix(s, "inj://"):
-		s = strings.TrimPrefix(s, "inj://")
-	case strings.HasPrefix(s, "inj::"):
-		s = strings.TrimPrefix(s, "inj::")
+	for _, prefix := range []string{"igit://", "igit::", "inj://", "inj::"} {
+		if strings.HasPrefix(s, prefix) {
+			s = strings.TrimPrefix(s, prefix)
+			break
+		}
 	}
 	s = strings.TrimSuffix(strings.Trim(s, "/"), ".git")
 	parts := strings.Split(s, "/")
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return RepoURL{}, fmt.Errorf("invalid remote URL %q (expected inj://<owner>/<repo>)", raw)
+		return RepoURL{}, fmt.Errorf("invalid remote URL %q (expected igit://<owner>/<repo>)", raw)
 	}
 	if !strings.HasPrefix(parts[0], "inj1") && !ValidUsername(parts[0]) {
 		return RepoURL{}, fmt.Errorf(
