@@ -6,6 +6,7 @@ import { sponsorWithKeplr } from "../lib/wallet";
 import {
   badgesByRepo,
   formatFunds,
+  formatError,
   formatInj,
   listCollaborators,
   listRefs,
@@ -812,7 +813,8 @@ function SponsorForm({
         setMessage("");
         void refreshBalance();
       } catch (e2) {
-        setErr(String(e2 instanceof Error ? e2.message : e2));
+        console.error("[sponsor] failed:", e2); // full object for devtools
+        setErr(formatError(e2));
       } finally {
         setBusy(false);
       }

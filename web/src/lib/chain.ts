@@ -145,6 +145,34 @@ export async function contractConfig(cfg: AppConfig): Promise<ContractConfig> {
   return smartQuery<ContractConfig>(cfg, { config: {} });
 }
 
+// Pull a human-readable message out of the many error shapes we hit:
+// native Error, Injective SDK exceptions, MetaMask RPC errors ({code,message}),
+// LCD broadcast responses ({raw_log}). Falls back to JSON so nothing shows as
+// the useless "[object Object]".
+export function formatError(e: unknown): string {
+  if (e == null) return "unknown error";
+  if (typeof e === "string") return e;
+  if (e instanceof Error) return e.message;
+  if (typeof e === "object") {
+    const o = e as Record<string, unknown>;
+    const nested = o.data ?? o.error; // MetaMask often nests under .data/.error
+    for (const k of ["originalMessage", "message", "rawLog", "raw_log", "reason"]) {
+      const v = o[k];
+      if (typeof v === "string" && v) return v;
+    }
+    if (nested && nested !== e) {
+      const inner = formatError(nested);
+      if (inner && inner !== "[object Object]") return inner;
+    }
+    try {
+      return JSON.stringify(e);
+    } catch {
+      return String(e);
+    }
+  }
+  return String(e);
+}
+
 /** INJ balance (base units) of any address via the LCD bank module. */
 export async function injBalanceOf(cfg: AppConfig, address: string): Promise<string> {
   const url = `${cfg.lcd.replace(/\/+$/, "")}/cosmos/bank/v1beta1/balances/${address}`;

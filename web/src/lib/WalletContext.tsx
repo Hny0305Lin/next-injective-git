@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { connectWallet, type Wallet } from "../lib/wallet";
-import { injBalanceOf, loadConfig } from "../lib/chain";
+import { injBalanceOf, loadConfig, formatError } from "../lib/chain";
 
 // A connected wallet is either a Cosmos wallet (signs via CosmJS) or an EVM
 // wallet (MetaMask, signs via EIP-712). Both expose an inj1 address.
@@ -68,7 +68,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         /* ignore */
       }
     } catch (e) {
-      setError(String(e instanceof Error ? e.message : e));
+      console.error("[wallet] connect failed:", e);
+      setError(formatError(e));
     } finally {
       setConnecting(false);
     }
