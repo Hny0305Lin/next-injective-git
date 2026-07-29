@@ -44,18 +44,58 @@ interface KeplrDirectResponse {
   signed: KeplrSignDoc;
   signature: { signature: string };
 }
-interface KeplrWindow {
-  keplr?: {
-    enable(chainId: string): Promise<void>;
-    experimentalSuggestChain(cfg: unknown): Promise<void>;
-    getOfflineSignerAuto?(chainId: string): Promise<OfflineSignerLike>;
-    getOfflineSigner(chainId: string): OfflineSignerLike;
-    getKey(chainId: string): Promise<KeplrKey>;
-    signDirect(chainId: string, signer: string, signDoc: KeplrSignDoc): Promise<KeplrDirectResponse>;
-  };
+// Cosmos wallets (Keplr, Leap, OKX, Cosmostation, ...) all expose the same
+// keplr-compatible injection API, so one code path serves them all.
+interface KeplrLike {
+  enable(chainId: string): Promise<void>;
+  experimentalSuggestChain(cfg: unknown): Promise<void>;
+  getOfflineSignerAuto?(chainId: string): Promise<OfflineSignerLike>;
+  getOfflineSigner(chainId: string): OfflineSignerLike;
+  getKey(chainId: string): Promise<KeplrKey>;
+  signDirect(chainId: string, signer: string, signDoc: KeplrSignDoc): Promise<KeplrDirectResponse>;
 }
 interface OfflineSignerLike {
   getAccounts(): Promise<{ address: string }[]>;
+}
+
+// Where each wallet injects its keplr-compatible object on window.
+const PROVIDERS: { id: string; label: string; get: () => KeplrLike | undefined }[] = [
+  { id: "keplr", label: "Keplr", get: () => win().keplr },
+  { id: "leap", label: "Leap", get: () => win().leap },
+  { id: "okx", label: "OKX Wallet", get: () => win().okxwallet?.keplr },
+  { id: "cosmostation", label: "Cosmostation", get: () => win().cosmostation?.providers?.keplr },
+];
+
+interface WalletWindow {
+  keplr?: KeplrLike;
+  leap?: KeplrLike;
+  okxwallet?: { keplr?: KeplrLike };
+  cosmostation?: { providers?: { keplr?: KeplrLike } };
+}
+function win(): WalletWindow {
+  return window as unknown as WalletWindow;
+}
+
+export interface WalletOption {
+  id: string;
+  label: string;
+}
+
+/** Wallets whose extension is actually installed and exposes the needed API. */
+export function availableWallets(): WalletOption[] {
+  return PROVIDERS.filter((p) => {
+    const w = p.get();
+    return !!w && typeof w.getKey === "function" && typeof w.signDirect === "function";
+  }).map(({ id, label }) => ({ id, label }));
+}
+
+function providerObject(id: string): KeplrLike {
+  const provider = PROVIDERS.find((p) => p.id === id);
+  const w = provider?.get();
+  if (!w) {
+    throw new Error(`${provider?.label ?? id} not found — install its browser extension`);
+  }
+  return w;
 }
 
 // CosmJS only understands the standard cosmos BaseAccount. Injective wraps it
@@ -100,13 +140,7 @@ function extractBaseAccountBytes(value: Uint8Array): Uint8Array {
   throw new Error("EthAccount is missing base_account");
 }
 
-function keplr() {
-  const k = (window as unknown as KeplrWindow).keplr;
-  if (!k) throw new Error("Keplr extension not found — install it from keplr.app");
-  return k;
-}
-
-// Chain params so Keplr can add injective-888 if the user doesn't have it.
+// Chain params so a wallet can add injective-888 if the user doesn't have it.
 function injectiveTestnetChainInfo() {
   return {
     chainId: CHAIN_ID,
@@ -139,15 +173,19 @@ function injectiveTestnetChainInfo() {
 export interface Wallet {
   address: string;
   client: SigningCosmWasmClient;
+  providerId: string;
+  providerLabel: string;
+  provider: KeplrLike;
 }
 
-/** Prompt Keplr to connect and return a signing client for the contract. */
-export async function connectKeplr(): Promise<Wallet> {
-  const k = keplr();
+/** Connect a specific Cosmos wallet and return a signing client. */
+export async function connectWallet(providerId: string): Promise<Wallet> {
+  const label = PROVIDERS.find((p) => p.id === providerId)?.label ?? providerId;
+  const k = providerObject(providerId);
   try {
     await k.enable(CHAIN_ID);
   } catch {
-    // chain unknown to Keplr — suggest it, then enable
+    // chain unknown to the wallet — suggest it, then enable
     await k.experimentalSuggestChain(injectiveTestnetChainInfo());
     await k.enable(CHAIN_ID);
   }
@@ -155,12 +193,12 @@ export async function connectKeplr(): Promise<Wallet> {
     ? await k.getOfflineSignerAuto(CHAIN_ID)
     : k.getOfflineSigner(CHAIN_ID);
   const accounts = await signer.getAccounts();
-  if (accounts.length === 0) throw new Error("no account in Keplr for injective-888");
+  if (accounts.length === 0) throw new Error(`no account in ${label} for injective-888`);
 
   const client = await SigningCosmWasmClient.connectWithSigner(RPC, signer as never, {
     accountParser: injectiveAccountParser as never,
   });
-  return { address: accounts[0].address, client };
+  return { address: accounts[0].address, client, providerId, providerLabel: label, provider: k };
 }
 
 /** Sponsor a repository: attach INJ funds, split happens in the contract. */
@@ -175,7 +213,7 @@ export async function sponsorWithKeplr(
   const micro = toBaseUnits(amountInj);
   if (micro === "0") throw new Error("amount must be positive");
 
-  const k = keplr();
+  const k = wallet.provider;
   const key = await k.getKey(CHAIN_ID);
   const { accountNumber, sequence } = await fetchAccount(cfg, wallet.address);
 

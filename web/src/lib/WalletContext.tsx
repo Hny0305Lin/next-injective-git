@@ -1,5 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { connectKeplr, injBalance, type Wallet } from "../lib/wallet";
+import {
+  availableWallets,
+  connectWallet,
+  injBalance,
+  type Wallet,
+  type WalletOption,
+} from "../lib/wallet";
 
 interface WalletState {
   wallet: Wallet | null;
@@ -7,18 +13,33 @@ interface WalletState {
   balance: string; // base units, "" while unknown
   connecting: boolean;
   error: string;
-  connect: () => Promise<void>;
+  available: WalletOption[];
+  connect: (providerId: string) => Promise<void>;
   disconnect: () => void;
   refreshBalance: () => Promise<void>;
 }
 
 const Ctx = createContext<WalletState | null>(null);
+const LS_PROVIDER = "igit-wallet-provider";
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [balance, setBalance] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState("");
+  const [available, setAvailable] = useState<WalletOption[]>([]);
+
+  // wallets inject asynchronously; re-scan for a moment after load
+  useEffect(() => {
+    const scan = () => setAvailable(availableWallets());
+    scan();
+    const t = setInterval(scan, 500);
+    const stop = setTimeout(() => clearInterval(t), 3000);
+    return () => {
+      clearInterval(t);
+      clearTimeout(stop);
+    };
+  }, []);
 
   const refreshBalance = useCallback(async () => {
     if (!wallet) return;
@@ -29,14 +50,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   }, [wallet]);
 
-  const connect = useCallback(async () => {
+  const connect = useCallback(async (providerId: string) => {
     setConnecting(true);
     setError("");
     try {
-      const w = await connectKeplr();
+      const w = await connectWallet(providerId);
       setWallet(w);
       try {
-        localStorage.setItem("igit-wallet-autoconnect", "1");
+        localStorage.setItem(LS_PROVIDER, providerId);
       } catch {
         /* ignore */
       }
@@ -51,17 +72,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setWallet(null);
     setBalance("");
     try {
-      localStorage.removeItem("igit-wallet-autoconnect");
+      localStorage.removeItem(LS_PROVIDER);
     } catch {
       /* ignore */
     }
   }, []);
 
-  // reconnect on load if the user connected before (Keplr stays authorized)
+  // reconnect on load with the previously used wallet (still authorized)
   useEffect(() => {
-    if (localStorage.getItem("igit-wallet-autoconnect") === "1" && !wallet) {
-      connect();
-    }
+    const prev = localStorage.getItem(LS_PROVIDER);
+    if (prev && !wallet) connect(prev);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -69,13 +89,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     void refreshBalance();
   }, [refreshBalance]);
 
-  // Keplr fires this when the user switches account in the extension
+  // wallets fire this when the user switches account in the extension
   useEffect(() => {
     const onChange = () => {
-      if (localStorage.getItem("igit-wallet-autoconnect") === "1") connect();
+      const prev = localStorage.getItem(LS_PROVIDER);
+      if (prev) connect(prev);
     };
     window.addEventListener("keplr_keystorechange", onChange);
-    return () => window.removeEventListener("keplr_keystorechange", onChange);
+    window.addEventListener("leap_keystorechange", onChange);
+    return () => {
+      window.removeEventListener("keplr_keystorechange", onChange);
+      window.removeEventListener("leap_keystorechange", onChange);
+    };
   }, [connect]);
 
   return (
@@ -86,6 +111,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         balance,
         connecting,
         error,
+        available,
         connect,
         disconnect,
         refreshBalance,

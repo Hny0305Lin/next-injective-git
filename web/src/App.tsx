@@ -10,7 +10,16 @@ import { formatInj } from "./lib/chain";
 export default function App() {
   const nav = useNavigate();
   const [q, setQ] = useState("");
-  const { address, balance, connecting, connect, disconnect } = useWallet();
+  const { address, balance, connecting, connect, disconnect, available } = useWallet();
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const onConnectClick = () => {
+    if (available.length === 1) {
+      connect(available[0].id);
+    } else {
+      setPickerOpen((v) => !v);
+    }
+  };
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,9 +62,33 @@ export default function App() {
               {address.slice(0, 7)}…{address.slice(-4)}
             </button>
           ) : (
-            <button className="wallet-btn" onClick={connect} disabled={connecting}>
-              {connecting ? "connecting…" : "Connect Keplr"}
-            </button>
+            <div className="wallet-picker-wrap">
+              <button className="wallet-btn" onClick={onConnectClick} disabled={connecting}>
+                {connecting ? "connecting…" : "Connect Wallet"}
+              </button>
+              {pickerOpen && !connecting && (
+                <div className="wallet-menu">
+                  {available.length === 0 ? (
+                    <div className="wallet-menu-empty">
+                      No Cosmos wallet detected. Install Keplr, Leap or OKX.
+                    </div>
+                  ) : (
+                    available.map((w) => (
+                      <button
+                        key={w.id}
+                        className="wallet-menu-item"
+                        onClick={() => {
+                          setPickerOpen(false);
+                          connect(w.id);
+                        }}
+                      >
+                        {w.label}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </nav>
       </header>

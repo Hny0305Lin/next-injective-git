@@ -781,7 +781,7 @@ function SponsorForm({
   addr: string;
   repo: string;
 }) {
-  const { wallet, connect, connecting, refreshBalance } = useWallet();
+  const { wallet, connect, connecting, available, refreshBalance } = useWallet();
   const [amount, setAmount] = useState("0.1");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -813,10 +813,21 @@ function SponsorForm({
       <div className="sponsor-form-title">💚 Sponsor this repository</div>
       {!wallet ? (
         <div className="sponsor-connect">
-          <span className="muted">Connect your wallet to sponsor directly in the browser.</span>
-          <button onClick={connect} disabled={connecting}>
-            {connecting ? "connecting…" : "Connect Keplr"}
-          </button>
+          <span className="muted">Connect a wallet to sponsor directly in the browser.</span>
+          {available.length <= 1 ? (
+            <button
+              onClick={() => connect(available[0]?.id ?? "keplr")}
+              disabled={connecting}
+            >
+              {connecting ? "connecting…" : `Connect ${available[0]?.label ?? "Wallet"}`}
+            </button>
+          ) : (
+            available.map((w) => (
+              <button key={w.id} onClick={() => connect(w.id)} disabled={connecting}>
+                {w.label}
+              </button>
+            ))
+          )}
         </div>
       ) : isOwnRepo ? (
         <span className="muted">This is your own repository — sponsorships come from others.</span>
