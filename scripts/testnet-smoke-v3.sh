@@ -25,9 +25,9 @@ sleep 2
 W=$(mktemp -d); cd "$W"
 git init -q && git config user.email v3@e.c && git config user.name v3
 echo v3 > f && git add f && git commit -qm v3
-git remote add inj "inj://${NAME}/${REPO}"      # username, not address!
+git remote add inj "igit://${NAME}/${REPO}"      # username, not address!
 git push inj main 2>&1 | grep -q "new branch" && ok "push via username URL" || bad "push via username URL"
-git clone -q "inj://${NAME}/${REPO}" "${W}/c1" 2>/dev/null && ok "clone via username URL" || bad "clone via username URL"
+git clone -q "igit://${NAME}/${REPO}" "${W}/c1" 2>/dev/null && ok "clone via username URL" || bad "clone via username URL"
 
 echo; echo "== revenue splits =="
 igit splits set "${REPO}" "${BOB}:2000" && ok "splits set (bob 20%)" || bad "splits set"
@@ -50,7 +50,7 @@ TOT=$(injectived query wasm contract-state smart "${CONTRACT}" "{\"sponsor_total
 
 echo; echo "== username release =="
 igit username release && ok "release" || bad "release"
-if git clone -q "inj://${NAME}/${REPO}" "${W}/c2" 2>/dev/null; then bad "clone via released name should fail"; else ok "released name no longer resolves"; fi
+if git clone -q "igit://${NAME}/${REPO}" "${W}/c2" 2>/dev/null; then bad "clone via released name should fail"; else ok "released name no longer resolves"; fi
 
 echo; echo "PASS=${PASS} FAIL=${FAIL}"
 [ "${FAIL}" = 0 ]

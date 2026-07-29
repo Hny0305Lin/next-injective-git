@@ -10,20 +10,17 @@ func TestParseURL(t *testing.T) {
 		repo    string
 		wantErr bool
 	}{
-		{"inj://" + owner + "/hello", owner, "hello", false},
 		{"igit://" + owner + "/hello", owner, "hello", false},
 		{"igit://" + owner + "/hello.git", owner, "hello", false},
+		{"igit://" + owner + "/hello/", owner, "hello", false},
 		{"igit::" + owner + "/hello", owner, "hello", false},
-		{"igit://alice-dev/hello", "alice-dev", "hello", false},
-		{"inj://" + owner + "/hello.git", owner, "hello", false},
-		{"inj://" + owner + "/hello/", owner, "hello", false},
-		{"inj::" + owner + "/hello", owner, "hello", false},
 		{owner + "/hello", owner, "hello", false},
-		{"inj://alice-dev/hello", "alice-dev", "hello", false},
-		{"inj://onlyowner", "", "", true},
-		{"inj://a/b/c", "", "", true},
-		{"inj://Bad_Name!/hello", "", "", true},
-		{"inj://-abc/hello", "", "", true},
+		{"igit://alice-dev/hello", "alice-dev", "hello", false},
+		{"igit://onlyowner", "", "", true},
+		{"igit://a/b/c", "", "", true},
+		{"igit://Bad_Name!/hello", "", "", true},
+		{"igit://-abc/hello", "", "", true},
+		{"inj://" + owner + "/hello", "", "", true}, // legacy scheme removed
 		{"", "", "", true},
 	}
 	for _, tc := range cases {

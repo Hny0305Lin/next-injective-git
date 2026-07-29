@@ -18,15 +18,15 @@ packfiles on IPFS.
 
 ## Features
 
-- `git push` / `git clone` via the `inj://` remote helper
+- `git push` / `git clone` via the `igit://` remote helper
 - Sponsorships with instant revenue splits
-- Username registry — clone as `inj://alice/demo-showcase`
+- Username registry — clone as `igit://alice/demo-showcase`
 
 ## Quick start
 
 ```bash
 igit init demo "hello chain"
-git remote add inj inj://<owner>/demo
+git remote add inj igit://<owner>/demo
 git push inj main
 ```
 
@@ -43,7 +43,7 @@ func main() {
 }
 EOF
 git add . && git commit -qm "feat: initial demo with README and main.go"
-git remote add inj "inj://${OWNER}/${REPO}"
+git remote add inj "igit://${OWNER}/${REPO}"
 git push inj main
 
 mkdir -p src
@@ -69,4 +69,4 @@ echo "greetings > /dev/chain" >> README.md
 git add . && git commit -qm "docs: extend README"
 git push inj main
 
-echo "done: inj://${OWNER}/${REPO}"
+echo "done: igit://${OWNER}/${REPO}"

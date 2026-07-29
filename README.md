@@ -1,6 +1,6 @@
 # Next Injective Git（`igit`）
 
-**Next Injective Git** 是去中心化代码存储平台：Git 对象存 IPFS，仓库元数据与 refs 记录在 Injective 链上的 CosmWasm 合约中。配套 CLI **`igit`** + Git remote helper **`git-remote-inj`**，开发者用原生 `git push` / `git clone` 即可上链协作。
+**Next Injective Git** 是去中心化代码存储平台：Git 对象存 IPFS，仓库元数据与 refs 记录在 Injective 链上的 CosmWasm 合约中。配套 CLI **`igit`** + Git remote helper **`git-remote-igit`**，用 `igit push` / `igit clone`（或原生 `git`）即可上链协作。
 
 ```
 igit init my-repo "hello chain"
@@ -26,7 +26,7 @@ igit clone igit://alice/my-repo
 | 路径 | 说明 |
 |---|---|
 | `contracts/repo-registry/` | CosmWasm 合约（Rust）：仓库注册、refs、协作者权限 |
-| `cli/` | Go CLI：`git-remote-inj` 远程助手 + `igit` 管理命令 |
+| `cli/` | Go CLI：`git-remote-igit` 远程助手 + `igit` 管理命令 |
 | `docs/` | 架构文档与开放问题 |
 
 ## 快速开始
@@ -62,11 +62,9 @@ injectived tx wasm instantiate <CODE_ID> '{"admin":"'$ADMIN'"}' \
 ```bash
 cd cli
 go build ./...
-# igit + the remote helper must be on PATH. Install the helper under both
-# names so igit:// (canonical) and inj:// (legacy) URLs both resolve.
-go install ./cmd/igit
-go build -o "$(go env GOPATH)/bin/git-remote-igit" ./cmd/git-remote-igit
-cp "$(go env GOPATH)/bin/git-remote-igit" "$(go env GOPATH)/bin/git-remote-inj"
+# igit + the remote helper must be on PATH. git resolves igit:// URLs by
+# running git-remote-igit, so both binaries need to be installed.
+go install ./cmd/igit ./cmd/git-remote-igit
 ```
 
 ### 3. 配置并使用
@@ -84,6 +82,13 @@ igit clone igit://alice/hello                  # 任何人可克隆（用户名�
 
 > `igit push` / `igit clone` / `igit pull` 是对 `git` 的轻包装——你只用 `igit` 一个命令即可；
 > 原生 `git push` / `git clone igit://...` 同样有效（走 `git-remote-igit` 助手）。
+
+从 GitHub 一键迁移现有仓库（全部分支 + tag 镜像上链）：
+
+```bash
+igit import github.com/user/repo          # 镜像到 igit://<你的地址>/repo
+igit import github.com/user/repo my-name  # 自定义链上仓库名
+```
 
 ## 工作原理
 

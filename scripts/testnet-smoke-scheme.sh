@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Verify the igit:// scheme + igit push/clone wrappers, and inj:// compat.
+# Verify the igit:// scheme + igit push/clone wrappers; inj:// is now rejected.
 set -uo pipefail
 OWNER=$(injectived keys show igit-dev -a --keyring-backend test)
 REPO="scheme-$(date +%s)"
@@ -30,11 +30,11 @@ igit clone "${OWNER}/${REPO}" c-bare >/dev/null 2>&1
 echo "== igit clone with explicit igit:// URL =="
 if igit clone "igit://${OWNER}/${REPO}" c-igit >/dev/null 2>&1 && [ -f "$W/c-igit/f" ]; then ok "igit clone igit://"; else bad "igit clone igit://"; fi
 
-echo "== backward compat: plain git clone inj:// (git-remote-inj) =="
-if git clone -q "inj://${OWNER}/${REPO}" c-inj >/dev/null 2>&1 && [ -f "$W/c-inj/f" ]; then ok "git clone inj:// compat"; else bad "git clone inj:// compat"; fi
+echo "== legacy inj:// is now rejected =="
+if git clone -q "inj://${OWNER}/${REPO}" c-inj >/dev/null 2>&1 && [ -f "$W/c-inj/f" ]; then bad "inj:// should be rejected"; else ok "inj:// rejected (legacy scheme removed)"; fi
 
-echo "== backward compat: plain git clone igit:// (git-remote-igit) =="
-if git clone -q "igit://${OWNER}/${REPO}" c-igit2 >/dev/null 2>&1 && [ -f "$W/c-igit2/f" ]; then ok "git clone igit:// compat"; else bad "git clone igit:// compat"; fi
+echo "== git clone igit:// (git-remote-igit) =="
+if git clone -q "igit://${OWNER}/${REPO}" c-igit2 >/dev/null 2>&1 && [ -f "$W/c-igit2/f" ]; then ok "git clone igit://"; else bad "git clone igit://"; fi
 
 echo; echo "PASS=${PASS} FAIL=${FAIL}"
 [ "${FAIL}" = 0 ]

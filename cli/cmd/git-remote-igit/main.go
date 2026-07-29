@@ -1,7 +1,6 @@
-// git-remote-igit is the git remote helper for the igit:// transport
-// (the legacy inj:// scheme is still accepted). Git invokes it by convention
-// as git-remote-<scheme>, i.e. git-remote-igit for igit:// URLs — the same
-// binary should also be installed as git-remote-inj for inj:// compatibility.
+// git-remote-igit is the git remote helper for the igit:// transport. Git
+// invokes it by convention as git-remote-<scheme>, i.e. git-remote-igit for
+// igit:// URLs. It must be on PATH for `git`/`igit` clone & push to work.
 package main
 
 import (

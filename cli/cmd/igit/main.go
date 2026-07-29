@@ -19,6 +19,7 @@ const usage = `igit - Next Injective Git (Injective + IPFS)
 
 Usage:
   igit init <name> [description]       create an on-chain repository
+  igit import <github-url> [name]      mirror a GitHub repo onto the chain
   igit clone <owner>/<repo> [dir]      clone a repo (igit://owner/repo also ok)
   igit push [remote] [refspec...]      push current repo on-chain (wraps git)
   igit pull [remote] [refspec...]      pull from chain (wraps git)
@@ -77,6 +78,8 @@ func run(args []string) error {
 	switch args[0] {
 	case "init":
 		return cmdInit(cfg, args[1:])
+	case "import":
+		return cmdImport(cfg, args[1:])
 	case "clone":
 		return cmdClone(cfg, args[1:])
 	case "push":
@@ -173,6 +176,106 @@ func runGit(args []string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+// runGitIn runs git in a specific directory and returns trimmed stdout.
+func runGitIn(dir string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	return strings.TrimSpace(string(out)), err
+}
+
+// runGitInIO runs git in a directory with inherited stdio (for push progress).
+func runGitInIO(dir string, args ...string) error {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+// normalizeGitHub turns various GitHub spellings into a cloneable https URL.
+//   github.com/user/repo, https://github.com/user/repo(.git), user/repo
+func normalizeGitHub(src string) (cloneURL, repoName string, err error) {
+	s := strings.TrimSuffix(src, ".git")
+	s = strings.TrimPrefix(s, "https://")
+	s = strings.TrimPrefix(s, "http://")
+	s = strings.TrimPrefix(s, "git@")
+	s = strings.TrimPrefix(s, "github.com/")
+	s = strings.TrimPrefix(s, "github.com:")
+	parts := strings.Split(strings.Trim(s, "/"), "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("cannot parse GitHub source %q (expected github.com/user/repo)", src)
+	}
+	return fmt.Sprintf("https://github.com/%s/%s.git", parts[0], parts[1]), parts[1], nil
+}
+
+// cmdImport mirrors a GitHub repository onto the chain: bare-clone the source,
+// create the on-chain repo, then push every branch and tag through igit.
+func cmdImport(cfg config.Config, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: igit import <github-url> [name]")
+	}
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	cloneURL, defaultName, err := normalizeGitHub(args[0])
+	if err != nil {
+		return err
+	}
+	name := defaultName
+	if len(args) > 1 {
+		name = args[1]
+	}
+
+	tmp, err := os.MkdirTemp("", "igit-import-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+
+	fmt.Printf("cloning %s ...\n", cloneURL)
+	if err := runGit([]string{"clone", "--bare", "--quiet", cloneURL, tmp}); err != nil {
+		return fmt.Errorf("git clone %s: %w", cloneURL, err)
+	}
+
+	// default branch = the source's HEAD (main / master / ...)
+	branch, err := runGitIn(tmp, "symbolic-ref", "--short", "HEAD")
+	if err != nil || branch == "" {
+		branch = "main"
+	}
+
+	cc := chain.New(cfg)
+	fmt.Printf("creating on-chain repo %q (default branch %q) ...\n", name, branch)
+	if err := cc.CreateRepo(name, "imported from "+cloneURL, branch); err != nil {
+		return err
+	}
+	owner, err := cc.OwnerAddress()
+	if err != nil {
+		return fmt.Errorf("repo created but failed to resolve address: %w", err)
+	}
+
+	remote := fmt.Sprintf("igit://%s/%s", owner, name)
+	if _, err := runGitIn(tmp, "remote", "add", "igit", remote); err != nil {
+		return fmt.Errorf("add igit remote: %w", err)
+	}
+	fmt.Printf("pushing all branches to %s ...\n", remote)
+	if err := runGitInIO(tmp, "push", "igit", "--all"); err != nil {
+		return fmt.Errorf("push branches: %w", err)
+	}
+	// tags are best-effort: a repo may have none
+	if tags, _ := runGitIn(tmp, "tag"); tags != "" {
+		fmt.Printf("pushing tags ...\n")
+		if err := runGitInIO(tmp, "push", "igit", "--tags"); err != nil {
+			return fmt.Errorf("push tags: %w", err)
+		}
+	}
+
+	fmt.Printf("\nimported! your mirror is live:\n")
+	fmt.Printf("  igit clone %s\n", remote)
+	return nil
 }
 
 func cmdCloneURL(cfg config.Config, args []string) error {

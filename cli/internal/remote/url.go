@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// RepoURL is a parsed inj:// remote URL.
+// RepoURL is a parsed igit:// remote URL.
 type RepoURL struct {
 	// Owner is the repository owner: an Injective bech32 address or a
 	// registered username (resolved on-chain before use).
@@ -38,11 +38,10 @@ func ValidUsername(name string) bool {
 
 // ParseURL parses "igit://<owner>/<repo>" (the canonical scheme) and the
 // "igit::<owner>/<repo>" transport form git produces for `git clone igit::...`.
-// The legacy "inj://" / "inj::" schemes stay accepted for backward compat.
 // Owner may be a bech32 address or a registered username (§4).
 func ParseURL(raw string) (RepoURL, error) {
 	s := raw
-	for _, prefix := range []string{"igit://", "igit::", "inj://", "inj::"} {
+	for _, prefix := range []string{"igit://", "igit::"} {
 		if strings.HasPrefix(s, prefix) {
 			s = strings.TrimPrefix(s, prefix)
 			break

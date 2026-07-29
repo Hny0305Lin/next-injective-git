@@ -18,7 +18,7 @@ git config --global user.name  >/dev/null 2>&1 || git config --global user.name 
 git config --global init.defaultBranch main
 
 OWNER=$(injectived keys show igit-dev -a --keyring-backend test)
-URL="inj://${OWNER}/${REPO}"
+URL="igit://${OWNER}/${REPO}"
 echo "owner=${OWNER} repo=${REPO}"
 
 step "1. igit init (CreateRepo on chain)"
