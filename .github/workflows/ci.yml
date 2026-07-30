@@ -1,9 +1,20 @@
 name: ci
 
 on:
+  # Only the buildable source trees gate CI: pushes/PRs that touch just
+  # web/, docs/, scripts/ etc. skip the pipeline entirely. The workflow
+  # file itself is included so changes to CI can still be validated.
   push:
     branches: [main, master]
+    paths:
+      - "cli/**"
+      - "contracts/**"
+      - ".github/workflows/ci.yml"
   pull_request:
+    paths:
+      - "cli/**"
+      - "contracts/**"
+      - ".github/workflows/ci.yml"
 
 jobs:
   contract:
