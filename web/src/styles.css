@@ -1,8 +1,32 @@
 /* ============================================================
    igit — dark theme, Linear/Radicle-flavored GitHub
-   Injective blue #00A3FF · Inter UI · JetBrains Mono code
+   Injective brand: #4D3DFF · ABC Marist display · ABC Whyte UI
+   (licensed webfont files absent → Source Serif 4 / Inter fallback)
    Cards use 1px translucent borders instead of shadows.
    ============================================================ */
+
+/* When licensed ABC Dinamo webfonts are available, drop the .woff2
+   files into web/public/fonts/ and uncomment:
+
+@font-face {
+  font-family: "ABC Marist";
+  src: url("/fonts/ABCMarist-Medium.woff2") format("woff2");
+  font-weight: 500 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: "ABC Whyte";
+  src: url("/fonts/ABCWhyte-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "ABC Whyte";
+  src: url("/fonts/ABCWhyte-Medium.woff2") format("woff2");
+  font-weight: 500 700;
+  font-display: swap;
+}
+*/
 
 :root {
   /* surfaces */
@@ -17,11 +41,12 @@
   --fg: #e9eef7;
   --fg-muted: #8a94a8;
   --fg-faint: #566072;
-  /* injective blue */
-  --accent: #00a3ff;
-  --accent-hover: #33b5ff;
-  --accent-soft: rgba(0, 163, 255, 0.12);
-  --accent-border: rgba(0, 163, 255, 0.45);
+  /* injective brand */
+  --accent: #4d3dff;
+  --accent-hover: #6f61ff;
+  --accent-text: #8a7dff; /* readable on dark bg; solid fills use --accent */
+  --accent-soft: rgba(77, 61, 255, 0.14);
+  --accent-border: rgba(77, 61, 255, 0.55);
   /* semantic */
   --accent-2: #2dd48f;
   --accent-2-soft: rgba(45, 212, 143, 0.12);
@@ -32,7 +57,8 @@
 
   --radius: 8px;
   --radius-lg: 12px;
-  --font-ui: "Inter", -apple-system, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+  --font-ui: "ABC Whyte", "Inter", -apple-system, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+  --font-display: "ABC Marist", "Source Serif 4", Georgia, "Times New Roman", serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   font-size: 15px;
 }
@@ -56,22 +82,30 @@ body {
 }
 
 ::selection {
-  background: rgba(0, 163, 255, 0.28);
+  background: rgba(77, 61, 255, 0.4);
 }
 
 a {
-  color: var(--accent);
+  color: var(--accent-text);
   text-decoration: none;
   transition: color 0.12s ease;
 }
 a:hover {
-  color: var(--accent-hover);
+  color: #a89fff;
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 
 code, pre, .mono {
   font-family: var(--font-mono);
+}
+
+/* Marist (serif) for display headings, Whyte for everything else —
+   mirrors injective.com's editorial pairing */
+h1, h2 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .app {
@@ -121,8 +155,8 @@ code, pre, .mono {
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--accent-soft);
-  color: var(--accent);
-  border-color: rgba(0, 163, 255, 0.25);
+  color: #a89fff;
+  border-color: rgba(77, 61, 255, 0.4);
 }
 .search {
   flex: 1;
@@ -145,7 +179,7 @@ code, pre, .mono {
 }
 .search input:focus {
   border-color: var(--accent-border);
-  box-shadow: 0 0 0 3px rgba(0, 163, 255, 0.15);
+  box-shadow: 0 0 0 3px rgba(77, 61, 255, 0.18);
 }
 .topnav {
   margin-left: auto;
@@ -273,7 +307,7 @@ input.field {
 input.field:focus {
   outline: none;
   border-color: var(--accent-border);
-  box-shadow: 0 0 0 3px rgba(0, 163, 255, 0.15);
+  box-shadow: 0 0 0 3px rgba(77, 61, 255, 0.18);
 }
 
 /* ---- home ---- */
@@ -282,27 +316,27 @@ input.field:focus {
   text-align: center;
   padding: 72px 0 40px;
 }
-/* soft injective-blue glow behind the hero, Linear-style */
+/* soft injective glow behind the hero, Linear-style */
 .hero::before {
   content: "";
   position: absolute;
   inset: -140px -80px auto;
   height: 380px;
   background:
-    radial-gradient(ellipse 60% 55% at 50% 0%, rgba(0, 163, 255, 0.14), transparent 70%),
-    radial-gradient(ellipse 35% 40% at 68% 8%, rgba(45, 212, 143, 0.06), transparent 70%);
+    radial-gradient(ellipse 60% 55% at 50% 0%, rgba(77, 61, 255, 0.18), transparent 70%),
+    radial-gradient(ellipse 35% 40% at 68% 8%, rgba(45, 212, 143, 0.05), transparent 70%);
   pointer-events: none;
   z-index: -1;
 }
 .hero h1 {
-  font-size: 2.6rem;
-  font-weight: 800;
-  letter-spacing: -0.035em;
-  line-height: 1.15;
+  font-size: 2.9rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.12;
   margin: 0 0 12px;
 }
 .hero .accent-grad {
-  background: linear-gradient(100deg, var(--accent) 0%, #4dd0ff 55%, var(--accent-2) 110%);
+  background: linear-gradient(100deg, #7a6cff 0%, var(--accent) 45%, #b3abff 110%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -458,7 +492,7 @@ input.field:focus {
   font-size: 0.86rem;
 }
 .filelist .head-row .sha {
-  color: var(--accent);
+  color: var(--accent-text);
   font-family: var(--font-mono);
 }
 .ellipsis {
@@ -493,7 +527,7 @@ input.field:focus {
   font-size: 0.92rem;
 }
 .commit .sha {
-  color: var(--accent);
+  color: var(--accent-text);
   font-family: var(--font-mono);
   font-size: 0.82rem;
   flex-shrink: 0;
@@ -509,7 +543,7 @@ input.field:focus {
   padding: 6px 12px;
   border-radius: var(--radius);
   font-size: 0.8rem;
-  color: #9ecbff;
+  color: #b6aeff;
 }
 table.plain {
   width: 100%;
@@ -683,7 +717,7 @@ table.plain th {
 }
 .diff-line.hunk {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
   padding: 4px 14px;
 }
 
@@ -700,7 +734,7 @@ table.plain th {
 /* ---- wallet ---- */
 .wallet-btn {
   background: var(--accent);
-  color: #04121d;
+  color: #fff;
   border: 1px solid transparent;
   font-weight: 600;
   transition: background 0.12s ease;
@@ -839,7 +873,7 @@ table.plain th {
 }
 .wallet-connect {
   background: var(--accent);
-  color: #04121d;
+  color: #fff;
   border: 1px solid transparent;
   font-weight: 600;
 }
@@ -948,7 +982,7 @@ table.plain th {
 .linkish {
   background: none;
   border: none;
-  color: var(--accent);
+  color: var(--accent-text);
   cursor: pointer;
   padding: 0;
 }
@@ -969,8 +1003,8 @@ table.plain th {
   color: var(--accent-2);
 }
 .action-badge.a-update_ref {
-  background: rgba(68, 147, 248, 0.18);
-  color: var(--accent);
+  background: rgba(77, 61, 255, 0.2);
+  color: #a89fff;
 }
 .action-badge.a-create_repo {
   background: rgba(210, 153, 34, 0.2);
