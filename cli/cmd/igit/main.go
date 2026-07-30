@@ -19,6 +19,7 @@ const usage = `igit - Next Injective Git (Injective + IPFS)
 
 Usage:
   igit init <name> [description]       create an on-chain repository
+  igit init [-b <branch>] [.]          local git init passthrough (flags/no name)
   igit import <github-url> [name]      mirror a GitHub repo onto the chain
   igit clone <owner>/<repo> [dir]      clone a repo (igit://owner/repo also ok)
   igit push [remote] [refspec...]      push current repo on-chain (wraps git)
@@ -55,6 +56,10 @@ Usage:
 Config keys:
   contract_address chain_id lcd_endpoint node key_name keyring_backend
   injectived_bin gas_prices ipfs_api ipfs_gateway
+
+Any other subcommand (add, commit, remote, status, log, branch, ...) is
+forwarded to git, so the whole workflow can stay inside igit. Commands
+above shadow git ones of the same name (e.g. use ` + "`git config`" + ` for git's).
 `
 
 const version = "0.2.0"
@@ -121,13 +126,17 @@ func run(args []string) error {
 		fmt.Print(usage)
 		return nil
 	default:
-		return fmt.Errorf("unknown command %q (see `igit help`)", args[0])
+		// Anything igit does not know is forwarded to git so the whole
+		// workflow (add/commit/remote/status/...) stays inside igit.
+		return runGit(args)
 	}
 }
 
 func cmdInit(cfg config.Config, args []string) error {
-	if len(args) < 1 {
-		return fmt.Errorf("usage: igit init <name> [description]")
+	// `igit init`, `igit init -b main`, `igit init .` are local git init
+	// passthroughs; a plain name keeps the on-chain create semantics.
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") || args[0] == "." {
+		return runGit(append([]string{"init"}, args...))
 	}
 	if err := cfg.Validate(); err != nil {
 		return err
@@ -144,7 +153,7 @@ func cmdInit(cfg config.Config, args []string) error {
 	}
 	fmt.Printf("repository created on chain.\n\n")
 	fmt.Printf("add it as a git remote:\n")
-	fmt.Printf("  git remote add inj igit://%s/%s\n", owner, name)
+	fmt.Printf("  igit remote add inj igit://%s/%s\n", owner, name)
 	fmt.Printf("  igit push inj main\n")
 	return nil
 }
