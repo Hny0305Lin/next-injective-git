@@ -5,6 +5,7 @@ target/
 
 # Go
 cli/bin/
+cli/dist/
 *.exe
 
 # Web

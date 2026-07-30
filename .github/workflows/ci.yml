@@ -13,7 +13,7 @@ jobs:
       run:
         working-directory: contracts/repo-registry
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # 1.81.0 is mandatory: Injective's CosmWasm VM rejects wasm built by
       # 1.82+ (reference-types) / 1.87+ (bulk-memory). Cargo.lock pins the
@@ -41,7 +41,7 @@ jobs:
           test -s "$f"
           head -c4 "$f" | od -An -tx1 | grep -q "00 61 73 6d"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: repo_registry.wasm
           path: contracts/repo-registry/target/wasm32-unknown-unknown/release/repo_registry.wasm
@@ -53,9 +53,9 @@ jobs:
       run:
         working-directory: cli
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.22"
           # zero-dependency module: no go.sum to key a cache on
@@ -67,7 +67,23 @@ jobs:
       - name: test
         run: go test ./...
 
-      - name: build binaries
+      # Cross-compile the igit toolchain (igit + git-remote-igit) for every
+      # supported platform; pure-Go zero-dependency module, so CGO stays off.
+      - name: build toolchain matrix
         run: |
-          go build ./cmd/igit
-          go build ./cmd/git-remote-igit
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            os=${target%/*}; arch=${target#*/}
+            ext=""; [ "$os" = "windows" ] && ext=".exe"
+            out="dist/igit-${os}-${arch}"
+            mkdir -p "$out"
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch \
+              go build -trimpath -ldflags "-s -w" -o "$out/igit${ext}" ./cmd/igit
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch \
+              go build -trimpath -ldflags "-s -w" -o "$out/git-remote-igit${ext}" ./cmd/git-remote-igit
+          done
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: igit-toolchain
+          path: cli/dist/
+          if-no-files-found: error
