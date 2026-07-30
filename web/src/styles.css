@@ -1114,3 +1114,48 @@ table.plain th {
 .repo-chip:hover {
   border-color: var(--accent);
 }
+
+/* ---- home: testnet address section ---- */
+.addr-section {
+  margin-top: 48px;
+}
+.addr-section h2 {
+  font-size: 1.35rem;
+  margin: 0 0 4px;
+}
+.addr-section h2 .badge {
+  font-family: var(--font-mono);
+  margin-left: 6px;
+}
+.addr-section h3 {
+  font-size: 0.95rem;
+  color: var(--fg-muted);
+  font-weight: 600;
+  margin: 20px 0 8px;
+}
+.addr-card {
+  padding: 4px 12px;
+  overflow-x: auto;
+}
+.addr-table td.mono {
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+.addr-table tr:last-child td {
+  border-bottom: none;
+}
+.addr-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+.addr-links a {
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+@media (max-width: 720px) {
+  .addr-table td.mono {
+    white-space: normal;
+    word-break: break-all;
+  }
+}
