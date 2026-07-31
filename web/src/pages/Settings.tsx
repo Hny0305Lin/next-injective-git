@@ -21,7 +21,7 @@ export default function Settings() {
       <input className="field mono" value={cfg.lcd} onChange={set("lcd")} />
       <label>repo-registry contract</label>
       <input className="field mono" value={cfg.contract} onChange={set("contract")} />
-      <label>IPFS gateway (use http://127.0.0.1:8080 with a local Kubo)</label>
+      <label>IPFS gateway (default: project HK gateway; or http://127.0.0.1:8080 with a local Kubo)</label>
       <input className="field mono" value={cfg.ipfsGateway} onChange={set("ipfsGateway")} />
       <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
         <button

@@ -13,7 +13,9 @@ const DEFAULTS: AppConfig = {
   // the k8s endpoint behaves correctly for browser use.
   lcd: "https://k8s.testnet.lcd.injective.network",
   contract: "inj1mg6x7ht3zyyszed9aq67q6kd0y5rtq7wf756jh",
-  ipfsGateway: "https://ipfs.io",
+  // Project HK gateway (mainland-reachable). Mirrors cli/internal/config
+  // Defaults(); ipfs.io / dweb.link are blocked in mainland China.
+  ipfsGateway: "https://igit-hk.haohanyh.ovh",
 };
 
 const LS_KEY = "igit-web-config";
@@ -21,7 +23,13 @@ const LS_KEY = "igit-web-config";
 export function loadConfig(): AppConfig {
   try {
     const raw = localStorage.getItem(LS_KEY);
-    if (raw) return { ...DEFAULTS, ...JSON.parse(raw) };
+    if (raw) {
+      const cfg = { ...DEFAULTS, ...JSON.parse(raw) };
+      // Migrate configs saved before the default gateway switch: ipfs.io is
+      // unreachable from mainland China, silently move to the project gateway.
+      if (cfg.ipfsGateway === "https://ipfs.io") cfg.ipfsGateway = DEFAULTS.ipfsGateway;
+      return cfg;
+    }
   } catch {
     /* fall through to defaults */
   }
