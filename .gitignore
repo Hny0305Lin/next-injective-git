@@ -35,3 +35,7 @@ web/tsconfig.tsbuildinfo
 web/.vercel-tmp/
 web/.vercel/
 .vercel/
+
+# SSH private key staged for user download (NEVER commit)
+/igit_hk
+/igit_hk.pem

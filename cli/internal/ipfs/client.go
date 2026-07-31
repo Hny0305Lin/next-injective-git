@@ -110,3 +110,27 @@ func (c *Client) Cat(cid string) (io.ReadCloser, error) {
 	}
 	return gwResp.Body, nil
 }
+
+// SwarmConnect asks the local Kubo node to open a direct connection to the
+// given peer multiaddr, so Bitswap can exchange blocks without waiting on DHT
+// discovery. Best effort: callers typically ignore the error (a missing daemon
+// or unreachable peer just means the gateway fallback is used instead).
+func (c *Client) SwarmConnect(multiaddr string) error {
+	endpoint := c.apiURL + "/api/v0/swarm/connect?arg=" + url.QueryEscape(multiaddr)
+	req, err := http.NewRequest(http.MethodPost, endpoint, nil)
+	if err != nil {
+		return err
+	}
+	// short timeout: this is an optimization, never block a git op for long
+	client := &http.Client{Timeout: 12 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("swarm connect: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("swarm connect: HTTP %d: %s", resp.StatusCode, msg)
+	}
+	return nil
+}

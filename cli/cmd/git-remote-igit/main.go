@@ -50,10 +50,27 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	ic := ipfs.New(cfg.IPFSAPI, cfg.IPFSGateway)
+	// Warm up direct connections to configured swarm peers (e.g. the project
+	// pin node) so Bitswap can fetch/serve packs without waiting on slow DHT
+	// lookups. Best effort: no local daemon or an unreachable peer just falls
+	// back to the gateway path.
+	var peerOK bool
+	for _, p := range cfg.Peers {
+		if p == "" {
+			continue
+		}
+		if err := ic.SwarmConnect(p); err == nil {
+			peerOK = true
+		}
+	}
+	if peerOK {
+		fmt.Fprintf(os.Stderr, "git-remote-igit: direct swarm peer connected (bypassing DHT)\n")
+	}
 	helper := remote.NewHelper(
 		repoURL,
 		cc,
-		ipfs.New(cfg.IPFSAPI, cfg.IPFSGateway),
+		ic,
 		gitRepo,
 		os.Stdin, os.Stdout, os.Stderr,
 	)

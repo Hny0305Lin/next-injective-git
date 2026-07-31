@@ -35,6 +35,10 @@ type Config struct {
 	IPFSAPI string `json:"ipfs_api"`
 	// IPFSGateway is used as a fallback for downloads, e.g. "https://ipfs.io".
 	IPFSGateway string `json:"ipfs_gateway"`
+	// Peers are libp2p multiaddrs the helper directly connects to on startup
+	// (e.g. the project pin node), letting Bitswap fetch/serve packs without
+	// waiting on slow DHT discovery. Optional; best effort.
+	Peers []string `json:"peers"`
 }
 
 // Defaults returns a config pre-filled for Injective testnet + local Kubo.
@@ -47,7 +51,11 @@ func Defaults() Config {
 		InjectivedBin:  "injectived",
 		GasPrices:      "500000000inj",
 		IPFSAPI:        "http://127.0.0.1:5001",
-		IPFSGateway:    "https://ipfs.io",
+		IPFSGateway:    "https://igit-hk.haohanyh.ovh",
+		Peers: []string{
+			"/dns4/igit-hk.haohanyh.ovh/tcp/4001/p2p/12D3KooWRfRoRqEyC4Qsb4ow2yfGsSAAymTFSxj6vr2SYQnxk55W",
+			"/ip4/45.202.249.80/tcp/4001/p2p/12D3KooWRfRoRqEyC4Qsb4ow2yfGsSAAymTFSxj6vr2SYQnxk55W",
+		},
 	}
 }
 

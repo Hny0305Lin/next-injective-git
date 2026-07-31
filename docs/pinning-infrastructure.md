@@ -57,7 +57,8 @@
 | Filebase | 5GB | S3 兼容 API，可达性尚可 | 多地理冗余，企业向 |
 | 4EVERLAND | 有免费档 | 亚洲节点较多 | 提供 IPFS Migrator 迁移工具 |
 
-- 结论：**Filebase 或 4EVERLAND 优先**（亚洲/可达性更好），通过标准 [Pinning Service API](https://ipfs.github.io/pinning-services-api-spec/) 接入——Kubo 原生支持 `ipfs pin remote`，pin 脚本同一份逻辑双写即可
+- 结论：**Filebase 或 4EVERLAND 优先**（亚洲/可达性更好）
+- ⚠️ 实测（2026-07）：Filebase **免费档不开放 Pinning Service API**（`ipfs pin remote` 返回 403 "requires a paid account"）。改走 **S3 兼容 API + CAR 导入**：`ipfs dag export <cid>` 后 PUT 到 `s3.filebase.com/<bucket>/<cid>.car` 带 `x-amz-meta-import: car` 头，Filebase 以**原始 CID** pin（已验证 CIDv1 严格一致；注意 curl 需 `--http1.1`，HTTP/2 会挂起）
 - 用途：自建节点故障时的兜底副本，不承担用户流量
 
 ## 4. Phase C/D（远期，不阻塞上线）
@@ -78,9 +79,10 @@
 
 ## 7. 实施清单（按序）
 
-- [ ] 购置 HK/SG VPS + 域名 + TLS（1 天）
-- [ ] Docker 部署 Kubo + nginx 只读网关（0.5 天）
-- [ ] 事件轮询 pin 脚本（LCD → pack_uris → pin add）（1 天）
-- [ ] CLI：`peers` 配置 + swarm connect + 默认网关切换（0.5 天）
-- [ ] 注册 Filebase/4EVERLAND，pin 脚本双写远程 pinning（0.5 天）
+- [x] 购置 HK VPS（45.202.249.80，Debian 11，1C/1G/5G）；域名 + TLS 已完成（见下）
+- [x] 部署 Kubo + nginx 只读网关——`scripts/gateway-deploy.sh`（直跑二进制而非 Docker，省磁盘；`lowpower,server` profile + 512M swap + StorageMax 1GB + systemd MemoryMax 750M）。已验收：外网 `/ipfs/<cid>` 可取回 packfile，启动后内存用 250M/磁盘 1.6G
+- [x] 域名 + TLS——`scripts/gateway-tls.sh`（certbot --nginx，Let's Encrypt，certbot.timer 自动续期）。❗重要：原定 `ipfs-gateway-hk.haohanyh.com` 经实测 **`haohanyh.com` 全域被 GFW 按 SNI/Host 封锁**（大陆任意子域 HTTP/HTTPS 均被 RST，ICP 备案也无法绕过；诊断方法：`curl --resolve <域名>:443:<IP> https://<域名>/`）。已改用干净域名 **`igit-hk.haohanyh.ovh`**（不同注册域，已验证大陆 HTTPS 直达），Cloudflare 灰云/DNS-only 直指源站
+- [x] 事件轮询 pin 脚本（LCD → pack_uris → pin add）——`scripts/pin-indexer.sh`：轮询合约 `update_ref` 交易，从 tx 消息体提取 `pack_uris`（事件不含该字段），本地 pin + Filebase CAR 双写，状态记录于 `~/.igit/pinned.list`（待迁到 HK 节点以 systemd timer 自动 pin）
+- [x] CLI 默认网关切换：`~/.igit/config.json` 的 `ipfs_gateway` 改为 `https://igit-hk.haohanyh.ovh`（`peers`/swarm connect 优化待代码支持）
+- [x] 注册 Filebase，pin 脚本双写远程 pinning（凭据在 `~/.igit/filebase.env`，不入库）；4EVERLAND 待注册接入
 - [ ] 大陆网络实测：家宽 clone 一个无本地节点的仓库（验收标准：60s 内完成）
