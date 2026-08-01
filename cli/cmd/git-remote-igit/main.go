@@ -4,8 +4,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/chain"
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/config"
@@ -50,7 +52,20 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	ic := ipfs.New(cfg.IPFSAPI, cfg.IPFSGateway)
+	gateways, health := ipfs.SelectGateways(context.Background(), cfg.EffectiveGateways())
+	urls := make([]string, 0, len(gateways))
+	for _, gateway := range gateways {
+		urls = append(urls, gateway.URL)
+	}
+	ic := ipfs.NewWithGateways(cfg.IPFSAPI, urls)
+	if len(gateways) > 0 {
+		for _, result := range health {
+			if result.Err == nil && result.Gateway.URL == gateways[0].URL {
+				fmt.Fprintf(os.Stderr, "git-remote-igit: gateway %s selected (%s)\n", result.Gateway.Name, result.Latency.Round(time.Millisecond))
+				break
+			}
+		}
+	}
 	// Warm up direct connections to configured swarm peers (e.g. the project
 	// pin node) so Bitswap can fetch/serve packs without waiting on slow DHT
 	// lookups. Best effort: no local daemon or an unreachable peer just falls

@@ -17,17 +17,32 @@ import (
 // Client talks to a Kubo node's RPC API (/api/v0) and, optionally,
 // falls back to a public gateway for reads.
 type Client struct {
-	apiURL     string
-	gatewayURL string
-	http       *http.Client
+	apiURL      string
+	gatewayURLs []string
+	http        *http.Client
 }
 
 // New creates a client. gatewayURL may be empty to disable the fallback.
 func New(apiURL, gatewayURL string) *Client {
+	return NewWithGateways(apiURL, []string{gatewayURL})
+}
+
+// NewWithGateways creates a client with ordered read-only gateway fallbacks.
+func NewWithGateways(apiURL string, gatewayURLs []string) *Client {
+	var normalized []string
+	seen := make(map[string]bool)
+	for _, gatewayURL := range gatewayURLs {
+		gatewayURL = strings.TrimRight(strings.TrimSpace(gatewayURL), "/")
+		if gatewayURL == "" || seen[gatewayURL] {
+			continue
+		}
+		seen[gatewayURL] = true
+		normalized = append(normalized, gatewayURL)
+	}
 	return &Client{
-		apiURL:     strings.TrimRight(apiURL, "/"),
-		gatewayURL: strings.TrimRight(gatewayURL, "/"),
-		http:       &http.Client{Timeout: 10 * time.Minute},
+		apiURL:      strings.TrimRight(apiURL, "/"),
+		gatewayURLs: normalized,
+		http:        &http.Client{Timeout: 10 * time.Minute},
 	}
 }
 
@@ -89,26 +104,36 @@ func (c *Client) Cat(cid string) (io.ReadCloser, error) {
 	if err == nil && resp.StatusCode == http.StatusOK {
 		return resp.Body, nil
 	}
+	localFailure := "unknown error"
+	if err != nil {
+		localFailure = err.Error()
+	} else if resp != nil {
+		localFailure = fmt.Sprintf("HTTP %d", resp.StatusCode)
+	}
 	if resp != nil {
 		resp.Body.Close()
 	}
 
-	if c.gatewayURL == "" {
-		if err != nil {
-			return nil, fmt.Errorf("ipfs cat %s: %w", cid, err)
+	if len(c.gatewayURLs) == 0 {
+		return nil, fmt.Errorf("ipfs cat %s: %s", cid, localFailure)
+	}
+	// Gateway fallback (read-only, plain GET). Try every selected endpoint so a
+	// mid-transfer outage never turns into a clone failure when the other region
+	// is healthy.
+	var gatewayErrors []string
+	for _, gatewayURL := range c.gatewayURLs {
+		gwResp, gwErr := c.http.Get(gatewayURL + "/ipfs/" + url.PathEscape(cid))
+		if gwErr != nil {
+			gatewayErrors = append(gatewayErrors, gatewayURL+": "+gwErr.Error())
+			continue
 		}
-		return nil, fmt.Errorf("ipfs cat %s: HTTP %d", cid, resp.StatusCode)
-	}
-	// gateway fallback (read-only, plain GET)
-	gwResp, gwErr := c.http.Get(c.gatewayURL + "/ipfs/" + url.PathEscape(cid))
-	if gwErr != nil {
-		return nil, fmt.Errorf("ipfs cat %s: node and gateway both failed: %v / %v", cid, err, gwErr)
-	}
-	if gwResp.StatusCode != http.StatusOK {
+		if gwResp.StatusCode == http.StatusOK {
+			return gwResp.Body, nil
+		}
 		gwResp.Body.Close()
-		return nil, fmt.Errorf("ipfs cat %s: gateway HTTP %d", cid, gwResp.StatusCode)
+		gatewayErrors = append(gatewayErrors, fmt.Sprintf("%s: HTTP %d", gatewayURL, gwResp.StatusCode))
 	}
-	return gwResp.Body, nil
+	return nil, fmt.Errorf("ipfs cat %s: node and all gateways failed: %s / %s", cid, localFailure, strings.Join(gatewayErrors, "; "))
 }
 
 // SwarmConnect asks the local Kubo node to open a direct connection to the

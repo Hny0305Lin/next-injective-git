@@ -15,6 +15,18 @@ web/dist/
 # logs / scratch
 *.log
 
+# Local credentials and private keys
+*.key
+*.pem
+*.env
+*.env.*
+!*.env.example
+
+# Local-only notes, legacy files, and generated demo evidence
+/local-only/
+/demo-evidence/
+/.igit-*-test/
+
 # IDE / OS
 .vscode/
 .idea/
@@ -35,7 +47,3 @@ web/tsconfig.tsbuildinfo
 web/.vercel-tmp/
 web/.vercel/
 .vercel/
-
-# SSH private key staged for user download (NEVER commit)
-/igit_hk
-/igit_hk.pem

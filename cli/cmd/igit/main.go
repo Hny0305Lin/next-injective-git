@@ -4,15 +4,19 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/chain"
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/config"
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/ipfs"
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/tunnel"
 )
 
 const usage = `igit - Next Injective Git (Injective + IPFS)
@@ -49,6 +53,11 @@ Usage:
   igit username show [name|address]    resolve a username / reverse lookup
   igit key show                        show the configured signing address
   igit key new <name>                  create a key in the injectived keyring
+  igit gateway status                  probe HK/US read-only gateway health
+  igit gateway select                  print the automatically selected order
+  igit tunnel key <hk|us> <path>       save a local SSH private-key path
+  igit tunnel start|stop|status <name> manage a loopback Kubo API tunnel
+  igit tunnel use <hk|us>              use a live tunnel as IPFS API
   igit config list                     show current configuration
   igit config set <key> <value>        set a configuration value
   igit version                         print version
@@ -117,6 +126,10 @@ func run(args []string) error {
 		return cmdUsername(cfg, args[1:])
 	case "key":
 		return cmdKey(cfg, args[1:])
+	case "gateway":
+		return cmdGateway(cfg, args[1:])
+	case "tunnel":
+		return cmdTunnel(cfg, args[1:])
 	case "config":
 		return cmdConfig(cfg, args[1:])
 	case "version":
@@ -129,6 +142,95 @@ func run(args []string) error {
 		// Anything igit does not know is forwarded to git so the whole
 		// workflow (add/commit/remote/status/...) stays inside igit.
 		return runGit(args)
+	}
+}
+
+func cmdGateway(cfg config.Config, args []string) error {
+	if len(args) != 1 || (args[0] != "status" && args[0] != "select") {
+		return fmt.Errorf("usage: igit gateway <status|select>")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	selected, health := ipfs.SelectGateways(ctx, cfg.EffectiveGateways())
+	if args[0] == "status" {
+		for _, result := range health {
+			if result.Err != nil {
+				fmt.Printf("%-8s down  %-36s %v\n", result.Gateway.Name, result.Gateway.URL, result.Err)
+				continue
+			}
+			fmt.Printf("%-8s ok    %-36s %s\n", result.Gateway.Name, result.Gateway.URL, result.Latency.Round(time.Millisecond))
+		}
+		return nil
+	}
+	for i, gateway := range selected {
+		fmt.Printf("%d  %-8s %s\n", i+1, gateway.Name, gateway.URL)
+	}
+	return nil
+}
+
+func cmdTunnel(cfg config.Config, args []string) error {
+	if len(args) < 2 {
+		return fmt.Errorf("usage: igit tunnel <key|start|stop|status|use> <hk|us> [private-key-path]")
+	}
+	profile, ok := cfg.TunnelByName(args[1])
+	if !ok {
+		return fmt.Errorf("unknown tunnel %q (available: hk, us)", args[1])
+	}
+	switch args[0] {
+	case "key":
+		if len(args) != 3 {
+			return fmt.Errorf("usage: igit tunnel key <hk|us> <private-key-path>")
+		}
+		profile.IdentityFile = args[2]
+		cfg.SetTunnel(profile)
+		if err := config.Save(cfg); err != nil {
+			return err
+		}
+		fmt.Printf("%s SSH identity configured\n", profile.Name)
+		return nil
+	case "start":
+		if len(args) != 2 {
+			return fmt.Errorf("usage: igit tunnel start <hk|us>")
+		}
+		if err := tunnel.Start(profile); err != nil {
+			return err
+		}
+		fmt.Printf("%s tunnel ready: %s -> %s@%s:%s\n", profile.Name, profile.LocalAddr, profile.User, profile.Host, profile.RemoteAddr)
+		return nil
+	case "stop":
+		if len(args) != 2 {
+			return fmt.Errorf("usage: igit tunnel stop <hk|us>")
+		}
+		if err := tunnel.Stop(profile); err != nil {
+			return err
+		}
+		fmt.Printf("%s tunnel stopped\n", profile.Name)
+		return nil
+	case "status":
+		if len(args) != 2 {
+			return fmt.Errorf("usage: igit tunnel status <hk|us>")
+		}
+		if err := tunnel.Check(profile); err != nil {
+			fmt.Printf("%s down: %v\n", profile.Name, err)
+			return nil
+		}
+		fmt.Printf("%s ready: %s\n", profile.Name, tunnel.APIURL(profile))
+		return nil
+	case "use":
+		if len(args) != 2 {
+			return fmt.Errorf("usage: igit tunnel use <hk|us>")
+		}
+		if err := tunnel.Check(profile); err != nil {
+			return fmt.Errorf("%s tunnel is not ready: %w", profile.Name, err)
+		}
+		cfg.IPFSAPI = tunnel.APIURL(profile)
+		if err := config.Save(cfg); err != nil {
+			return err
+		}
+		fmt.Printf("ipfs_api = %s\n", cfg.IPFSAPI)
+		return nil
+	default:
+		return fmt.Errorf("unknown tunnel subcommand %q", args[0])
 	}
 }
 
@@ -206,7 +308,8 @@ func runGitInIO(dir string, args ...string) error {
 }
 
 // normalizeGitHub turns various GitHub spellings into a cloneable https URL.
-//   github.com/user/repo, https://github.com/user/repo(.git), user/repo
+//
+//	github.com/user/repo, https://github.com/user/repo(.git), user/repo
 func normalizeGitHub(src string) (cloneURL, repoName string, err error) {
 	s := strings.TrimSuffix(src, ".git")
 	s = strings.TrimPrefix(s, "https://")

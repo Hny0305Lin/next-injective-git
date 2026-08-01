@@ -108,6 +108,23 @@ cd contracts/repo-registry && cargo test
 cd cli && go test ./... && go vet ./...
 ```
 
+## IPFS 网关与远程 Kubo 控制面
+
+CLI 默认健康探测香港 `https://igit-hk.haohanyh.ovh` 与美国 `https://igit-us.haohanyh.ovh`。读取时始终先试本地 Kubo；失败后自动按 `/healthz` 延迟排序尝试健康的只读网关，并在内容请求失败时继续回退到下一台。
+
+```bash
+igit gateway status                 # 查看两地健康和延迟
+igit gateway select                 # 查看当前自动选路顺序
+
+# Kubo API 从不公开；通过本机 loopback SSH 隧道按需使用远端节点。
+igit tunnel key hk ~/.ssh/igit_hk
+igit tunnel start hk                # 127.0.0.1:15001 -> HK 127.0.0.1:5001
+igit tunnel use hk                  # 将 ipfs_api 切换到已验证的隧道
+igit tunnel stop hk
+```
+
+美国隧道对应 `us`，本地端口为 `15002`。私钥路径仅保存在用户的 `~/.igit/config.json`；不要将私钥或该配置文件提交到仓库。
+
 ## License
 
 Apache-2.0
