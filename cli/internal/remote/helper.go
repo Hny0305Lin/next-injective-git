@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/chain"
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/i18n"
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/replication"
 )
 
@@ -76,8 +77,8 @@ func (h *Helper) printf(format string, args ...any) {
 	fmt.Fprintf(h.out, format, args...)
 }
 
-func (h *Helper) progress(format string, args ...any) {
-	fmt.Fprintf(h.log, "igit: "+format+"\n", args...)
+func (h *Helper) progress(english, chinese string, args ...any) {
+	fmt.Fprintf(h.log, "igit: "+i18n.Text(english, chinese)+"\n", args...)
 }
 
 // Run processes commands until stdin closes.
@@ -106,7 +107,7 @@ func (h *Helper) Run() error {
 			// end of command stream
 			return nil
 		default:
-			return fmt.Errorf("unsupported remote-helper command: %q", line)
+			return i18n.Errorf("unsupported remote-helper command: %q", "不支持的 remote-helper 命令：%q", line)
 		}
 	}
 	return h.in.Err()
@@ -116,7 +117,7 @@ func (h *Helper) Run() error {
 func (h *Helper) cmdList() error {
 	refs, err := h.chain.ListRefs(h.url.Owner, h.url.Repo)
 	if err != nil {
-		return fmt.Errorf("list refs from chain: %w", err)
+		return i18n.Errorf("list refs from chain: %w", "从链上获取 refs 失败：%w", err)
 	}
 	h.remoteRefs = map[string]chain.RefInfo{}
 	for _, r := range refs {
@@ -154,7 +155,7 @@ func (h *Helper) cmdFetchBatch(first string) error {
 	for _, w := range wanted {
 		parts := strings.Fields(w)
 		if len(parts) != 3 {
-			return fmt.Errorf("malformed fetch command: %q", w)
+			return i18n.Errorf("malformed fetch command: %q", "格式错误的 fetch 命令：%q", w)
 		}
 		refName := parts[2]
 		entry, ok := h.remoteRefs[refName]
@@ -162,7 +163,7 @@ func (h *Helper) cmdFetchBatch(first string) error {
 			// list may not have run in this process; resolve directly
 			_, refURIs, err := h.chain.ResolveRef(h.url.Owner, h.url.Repo, refName)
 			if err != nil {
-				return fmt.Errorf("resolve %s: %w", refName, err)
+				return i18n.Errorf("resolve %s: %w", "解析 %s 失败：%w", refName, err)
 			}
 			entry = chain.RefInfo{RefName: refName, PackURIs: refURIs}
 		}
@@ -175,7 +176,7 @@ func (h *Helper) cmdFetchBatch(first string) error {
 	}
 
 	for i, uri := range uris {
-		h.progress("downloading packfile %d/%d (%s)", i+1, len(uris), uri)
+		h.progress("downloading packfile %d/%d (%s)", "正在下载 packfile %d/%d（%s）", i+1, len(uris), uri)
 		body, err := h.fetchPack(uri)
 		if err != nil {
 			return err
@@ -183,7 +184,7 @@ func (h *Helper) cmdFetchBatch(first string) error {
 		err = h.git.IndexPack(body)
 		body.Close()
 		if err != nil {
-			return fmt.Errorf("ingest packfile %s: %w", uri, err)
+			return i18n.Errorf("ingest packfile %s: %w", "导入 packfile %s 失败：%w", uri, err)
 		}
 	}
 	h.printf("\n")
@@ -197,7 +198,7 @@ func (h *Helper) fetchPack(uri string) (io.ReadCloser, error) {
 		return h.ipfs.GetFromGateways(cid)
 	}
 	if strings.Contains(uri, "://") {
-		return nil, fmt.Errorf("unsupported pack uri scheme: %s", uri)
+		return nil, i18n.Errorf("unsupported pack uri scheme: %s", "不支持的 pack URI 协议：%s", uri)
 	}
 	return h.ipfs.GetFromGateways(uri)
 }
@@ -244,13 +245,13 @@ func parsePushSpec(line string) pushSpec {
 func (h *Helper) pushOne(spec pushSpec) error {
 	// empty src means delete the remote ref
 	if spec.src == "" {
-		h.progress("deleting %s on chain", spec.dst)
+		h.progress("deleting %s on chain", "正在从链上删除 %s", spec.dst)
 		return h.chain.DeleteRef(h.url.Owner, h.url.Repo, spec.dst)
 	}
 
 	localSha := h.git.ResolveRef(spec.src)
 	if localSha == "" {
-		return fmt.Errorf("cannot resolve local ref %s", spec.src)
+		return i18n.Errorf("cannot resolve local ref %s", "无法解析本地 ref %s", spec.src)
 	}
 
 	// build incremental pack: exclude every remote tip we already have.
@@ -267,7 +268,7 @@ func (h *Helper) pushOne(spec pushSpec) error {
 		}
 	}
 
-	h.progress("packing objects for %s", spec.dst)
+	h.progress("packing objects for %s", "正在为 %s 打包对象", spec.dst)
 	pack, err := h.git.PackObjects(localSha, exclude)
 	if err != nil {
 		return err
@@ -283,28 +284,28 @@ func (h *Helper) pushOne(spec pushSpec) error {
 		if prev, ok := h.remoteRefs[spec.dst]; ok {
 			cids = prev.PackURIs
 		} else {
-			h.progress("no new objects; building self-contained pack for %s", spec.dst)
+			h.progress("no new objects; building self-contained pack for %s", "没有新对象，正在为 %s 创建自包含 pack", spec.dst)
 			if pack, err = h.git.PackObjects(localSha, nil); err != nil {
 				return err
 			}
 		}
 	}
 	if len(cids) == 0 {
-		h.progress("uploading packfile (%d bytes) to IPFS", len(pack))
+		h.progress("uploading packfile (%d bytes) to IPFS", "正在将 packfile（%d 字节）上传到 IPFS", len(pack))
 		cid, err := h.ipfs.AddTemporary(spec.dst+".pack", bytes.NewReader(pack))
 		if err != nil {
 			return err
 		}
 		cids = append(cids, "ipfs://"+cid)
-		h.progress("temporary local pack added: %s", cid)
+		h.progress("temporary local pack added: %s", "临时本地 pack 已添加：%s", cid)
 		if h.uploadPeer == "" {
-			return fmt.Errorf("US Kubo swarm peer is not configured; set upload.us_peer to the US service multiaddr")
+			return i18n.Errorf("US Kubo swarm peer is not configured; set upload.us_peer to the US service multiaddr", "未配置 US Kubo swarm peer；请将 upload.us_peer 设为 US 服务的 multiaddr")
 		}
 		if err := h.ipfs.SwarmConnect(h.uploadPeer); err != nil {
-			return fmt.Errorf("connect temporary local Kubo to US peer: %w", err)
+			return i18n.Errorf("connect temporary local Kubo to US peer: %w", "连接临时本地 Kubo 到 US peer 失败：%w", err)
 		}
 		if h.replication == nil {
-			return fmt.Errorf("US replication client is not configured")
+			return i18n.Errorf("US replication client is not configured", "未配置 US replication 客户端")
 		}
 		sum := sha256.Sum256(pack)
 		replicationRequest := replication.Request{
@@ -312,19 +313,19 @@ func (h *Helper) pushOne(spec pushSpec) error {
 			PackSHA256: fmt.Sprintf("%x", sum), Size: int64(len(pack)),
 			ExpiresAt: time.Now().Add(30 * time.Minute).Unix(),
 		}
-		h.progress("requesting CID-bound upload authorization for %s", cid)
+		h.progress("requesting CID-bound upload authorization for %s", "正在请求绑定 CID 的上传授权：%s", cid)
 		scopedReplication, err := h.replication.Authorize(replicationRequest)
 		if err != nil {
 			return err
 		}
-		h.progress("requesting US Kubo replication and Pin confirmation for %s", cid)
+		h.progress("requesting US Kubo replication and Pin confirmation for %s", "正在请求 US Kubo 复制和 Pin 确认：%s", cid)
 		if _, err := scopedReplication.Confirm(replicationRequest); err != nil {
 			return err
 		}
-		h.progress("US Kubo confirmed durable Pin: %s", cid)
+		h.progress("US Kubo confirmed durable Pin: %s", "US Kubo 已确认持久 Pin：%s", cid)
 	}
 
-	h.progress("broadcasting update_ref tx for %s -> %s", spec.dst, localSha[:8])
+	h.progress("broadcasting update_ref tx for %s -> %s", "正在广播 update_ref 交易：%s -> %s", spec.dst, localSha[:8])
 	if err := h.chain.UpdateRef(
 		h.url.Owner, h.url.Repo, spec.dst, localSha, cids, expectedSha, spec.force,
 	); err != nil {
@@ -333,9 +334,9 @@ func (h *Helper) pushOne(spec pushSpec) error {
 		return err
 	}
 	if err := h.ipfs.GC(); err != nil {
-		h.progress("update_ref succeeded; local temporary GC failed: %v", err)
+		h.progress("update_ref succeeded; local temporary GC failed: %v", "update_ref 成功；本地临时 GC 失败：%v", err)
 	} else {
-		h.progress("update_ref succeeded; local unpinned temporary blocks GC completed")
+		h.progress("update_ref succeeded; local unpinned temporary blocks GC completed", "update_ref 成功；本地未 Pin 的临时区块 GC 已完成")
 	}
 	return nil
 }

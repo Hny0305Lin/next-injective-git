@@ -1,8 +1,9 @@
 package remote
 
 import (
-	"fmt"
 	"strings"
+
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/i18n"
 )
 
 // RepoURL is a parsed igit:// remote URL.
@@ -50,11 +51,11 @@ func ParseURL(raw string) (RepoURL, error) {
 	s = strings.TrimSuffix(strings.Trim(s, "/"), ".git")
 	parts := strings.Split(s, "/")
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return RepoURL{}, fmt.Errorf("invalid remote URL %q (expected igit://<owner>/<repo>)", raw)
+		return RepoURL{}, i18n.Errorf("invalid remote URL %q (expected igit://<owner>/<repo>)", "无效的远程 URL %q（应为 igit://<owner>/<repo>）", raw)
 	}
 	if !strings.HasPrefix(parts[0], "inj1") && !ValidUsername(parts[0]) {
-		return RepoURL{}, fmt.Errorf(
-			"invalid owner %q: expected an inj1... address or a registered username", parts[0])
+		return RepoURL{}, i18n.Errorf(
+			"invalid owner %q: expected an inj1... address or a registered username", "所有者 %q 无效：应为 inj1... 地址或已注册用户名", parts[0])
 	}
 	return RepoURL{Owner: parts[0], Repo: parts[1]}, nil
 }

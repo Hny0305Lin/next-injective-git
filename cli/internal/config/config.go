@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/i18n"
 )
 
 // Config holds every knob the CLI needs to reach Injective and IPFS.
@@ -220,8 +222,9 @@ func (c Config) Validate() error {
 		missing = append(missing, "key_name")
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf(
+		return i18n.Errorf(
 			"missing config: %s (run `igit config set <key> <value>`)",
+			"缺少配置：%s（运行 `igit config set <key> <value>`）",
 			strings.Join(missing, ", "),
 		)
 	}

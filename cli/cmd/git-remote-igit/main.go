@@ -12,6 +12,7 @@ import (
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/chain"
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/config"
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/gitio"
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/i18n"
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/ipfs"
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/remote"
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/replication"
@@ -26,7 +27,7 @@ func main() {
 
 func run() error {
 	if len(os.Args) < 3 {
-		return fmt.Errorf("usage: git-remote-igit <remote-name> <url>")
+		return i18n.Errorf("usage: git-remote-igit <remote-name> <url>", "用法：git-remote-igit <remote-name> <url>")
 	}
 	repoURL, err := remote.ParseURL(os.Args[2])
 	if err != nil {
@@ -37,7 +38,7 @@ func run() error {
 		return err
 	}
 	if cfg.ContractAddress == "" {
-		return fmt.Errorf("contract_address not configured (run `igit config set contract_address <addr>`)")
+		return i18n.Errorf("contract_address not configured (run `igit config set contract_address <addr>`)", "未配置 contract_address（运行 `igit config set contract_address <addr>`）")
 	}
 	cc := chain.New(cfg)
 	// URLs may carry a registered username instead of a bech32 address (§4)
@@ -46,7 +47,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(os.Stderr, "git-remote-igit: %s -> %s\n", repoURL.Owner, owner)
+		fmt.Fprintf(os.Stderr, "git-remote-igit: "+i18n.Text("%s -> %s\n", "%s -> %s（已解析）\n"), repoURL.Owner, owner)
 		repoURL.Owner = owner
 	}
 	gitRepo, err := gitio.FromEnv()
@@ -63,7 +64,7 @@ func run() error {
 	if len(gateways) > 0 {
 		for _, result := range health {
 			if result.Err == nil && result.Gateway.URL == gateways[0].URL {
-				fmt.Fprintf(os.Stderr, "git-remote-igit: gateway %s selected (%s)\n", result.Gateway.Name, result.Latency.Round(time.Millisecond))
+				fmt.Fprintf(os.Stderr, "git-remote-igit: "+i18n.Text("gateway %s selected (%s)\n", "已选择网关 %s（%s）\n"), result.Gateway.Name, result.Latency.Round(time.Millisecond))
 				break
 			}
 		}

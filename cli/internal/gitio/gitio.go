@@ -5,11 +5,12 @@ package gitio
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/i18n"
 )
 
 // Repo wraps a local git directory (the GIT_DIR the helper operates on).
@@ -25,7 +26,7 @@ func FromEnv() (*Repo, error) {
 	}
 	out, err := exec.Command("git", "rev-parse", "--git-dir").Output()
 	if err != nil {
-		return nil, fmt.Errorf("not inside a git repository: %w", err)
+		return nil, i18n.Errorf("not inside a git repository: %w", "当前不在 git 仓库中：%w", err)
 	}
 	return &Repo{GitDir: strings.TrimSpace(string(out))}, nil
 }
@@ -68,7 +69,7 @@ func (r *Repo) PackObjects(want string, exclude []string) ([]byte, error) {
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("git pack-objects: %w: %s", err, errBuf.String())
+		return nil, i18n.Errorf("git pack-objects: %w: %s", "git pack-objects 失败：%w：%s", err, errBuf.String())
 	}
 	return out.Bytes(), nil
 }
@@ -81,7 +82,7 @@ func (r *Repo) IndexPack(pack io.Reader) error {
 	cmd.Stderr = &errBuf
 	cmd.Stdout = io.Discard
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("git index-pack: %w: %s", err, errBuf.String())
+		return i18n.Errorf("git index-pack: %w: %s", "git index-pack 失败：%w：%s", err, errBuf.String())
 	}
 	return nil
 }
