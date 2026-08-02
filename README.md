@@ -4,7 +4,7 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](#license)
 [![Go](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go&logoColor=white)](cli/go.mod)
 [![Rust](https://img.shields.io/badge/Rust-1.81.0-000000?logo=rust&logoColor=white)](contracts/repo-registry/Cargo.toml)
-[![Injective](https://img.shields.io/badge/Injective-testnet-00F2FE)](https://testnet.explorer.injective.network/contract/inj1mg6x7ht3zyyszed9aq67q6kd0y5rtq7wf756jh)
+[![Injective](https://img.shields.io/badge/Injective-testnet-4D3DFF)](https://testnet.explorer.injective.network/contract/inj1mg6x7ht3zyyszed9aq67q6kd0y5rtq7wf756jh)
 
 **中国大陆 Gitee 开源仓库：** [https://gitee.com/haohanyh_0591/next-injective-git](https://gitee.com/haohanyh_0591/next-injective-git)
 
