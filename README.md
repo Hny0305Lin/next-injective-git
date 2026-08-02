@@ -1,5 +1,13 @@
 # Next Injective Git（`igit`）
 
+[![Gitee Stars](https://img.shields.io/gitee/stars/haohanyh_0591/next-injective-git?logo=gitee&label=Gitee%20Stars)](https://gitee.com/haohanyh_0591/next-injective-git)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](#license)
+[![Go](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go&logoColor=white)](cli/go.mod)
+[![Rust](https://img.shields.io/badge/Rust-1.81.0-000000?logo=rust&logoColor=white)](contracts/repo-registry/Cargo.toml)
+[![Injective](https://img.shields.io/badge/Injective-testnet-00F2FE)](https://testnet.explorer.injective.network/contract/inj1mg6x7ht3zyyszed9aq67q6kd0y5rtq7wf756jh)
+
+**中国大陆 Gitee 开源仓库：** [https://gitee.com/haohanyh_0591/next-injective-git](https://gitee.com/haohanyh_0591/next-injective-git)
+
 **Next Injective Git** 是去中心化代码协作平台：Git 对象存 IPFS，仓库元数据与 refs 记录在 Injective 链上的 CosmWasm 合约中。项目提供 CLI **`igit`**、Git remote helper **`git-remote-igit`** 和浏览器端 Web UI，可通过原生 Git 工作流或钱包完成链上协作。
 
 ```
