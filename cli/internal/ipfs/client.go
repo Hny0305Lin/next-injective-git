@@ -1,5 +1,5 @@
-// Package ipfs is a minimal Kubo (go-ipfs) HTTP RPC client using only the
-// standard library, plus a public-gateway fallback for downloads.
+// Package ipfs is a minimal Kubo (go-ipfs) HTTP RPC client. Kubo is used only
+// for push-time temporary block serving; clone/fetch uses HTTPS gateways.
 package ipfs
 
 import (
@@ -14,8 +14,7 @@ import (
 	"time"
 )
 
-// Client talks to a Kubo node's RPC API (/api/v0) and, optionally,
-// falls back to a public gateway for reads.
+// Client talks to an optional local Kubo RPC API and read-only HTTPS gateways.
 type Client struct {
 	apiURL      string
 	gatewayURLs []string
@@ -52,8 +51,10 @@ type addResponse struct {
 	Size string `json:"Size"`
 }
 
-// Add uploads a blob to IPFS (pinned, CIDv1) and returns its CID.
-func (c *Client) Add(name string, r io.Reader) (string, error) {
+// AddTemporary uploads a blob to the local Kubo without a recursive pin. The
+// caller must run GC only after the controlled US replication service and the
+// on-chain update_ref transaction have both succeeded.
+func (c *Client) AddTemporary(name string, r io.Reader) (string, error) {
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)
 	part, err := mw.CreateFormFile("file", name)
@@ -67,7 +68,10 @@ func (c *Client) Add(name string, r io.Reader) (string, error) {
 		return "", err
 	}
 
-	endpoint := c.apiURL + "/api/v0/add?pin=true&cid-version=1"
+	if c.apiURL == "" {
+		return "", fmt.Errorf("local Kubo is not configured; install and start Kubo for temporary push uploads (clone/fetch do not require it)")
+	}
+	endpoint := c.apiURL + "/api/v0/add?pin=false&cid-version=1"
 	req, err := http.NewRequest(http.MethodPost, endpoint, &body)
 	if err != nil {
 		return "", err
@@ -75,7 +79,7 @@ func (c *Client) Add(name string, r io.Reader) (string, error) {
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("ipfs add: %w (is Kubo running at %s?)", err, c.apiURL)
+		return "", fmt.Errorf("temporary ipfs add: %w (install/start local Kubo at %s; clone/fetch do not require it)", err, c.apiURL)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -92,30 +96,11 @@ func (c *Client) Add(name string, r io.Reader) (string, error) {
 	return ar.Hash, nil
 }
 
-// Cat downloads a blob by CID, trying the local node first and then the
-// public gateway.
-func (c *Client) Cat(cid string) (io.ReadCloser, error) {
-	endpoint := c.apiURL + "/api/v0/cat?arg=" + url.QueryEscape(cid)
-	req, err := http.NewRequest(http.MethodPost, endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := c.http.Do(req)
-	if err == nil && resp.StatusCode == http.StatusOK {
-		return resp.Body, nil
-	}
-	localFailure := "unknown error"
-	if err != nil {
-		localFailure = err.Error()
-	} else if resp != nil {
-		localFailure = fmt.Sprintf("HTTP %d", resp.StatusCode)
-	}
-	if resp != nil {
-		resp.Body.Close()
-	}
-
+// GetFromGateways downloads a CID through HTTPS only. It intentionally never
+// attempts local Kubo Cat, so clone/fetch works on machines without Kubo.
+func (c *Client) GetFromGateways(cid string) (io.ReadCloser, error) {
 	if len(c.gatewayURLs) == 0 {
-		return nil, fmt.Errorf("ipfs cat %s: %s", cid, localFailure)
+		return nil, fmt.Errorf("no read gateways configured for %s", cid)
 	}
 	// Gateway fallback (read-only, plain GET). Try every selected endpoint so a
 	// mid-transfer outage never turns into a clone failure when the other region
@@ -133,7 +118,29 @@ func (c *Client) Cat(cid string) (io.ReadCloser, error) {
 		gwResp.Body.Close()
 		gatewayErrors = append(gatewayErrors, fmt.Sprintf("%s: HTTP %d", gatewayURL, gwResp.StatusCode))
 	}
-	return nil, fmt.Errorf("ipfs cat %s: node and all gateways failed: %s / %s", cid, localFailure, strings.Join(gatewayErrors, "; "))
+	return nil, fmt.Errorf("gateway GET /ipfs/%s failed: %s", cid, strings.Join(gatewayErrors, "; "))
+}
+
+// GC asks local Kubo to remove unpinned temporary blocks. It is deliberately
+// explicit: callers must not invoke it after a failed chain transaction.
+func (c *Client) GC() error {
+	if c.apiURL == "" {
+		return nil
+	}
+	req, err := http.NewRequest(http.MethodPost, c.apiURL+"/api/v0/repo/gc", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("ipfs gc: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("ipfs gc: HTTP %d: %s", resp.StatusCode, msg)
+	}
+	return nil
 }
 
 // SwarmConnect asks the local Kubo node to open a direct connection to the

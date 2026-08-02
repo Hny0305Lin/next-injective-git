@@ -14,6 +14,7 @@ import (
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/gitio"
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/ipfs"
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/remote"
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/replication"
 )
 
 func main() {
@@ -57,6 +58,7 @@ func run() error {
 	for _, gateway := range gateways {
 		urls = append(urls, gateway.URL)
 	}
+	urls = append(urls, cfg.EffectiveReadFallbacks()...)
 	ic := ipfs.NewWithGateways(cfg.IPFSAPI, urls)
 	if len(gateways) > 0 {
 		for _, result := range health {
@@ -66,26 +68,12 @@ func run() error {
 			}
 		}
 	}
-	// Warm up direct connections to configured swarm peers (e.g. the project
-	// pin node) so Bitswap can fetch/serve packs without waiting on slow DHT
-	// lookups. Best effort: no local daemon or an unreachable peer just falls
-	// back to the gateway path.
-	var peerOK bool
-	for _, p := range cfg.Peers {
-		if p == "" {
-			continue
-		}
-		if err := ic.SwarmConnect(p); err == nil {
-			peerOK = true
-		}
-	}
-	if peerOK {
-		fmt.Fprintf(os.Stderr, "git-remote-igit: direct swarm peer connected (bypassing DHT)\n")
-	}
 	helper := remote.NewHelper(
 		repoURL,
 		cc,
 		ic,
+		replication.New(cfg.Upload.Endpoint, cfg.Upload.Authorization),
+		cfg.Upload.USPeer,
 		gitRepo,
 		os.Stdin, os.Stdout, os.Stderr,
 	)

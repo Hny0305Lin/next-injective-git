@@ -36,7 +36,7 @@ func TestSelectGatewaysSkipsUnhealthy(t *testing.T) {
 	}
 }
 
-func TestCatFallsBackAcrossGateways(t *testing.T) {
+func TestGetFromGatewaysFallsBackAcrossGateways(t *testing.T) {
 	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/ipfs/bafy-test" {
 			t.Fatalf("unexpected content path %q", r.URL.Path)
@@ -51,7 +51,7 @@ func TestCatFallsBackAcrossGateways(t *testing.T) {
 	defer second.Close()
 
 	client := NewWithGateways("http://127.0.0.1:1", []string{first.URL, second.URL})
-	body, err := client.Cat("bafy-test")
+	body, err := client.GetFromGateways("bafy-test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,5 +73,22 @@ func TestSelectGatewaysRetainsOrderWhenAllProbesFail(t *testing.T) {
 	}
 	if len(selected) != 2 || selected[0].Name != "first" || selected[1].Name != "second" {
 		t.Fatalf("selected = %#v, want original order", selected)
+	}
+}
+
+func TestGetFromGatewaysNeverCallsLocalKubo(t *testing.T) {
+	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("gateway pack"))
+	}))
+	defer gateway.Close()
+	client := NewWithGateways("http://127.0.0.1:1", []string{gateway.URL})
+	body, err := client.GetFromGateways("bafy-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer body.Close()
+	got, _ := io.ReadAll(body)
+	if string(got) != "gateway pack" {
+		t.Fatalf("got %q", got)
 	}
 }

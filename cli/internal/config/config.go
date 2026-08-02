@@ -31,7 +31,9 @@ type Config struct {
 	InjectivedBin string `json:"injectived_bin"`
 	// GasPrices e.g. "500000000inj".
 	GasPrices string `json:"gas_prices"`
-	// IPFSAPI is the Kubo RPC API, default "http://127.0.0.1:5001".
+	// IPFSAPI is an optional loopback-only Kubo RPC API used exclusively while
+	// pushing a temporary pack. It is never a clone/fetch dependency.
+	// The json name is kept for backwards compatible config files.
 	IPFSAPI string `json:"ipfs_api"`
 	// IPFSGateway is used as a fallback for downloads, e.g. "https://ipfs.io".
 	// Deprecated: use Gateways for an ordered, health-checked set. This field is
@@ -41,13 +43,14 @@ type Config struct {
 	// Gateways are read-only IPFS path gateways. The helper probes /healthz and
 	// uses the healthy endpoints in latency order before downloading a pack.
 	Gateways []Gateway `json:"gateways"`
-	// Tunnels describes SSH-only control-plane access to remote Kubo APIs. The
-	// remote APIs stay bound to loopback; igit forwards them to loopback locally.
-	Tunnels []Tunnel `json:"tunnels"`
-	// Peers are libp2p multiaddrs the helper directly connects to on startup
-	// (e.g. the project pin node), letting Bitswap fetch/serve packs without
-	// waiting on slow DHT discovery. Optional; best effort.
-	Peers []string `json:"peers"`
+	// Upload identifies the controlled US replication service. Its token is a
+	// short-lived, CID/repository/ref/pack-hash-bound authorization; it is not a
+	// Kubo credential and cannot submit chain transactions.
+	Upload Upload `json:"upload"`
+	// PublicGatewayFallbacks are tried only after the HK/US read gateways. They
+	// are data-plane fallbacks and deliberately are not health-ranked with the
+	// project gateways.
+	PublicGatewayFallbacks []string `json:"public_gateway_fallbacks"`
 }
 
 // Gateway is a read-only public IPFS gateway endpoint.
@@ -56,8 +59,21 @@ type Gateway struct {
 	URL  string `json:"url"`
 }
 
-// Tunnel is an SSH local-forwarding profile for a remote, loopback-only Kubo
-// API. IdentityFile is intentionally just a local path, never key material.
+// Upload configures the push-only temporary local-Kubo path.
+type Upload struct {
+	// Endpoint is the HTTPS controlled replication/Pin endpoint in the US.
+	Endpoint string `json:"endpoint"`
+	// Authorization is a short-lived scoped bearer token issued by the upload
+	// authorization service. It is intentionally separate from chain keys.
+	Authorization string `json:"authorization,omitempty"`
+	// USPeer is the US Kubo swarm multiaddr. It is used only before a push so
+	// the US node can fetch the temporary local blocks directly.
+	USPeer string `json:"us_peer"`
+}
+
+// Tunnel is retained only so older internal profiles can still be parsed by
+// the unused compatibility package. It is no longer part of Config and no
+// normal-user CLI command exposes remote Kubo SSH forwarding.
 type Tunnel struct {
 	Name         string `json:"name"`
 	Host         string `json:"host"`
@@ -67,7 +83,8 @@ type Tunnel struct {
 	RemoteAddr   string `json:"remote_addr"`
 }
 
-// Defaults returns a config pre-filled for Injective testnet + local Kubo.
+// Defaults returns a config pre-filled for Injective testnet, read gateways,
+// and an optional loopback local Kubo used only for push uploads.
 func Defaults() Config {
 	return Config{
 		ChainID:        "injective-888",
@@ -82,15 +99,26 @@ func Defaults() Config {
 			{Name: "hk", URL: "https://igit-hk.haohanyh.ovh"},
 			{Name: "us", URL: "https://igit-us.haohanyh.ovh"},
 		},
-		Tunnels: []Tunnel{
-			{Name: "hk", Host: "45.202.249.80", User: "root", LocalAddr: "127.0.0.1:15001", RemoteAddr: "127.0.0.1:5001"},
-			{Name: "us", Host: "162.35.187.224", User: "root", LocalAddr: "127.0.0.1:15002", RemoteAddr: "127.0.0.1:5001"},
+		Upload: Upload{
+			Endpoint: "https://igit-us.haohanyh.ovh/v1/replications",
 		},
-		Peers: []string{
-			"/dns4/igit-hk.haohanyh.ovh/tcp/4001/p2p/12D3KooWRfRoRqEyC4Qsb4ow2yfGsSAAymTFSxj6vr2SYQnxk55W",
-			"/ip4/45.202.249.80/tcp/4001/p2p/12D3KooWRfRoRqEyC4Qsb4ow2yfGsSAAymTFSxj6vr2SYQnxk55W",
-		},
+		PublicGatewayFallbacks: []string{"https://ipfs.io"},
 	}
+}
+
+// EffectiveReadGateways returns health-ranked project gateways followed by
+// public read fallbacks. The helper probes only the project gateways.
+func (c Config) EffectiveReadFallbacks() []string {
+	seen := make(map[string]bool)
+	var urls []string
+	for _, raw := range c.PublicGatewayFallbacks {
+		url := strings.TrimRight(strings.TrimSpace(raw), "/")
+		if url != "" && !seen[url] {
+			seen[url] = true
+			urls = append(urls, url)
+		}
+	}
+	return urls
 }
 
 // EffectiveGateways returns the configured endpoints without duplicates. A
@@ -122,27 +150,6 @@ func (c Config) EffectiveGateways() []Gateway {
 		add(g)
 	}
 	return gateways
-}
-
-// TunnelByName returns a configured tunnel profile.
-func (c Config) TunnelByName(name string) (Tunnel, bool) {
-	for _, tunnel := range c.Tunnels {
-		if tunnel.Name == name {
-			return tunnel, true
-		}
-	}
-	return Tunnel{}, false
-}
-
-// SetTunnel replaces a named tunnel profile while retaining all others.
-func (c *Config) SetTunnel(updated Tunnel) {
-	for i := range c.Tunnels {
-		if c.Tunnels[i].Name == updated.Name {
-			c.Tunnels[i] = updated
-			return
-		}
-	}
-	c.Tunnels = append(c.Tunnels, updated)
 }
 
 // Dir returns the config directory (~/.igit), honoring IGIT_HOME override.

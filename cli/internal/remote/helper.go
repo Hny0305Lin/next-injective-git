@@ -5,22 +5,25 @@ package remote
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/chain"
-	"github.com/Hny0305Lin/next-injective-git/cli/internal/gitio"
-	"github.com/Hny0305Lin/next-injective-git/cli/internal/ipfs"
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/replication"
 )
 
 // Helper runs the remote-helper conversation over in/out.
 type Helper struct {
-	url   RepoURL
-	chain *chain.Client
-	ipfs  *ipfs.Client
-	git   *gitio.Repo
+	url         RepoURL
+	chain       chainClient
+	ipfs        ipfsClient
+	replication replication.Authorizer
+	uploadPeer  string
+	git         gitRepo
 
 	in  *bufio.Scanner
 	out io.Writer
@@ -30,19 +33,42 @@ type Helper struct {
 	remoteRefs map[string]chain.RefInfo
 }
 
+type chainClient interface {
+	ListRefs(owner, repo string) ([]chain.RefInfo, error)
+	RepoInfo(owner, repo string) (*chain.RepoInfo, error)
+	ResolveRef(owner, repo, refName string) (string, []string, error)
+	DeleteRef(owner, repo, refName string) error
+	UpdateRef(owner, repo, refName, commitSHA string, packURIs []string, expectedSHA string, force bool) error
+}
+
+type ipfsClient interface {
+	AddTemporary(name string, r io.Reader) (string, error)
+	GetFromGateways(cid string) (io.ReadCloser, error)
+	SwarmConnect(multiaddr string) error
+	GC() error
+}
+
+type gitRepo interface {
+	ResolveRef(ref string) string
+	PackObjects(tip string, exclude []string) ([]byte, error)
+	IndexPack(pack io.Reader) error
+}
+
 // NewHelper wires up the helper dependencies.
-func NewHelper(url RepoURL, cc *chain.Client, ic *ipfs.Client, git *gitio.Repo, in io.Reader, out, log io.Writer) *Helper {
+func NewHelper(url RepoURL, cc chainClient, ic ipfsClient, rc replication.Authorizer, uploadPeer string, git gitRepo, in io.Reader, out, log io.Writer) *Helper {
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	return &Helper{
-		url:        url,
-		chain:      cc,
-		ipfs:       ic,
-		git:        git,
-		in:         sc,
-		out:        out,
-		log:        log,
-		remoteRefs: map[string]chain.RefInfo{},
+		url:         url,
+		chain:       cc,
+		ipfs:        ic,
+		replication: rc,
+		uploadPeer:  uploadPeer,
+		git:         git,
+		in:          sc,
+		out:         out,
+		log:         log,
+		remoteRefs:  map[string]chain.RefInfo{},
 	}
 }
 
@@ -168,12 +194,12 @@ func (h *Helper) cmdFetchBatch(first string) error {
 // today; bare CIDs are accepted for pre-URI on-chain entries.
 func (h *Helper) fetchPack(uri string) (io.ReadCloser, error) {
 	if cid, ok := strings.CutPrefix(uri, "ipfs://"); ok {
-		return h.ipfs.Cat(cid)
+		return h.ipfs.GetFromGateways(cid)
 	}
 	if strings.Contains(uri, "://") {
 		return nil, fmt.Errorf("unsupported pack uri scheme: %s", uri)
 	}
-	return h.ipfs.Cat(uri)
+	return h.ipfs.GetFromGateways(uri)
 }
 
 type pushSpec struct {
@@ -265,18 +291,53 @@ func (h *Helper) pushOne(spec pushSpec) error {
 	}
 	if len(cids) == 0 {
 		h.progress("uploading packfile (%d bytes) to IPFS", len(pack))
-		cid, err := h.ipfs.Add(spec.dst+".pack", bytes.NewReader(pack))
+		cid, err := h.ipfs.AddTemporary(spec.dst+".pack", bytes.NewReader(pack))
 		if err != nil {
 			return err
 		}
 		cids = append(cids, "ipfs://"+cid)
-		h.progress("packfile pinned: %s", cid)
+		h.progress("temporary local pack added: %s", cid)
+		if h.uploadPeer == "" {
+			return fmt.Errorf("US Kubo swarm peer is not configured; set upload.us_peer to the US service multiaddr")
+		}
+		if err := h.ipfs.SwarmConnect(h.uploadPeer); err != nil {
+			return fmt.Errorf("connect temporary local Kubo to US peer: %w", err)
+		}
+		if h.replication == nil {
+			return fmt.Errorf("US replication client is not configured")
+		}
+		sum := sha256.Sum256(pack)
+		replicationRequest := replication.Request{
+			CID: cid, Owner: h.url.Owner, Repo: h.url.Repo, Ref: spec.dst,
+			PackSHA256: fmt.Sprintf("%x", sum), Size: int64(len(pack)),
+			ExpiresAt: time.Now().Add(30 * time.Minute).Unix(),
+		}
+		h.progress("requesting CID-bound upload authorization for %s", cid)
+		scopedReplication, err := h.replication.Authorize(replicationRequest)
+		if err != nil {
+			return err
+		}
+		h.progress("requesting US Kubo replication and Pin confirmation for %s", cid)
+		if _, err := scopedReplication.Confirm(replicationRequest); err != nil {
+			return err
+		}
+		h.progress("US Kubo confirmed durable Pin: %s", cid)
 	}
 
 	h.progress("broadcasting update_ref tx for %s -> %s", spec.dst, localSha[:8])
-	return h.chain.UpdateRef(
+	if err := h.chain.UpdateRef(
 		h.url.Owner, h.url.Repo, spec.dst, localSha, cids, expectedSha, spec.force,
-	)
+	); err != nil {
+		// Keep temporary blocks after a failed transaction so the same upload can
+		// be retried. The US service reclaims an unreferenced pin after its TTL.
+		return err
+	}
+	if err := h.ipfs.GC(); err != nil {
+		h.progress("update_ref succeeded; local temporary GC failed: %v", err)
+	} else {
+		h.progress("update_ref succeeded; local unpinned temporary blocks GC completed")
+	}
+	return nil
 }
 
 // packEmpty reports whether a packfile stream contains zero objects

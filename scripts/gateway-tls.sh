@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # gateway-tls: obtain a Let's Encrypt cert for the HK IPFS gateway and enable
-# HTTPS (keeps plain HTTP serving too, as a fallback). Idempotent.
+# HTTPS with HTTP redirected after ACME validation. Idempotent.
 # Run as root ON THE SERVER:  bash gateway-tls.sh [domain] [email]
 set -euo pipefail
 
@@ -45,9 +45,9 @@ EOF
 ln -sf /etc/nginx/sites-available/ipfs-gateway /etc/nginx/sites-enabled/default
 nginx -t && systemctl reload nginx
 
-echo "== [3/4] obtain cert + enable TLS (no forced redirect) =="
+echo "== [3/4] obtain cert + enable TLS with HTTP redirect =="
 certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "$EMAIL" \
-  --no-redirect --keep-until-expiring
+  --redirect --keep-until-expiring
 nginx -t && systemctl reload nginx
 
 echo "== [4/4] verify + auto-renew =="

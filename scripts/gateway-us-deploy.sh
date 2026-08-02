@@ -2,7 +2,8 @@
 # gateway-us-deploy: enable the public, read-only US IPFS gateway.
 #
 # The Kubo API and native gateway remain loopback-only. nginx publishes only
-# GET/HEAD /ipfs/<cid> and a Kubo-backed /healthz endpoint over HTTPS.
+# GET/HEAD /ipfs/<cid>, a Kubo-backed /healthz endpoint, and the narrowly
+# scoped controlled replication service over HTTPS.
 # Run as root ON THE US SERVER: bash gateway-us-deploy.sh [domain] [email]
 set -euo pipefail
 
@@ -59,6 +60,17 @@ server {
         proxy_connect_timeout 2s;
         proxy_read_timeout 3s;
     }
+    # This is not a Kubo proxy. The service validates short-lived scoped
+    # authorization before it asks the local US Kubo to fetch and pin one CID.
+    location ~ ^/v1/(replications|upload-authorizations)$ {
+        limit_except POST { deny all; }
+        client_max_body_size 16k;
+        proxy_pass http://127.0.0.1:8088;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 12m;
+    }
     location / { return 403; }
 }
 EOF
@@ -69,7 +81,7 @@ nginx -t
 systemctl enable --now nginx
 
 certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "$EMAIL" \
-  --no-redirect --keep-until-expiring
+  --redirect --keep-until-expiring
 nginx -t
 systemctl reload nginx
 

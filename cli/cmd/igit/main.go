@@ -16,7 +16,6 @@ import (
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/chain"
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/config"
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/ipfs"
-	"github.com/Hny0305Lin/next-injective-git/cli/internal/tunnel"
 )
 
 const usage = `igit - Next Injective Git (Injective + IPFS)
@@ -55,9 +54,6 @@ Usage:
   igit key new <name>                  create a key in the injectived keyring
   igit gateway status                  probe HK/US read-only gateway health
   igit gateway select                  print the automatically selected order
-  igit tunnel key <hk|us> <path>       save a local SSH private-key path
-  igit tunnel start|stop|status <name> manage a loopback Kubo API tunnel
-  igit tunnel use <hk|us>              use a live tunnel as IPFS API
   igit config list                     show current configuration
   igit config set <key> <value>        set a configuration value
   igit version                         print version
@@ -65,6 +61,7 @@ Usage:
 Config keys:
   contract_address chain_id lcd_endpoint node key_name keyring_backend
   injectived_bin gas_prices ipfs_api ipfs_gateway
+  upload.endpoint upload.authorization upload.us_peer
 
 Any other subcommand (add, commit, remote, status, log, branch, ...) is
 forwarded to git, so the whole workflow can stay inside igit. Commands
@@ -128,8 +125,6 @@ func run(args []string) error {
 		return cmdKey(cfg, args[1:])
 	case "gateway":
 		return cmdGateway(cfg, args[1:])
-	case "tunnel":
-		return cmdTunnel(cfg, args[1:])
 	case "config":
 		return cmdConfig(cfg, args[1:])
 	case "version":
@@ -166,72 +161,6 @@ func cmdGateway(cfg config.Config, args []string) error {
 		fmt.Printf("%d  %-8s %s\n", i+1, gateway.Name, gateway.URL)
 	}
 	return nil
-}
-
-func cmdTunnel(cfg config.Config, args []string) error {
-	if len(args) < 2 {
-		return fmt.Errorf("usage: igit tunnel <key|start|stop|status|use> <hk|us> [private-key-path]")
-	}
-	profile, ok := cfg.TunnelByName(args[1])
-	if !ok {
-		return fmt.Errorf("unknown tunnel %q (available: hk, us)", args[1])
-	}
-	switch args[0] {
-	case "key":
-		if len(args) != 3 {
-			return fmt.Errorf("usage: igit tunnel key <hk|us> <private-key-path>")
-		}
-		profile.IdentityFile = args[2]
-		cfg.SetTunnel(profile)
-		if err := config.Save(cfg); err != nil {
-			return err
-		}
-		fmt.Printf("%s SSH identity configured\n", profile.Name)
-		return nil
-	case "start":
-		if len(args) != 2 {
-			return fmt.Errorf("usage: igit tunnel start <hk|us>")
-		}
-		if err := tunnel.Start(profile); err != nil {
-			return err
-		}
-		fmt.Printf("%s tunnel ready: %s -> %s@%s:%s\n", profile.Name, profile.LocalAddr, profile.User, profile.Host, profile.RemoteAddr)
-		return nil
-	case "stop":
-		if len(args) != 2 {
-			return fmt.Errorf("usage: igit tunnel stop <hk|us>")
-		}
-		if err := tunnel.Stop(profile); err != nil {
-			return err
-		}
-		fmt.Printf("%s tunnel stopped\n", profile.Name)
-		return nil
-	case "status":
-		if len(args) != 2 {
-			return fmt.Errorf("usage: igit tunnel status <hk|us>")
-		}
-		if err := tunnel.Check(profile); err != nil {
-			fmt.Printf("%s down: %v\n", profile.Name, err)
-			return nil
-		}
-		fmt.Printf("%s ready: %s\n", profile.Name, tunnel.APIURL(profile))
-		return nil
-	case "use":
-		if len(args) != 2 {
-			return fmt.Errorf("usage: igit tunnel use <hk|us>")
-		}
-		if err := tunnel.Check(profile); err != nil {
-			return fmt.Errorf("%s tunnel is not ready: %w", profile.Name, err)
-		}
-		cfg.IPFSAPI = tunnel.APIURL(profile)
-		if err := config.Save(cfg); err != nil {
-			return err
-		}
-		fmt.Printf("ipfs_api = %s\n", cfg.IPFSAPI)
-		return nil
-	default:
-		return fmt.Errorf("unknown tunnel subcommand %q", args[0])
-	}
 }
 
 func cmdInit(cfg config.Config, args []string) error {
@@ -938,6 +867,12 @@ func setConfigField(cfg *config.Config, key, value string) error {
 		cfg.IPFSAPI = value
 	case "ipfs_gateway":
 		cfg.IPFSGateway = value
+	case "upload.endpoint":
+		cfg.Upload.Endpoint = value
+	case "upload.authorization":
+		cfg.Upload.Authorization = value
+	case "upload.us_peer":
+		cfg.Upload.USPeer = value
 	default:
 		return fmt.Errorf("unknown config key %q", key)
 	}

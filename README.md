@@ -36,7 +36,7 @@ igit clone igit://alice/my-repo
 - **Rust 1.81.0** + `wasm32-unknown-unknown` target（编译合约；链上 VM 不支持 bulk-memory / reference-types，**1.82+ 编出的 wasm 会被链拒收**，Cargo.lock 已钉住 1.81 兼容的依赖版本）
 - Go 1.22+（编译 CLI）
 - Git（CLI 依赖 `git pack-objects` / `git index-pack`）
-- [Kubo](https://docs.ipfs.tech/install/command-line/)（本地 IPFS 节点，`ipfs daemon`）
+- [Kubo](https://docs.ipfs.tech/install/command-line/)（仅 Push 时的本地临时上传组件；Clone/Fetch 不需要 Kubo）
 - [injectived](https://docs.injective.network/)（签名与广播交易；无 Windows 版，Windows 用户请在 WSL2 中运行全套工具链）
 
 ### 1. 编译并部署合约（Injective testnet）
@@ -92,11 +92,11 @@ igit import github.com/user/repo my-name  # 自定义链上仓库名
 
 ## 工作原理
 
-- **push**：`git-remote-igit` 调 `git pack-objects` 生成增量 packfile → 上传本地 Kubo 并 pin（得到 `ipfs://<cid>` URI）→ 通过 `injectived` 签名广播 `update_ref` 交易（携带 commit SHA + pack URI）。合约校验推送者为 owner 或 maintainer，并用 `expected_sha` 做乐观并发检查（force push 跳过，且改打全量自包含 pack 替换整个 URI 列表）。
-- **clone/fetch**：查询合约 `list_refs` / `resolve_ref` → 按 pack URI 从 IPFS（本地节点，失败则公共网关）下载 packfile → `git index-pack` 注入本地对象库。
+- **push**：`git-remote-igit` 生成增量 packfile → 本地 Kubo `add?pin=false` 临时加入并通过 Swarm 提供给 US → 受控复制服务确认 US Kubo 全量 Pin 且校验 pack SHA-256 → `injectived` 签名广播 `update_ref`。只有交易成功后才执行本地 IPFS GC；交易失败会保留临时块以便重试，US 未上链 Pin 按 TTL 回收。
+- **clone/fetch**：LCD 查询合约 `list_refs` / `resolve_ref` → 先探测 HK/US `/healthz` 并按延迟排序 → 仅通过 HTTPS `GET /ipfs/<cid>` 下载（失败再回退公共网关）→ `git index-pack` 注入本地对象库；本地没有 Kubo 也能完成。
 - **权限**：owner 可管理协作者（Maintainer 可推送、Reader 只读标记）、转移所有权；内容委员会（未设时为 admin）可设置 `moderation_status`，Frozen 状态下合约拒绝一切 ref 写入。
 
-详见 [docs/architecture.md](docs/architecture.md)；开放问题见 [docs/open-questions.md](docs/open-questions.md)。
+详见 [docs/architecture.md](docs/architecture.md)、[目标拓扑与迁移方案](docs/target-topology-migration.md)；开放问题见 [docs/open-questions.md](docs/open-questions.md)。
 
 ## 开发
 
@@ -108,22 +108,22 @@ cd contracts/repo-registry && cargo test
 cd cli && go test ./... && go vet ./...
 ```
 
-## IPFS 网关与远程 Kubo 控制面
+## IPFS 网关与临时上传
 
-CLI 默认健康探测香港 `https://igit-hk.haohanyh.ovh` 与美国 `https://igit-us.haohanyh.ovh`。读取时始终先试本地 Kubo；失败后自动按 `/healthz` 延迟排序尝试健康的只读网关，并在内容请求失败时继续回退到下一台。
+CLI 默认健康探测香港 `https://igit-hk.haohanyh.ovh` 与美国 `https://igit-us.haohanyh.ovh`。读取不启动、不依赖本地 Kubo，按 `/healthz` 延迟排序后使用只读 HTTPS 网关，并继续回退公共 IPFS 网关。
 
 ```bash
 igit gateway status                 # 查看两地健康和延迟
 igit gateway select                 # 查看当前自动选路顺序
 
-# Kubo API 从不公开；通过本机 loopback SSH 隧道按需使用远端节点。
-igit tunnel key hk ~/.ssh/igit_hk
-igit tunnel start hk                # 127.0.0.1:15001 -> HK 127.0.0.1:5001
-igit tunnel use hk                  # 将 ipfs_api 切换到已验证的隧道
-igit tunnel stop hk
+# Push-only configuration: the API is a short-lived scoped authorization,
+# never a remote Kubo credential. The US peer is a libp2p multiaddr.
+igit config set upload.endpoint https://igit-us.haohanyh.ovh/v1/replications
+igit config set upload.authorization '<identity-token>'
+igit config set upload.us_peer '<US-Kubo-p2p-multiaddr>'
 ```
 
-美国隧道对应 `us`，本地端口为 `15002`。私钥路径仅保存在用户的 `~/.igit/config.json`；不要将私钥或该配置文件提交到仓库。
+Kubo RPC `:5001` 始终只绑定本机 loopback，普通用户不能通过 SSH tunnel 控制 HK/US Kubo。Push 会以 identity token 换取 CID/ref/pack-SHA-256 绑定的一次性短期 ticket；没有本地 Kubo 的用户在 Push 时会得到明确安装提示，Clone/Fetch 无此依赖。
 
 ## License
 
