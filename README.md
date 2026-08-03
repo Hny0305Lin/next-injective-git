@@ -1,6 +1,7 @@
 # Next Injective Git（`igit`）
 
 [![芯异构（浩瀚银河福州）/next-injective-git](https://gitee.com/haohanyh_0591/next-injective-git/widgets/widget_card.svg?colors=4183c4,ffffff,ffffff,48adf0,ed136a,080808)](https://gitee.com/haohanyh_0591/next-injective-git)
+
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](#license)
 [![Go](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go&logoColor=white)](cli/go.mod)
 [![Rust](https://img.shields.io/badge/Rust-1.81.0-000000?logo=rust&logoColor=white)](contracts/repo-registry/Cargo.toml)
