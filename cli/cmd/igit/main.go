@@ -78,12 +78,14 @@ Usage:
   igit gateway select                  print the automatically selected order
   igit config list                     show current configuration
   igit config set <key> <value>        set a configuration value
+  igit config unset <key>              clear a configuration override
   igit version                         print version
 
 Config keys:
   contract_address chain_id lcd_endpoint node key_name keyring_backend
   injectived_bin gas_prices ipfs_api ipfs_gateway
-  upload.endpoint upload.authorization upload.us_peer
+  upload.endpoint upload.authorization_endpoint upload.authorization
+  upload.us_peer upload.hk_peer
 
 Any other subcommand (add, commit, remote, status, log, branch, ...) is
 forwarded to git, so the whole workflow can stay inside igit. Commands
@@ -147,7 +149,8 @@ const usageChinese = `igit - Next Injective Git（Injective + IPFS）
 配置项：
   contract_address chain_id lcd_endpoint node key_name keyring_backend
   injectived_bin gas_prices ipfs_api ipfs_gateway
-  upload.endpoint upload.authorization upload.us_peer
+  upload.endpoint upload.authorization_endpoint upload.authorization
+  upload.us_peer upload.hk_peer
 
 其他子命令（add、commit、remote、status、log、branch 等）会转交给 git，
 因此整个工作流都可以在 igit 中完成。上面的命令会覆盖同名 git 命令（例如使用 ` + "`git config`" + `）。
@@ -1264,7 +1267,11 @@ func cmdConfig(cfg config.Config, args []string) error {
 	}
 	switch args[0] {
 	case "list":
-		data, err := json.MarshalIndent(cfg, "", "  ")
+		display := cfg
+		if display.Upload.Authorization != "" {
+			display.Upload.Authorization = "<redacted>"
+		}
+		data, err := json.MarshalIndent(display, "", "  ")
 		if err != nil {
 			return err
 		}
@@ -1281,7 +1288,23 @@ func cmdConfig(cfg config.Config, args []string) error {
 		if err := config.Save(cfg); err != nil {
 			return err
 		}
-		fmt.Printf("%s = %s\n", args[1], args[2])
+		shown := args[2]
+		if args[1] == "upload.authorization" && shown != "" {
+			shown = "<redacted>"
+		}
+		fmt.Printf("%s = %s\n", args[1], shown)
+		return nil
+	case "unset":
+		if len(args) != 2 {
+			return fmt.Errorf("usage: igit config unset <key>")
+		}
+		if err := setConfigField(&cfg, args[1], ""); err != nil {
+			return err
+		}
+		if err := config.Save(cfg); err != nil {
+			return err
+		}
+		fmt.Printf("%s cleared\n", args[1])
 		return nil
 	default:
 		return i18n.Errorf("unknown config subcommand %q", "未知的 config 子命令 %q", args[0])
@@ -1312,10 +1335,14 @@ func setConfigField(cfg *config.Config, key, value string) error {
 		cfg.IPFSGateway = value
 	case "upload.endpoint":
 		cfg.Upload.Endpoint = value
+	case "upload.authorization_endpoint":
+		cfg.Upload.AuthorizationEndpoint = value
 	case "upload.authorization":
 		cfg.Upload.Authorization = value
 	case "upload.us_peer":
 		cfg.Upload.USPeer = value
+	case "upload.hk_peer":
+		cfg.Upload.HKPeer = value
 	default:
 		return i18n.Errorf("unknown config key %q", "未知的配置项 %q", key)
 	}

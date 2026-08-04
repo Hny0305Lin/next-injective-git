@@ -3,9 +3,11 @@
 package main
 
 import (
+	"crypto/ed25519"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -47,6 +49,7 @@ type replicationRequest struct {
 
 type service struct {
 	secret      []byte
+	identityKey ed25519.PublicKey
 	kuboAPI     string
 	stateFile   string
 	audit       *log.Logger
@@ -76,9 +79,14 @@ func main() {
 	if err := os.MkdirAll(filepath.Dir(state), 0700); err != nil {
 		log.Fatal(err)
 	}
+	identityKey, err := loadIdentityPublicKey(os.Getenv("IGIT_IDENTITY_ED25519_PUBLIC_KEY"))
+	if err != nil {
+		log.Fatal(err)
+	}
 	s := &service{
 		secret: secret, kuboAPI: strings.TrimRight(env("KUBO_API", "http://127.0.0.1:5001"), "/"),
-		stateFile: state, audit: log.New(os.Stdout, "audit ", 0), maxBytes: envInt64("IGIT_REPLICATION_MAX_BYTES", 2<<30),
+		identityKey: identityKey,
+		stateFile:   state, audit: log.New(os.Stdout, "audit ", 0), maxBytes: envInt64("IGIT_REPLICATION_MAX_BYTES", 2<<30),
 		ratePerMin:  int(envInt64("IGIT_REPLICATION_RATE_PER_MINUTE", 12)),
 		bytesPerMin: envInt64("IGIT_REPLICATION_BYTES_PER_MINUTE", 4<<30),
 		http:        &http.Client{Timeout: 12 * time.Minute},
@@ -218,9 +226,6 @@ func (s *service) authorize(header string, req replicationRequest) (claims, erro
 	if cl.Kind != "replication" || cl.JTI == "" {
 		return claims{}, errors.New("invalid replication authorization")
 	}
-	if req.ExpiresAt > cl.ExpiresAt {
-		return claims{}, errors.New("authorization expired")
-	}
 	if req.CID != cl.CID || req.Owner != cl.Owner || req.Repo != cl.Repo || req.Ref != cl.Ref || req.PackSHA256 != cl.PackSHA256 || req.Size != cl.Size {
 		return claims{}, errors.New("authorization does not match replication request")
 	}
@@ -231,6 +236,11 @@ func (s *service) authorize(header string, req replicationRequest) (claims, erro
 }
 
 func (s *service) identity(header string) (claims, error) {
+	if len(s.identityKey) == ed25519.PublicKeySize {
+		if cl, err := s.parseIdentityToken(header); err == nil {
+			return cl, nil
+		}
+	}
 	cl, err := s.parseToken(header)
 	if err != nil {
 		return claims{}, err
@@ -239,6 +249,49 @@ func (s *service) identity(header string) (claims, error) {
 		return claims{}, errors.New("identity authorization required")
 	}
 	return cl, nil
+}
+
+func (s *service) parseIdentityToken(header string) (claims, error) {
+	if !strings.HasPrefix(header, "Bearer ") {
+		return claims{}, errors.New("missing bearer authorization")
+	}
+	parts := strings.Split(strings.TrimPrefix(header, "Bearer "), ".")
+	if len(parts) != 3 {
+		return claims{}, errors.New("invalid identity authorization")
+	}
+	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil || !ed25519.Verify(s.identityKey, []byte(parts[0]+"."+parts[1]), sig) {
+		return claims{}, errors.New("invalid identity authorization signature")
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return claims{}, errors.New("invalid identity authorization claims")
+	}
+	var cl claims
+	if json.Unmarshal(raw, &cl) != nil || cl.Kind != "identity" || cl.Subject == "" || cl.ExpiresAt <= time.Now().Unix() {
+		return claims{}, errors.New("invalid identity authorization claims")
+	}
+	return cl, nil
+}
+
+func loadIdentityPublicKey(raw string) (ed25519.PublicKey, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	der, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil {
+		return nil, fmt.Errorf("decode IGIT_IDENTITY_ED25519_PUBLIC_KEY: %w", err)
+	}
+	key, err := x509.ParsePKIXPublicKey(der)
+	if err != nil {
+		return nil, fmt.Errorf("parse IGIT_IDENTITY_ED25519_PUBLIC_KEY: %w", err)
+	}
+	publicKey, ok := key.(ed25519.PublicKey)
+	if !ok {
+		return nil, errors.New("IGIT_IDENTITY_ED25519_PUBLIC_KEY is not an Ed25519 key")
+	}
+	return publicKey, nil
 }
 
 func (s *service) parseToken(header string) (claims, error) {

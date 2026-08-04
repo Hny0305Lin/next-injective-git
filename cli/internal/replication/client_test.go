@@ -1,6 +1,8 @@
 package replication
 
 import (
+	"encoding/base64"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -84,5 +86,35 @@ func TestAuthorizeExchangesIdentityForScopedTicket(t *testing.T) {
 	client, ok := scoped.(*Client)
 	if !ok || client.token != "scoped-ticket" {
 		t.Fatalf("scoped ticket = %#v", scoped)
+	}
+}
+
+func TestAuthorizeRefreshesMissingIdentityToken(t *testing.T) {
+	var refreshes atomic.Int32
+	future := time.Now().Add(5 * time.Minute).Unix()
+	payload := base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf(`{"exp":%d}`, future)))
+	identity := "header." + payload + ".signature"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/upload-authorization":
+			refreshes.Add(1)
+			_, _ = fmt.Fprintf(w, `{"authorization":%q,"expires_at":%d}`, identity, future)
+		case "/v1/upload-authorizations":
+			if r.Header.Get("Authorization") != "Bearer "+identity {
+				t.Fatalf("unexpected identity header %q", r.Header.Get("Authorization"))
+			}
+			_, _ = w.Write([]byte(`{"authorization":"scoped-ticket"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewDynamic(server.URL+"/v1/replications", server.URL+"/api/upload-authorization", "")
+	if _, err := client.Authorize(Request{CID: "bafy-test", Size: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if got := refreshes.Load(); got != 1 {
+		t.Fatalf("refresh calls = %d, want 1", got)
 	}
 }

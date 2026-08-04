@@ -23,7 +23,7 @@ type Helper struct {
 	chain       chainClient
 	ipfs        ipfsClient
 	replication replication.Authorizer
-	uploadPeer  string
+	uploadPeers []string
 	git         gitRepo
 
 	in  *bufio.Scanner
@@ -57,7 +57,7 @@ type gitRepo interface {
 }
 
 // NewHelper wires up the helper dependencies.
-func NewHelper(url RepoURL, cc chainClient, ic ipfsClient, rc replication.Authorizer, uploadPeer string, git gitRepo, in io.Reader, out, log io.Writer) *Helper {
+func NewHelper(url RepoURL, cc chainClient, ic ipfsClient, rc replication.Authorizer, uploadPeers []string, git gitRepo, in io.Reader, out, log io.Writer) *Helper {
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	return &Helper{
@@ -65,7 +65,7 @@ func NewHelper(url RepoURL, cc chainClient, ic ipfsClient, rc replication.Author
 		chain:       cc,
 		ipfs:        ic,
 		replication: rc,
-		uploadPeer:  uploadPeer,
+		uploadPeers: uploadPeers,
 		git:         git,
 		in:          sc,
 		out:         out,
@@ -302,11 +302,20 @@ func (h *Helper) pushOne(spec pushSpec) error {
 		}
 		cids = append(cids, "ipfs://"+cid)
 		h.progress("temporary local pack added: %s", "临时本地 pack 已添加：%s", cid)
-		if h.uploadPeer == "" {
+		if len(h.uploadPeers) == 0 || strings.TrimSpace(h.uploadPeers[0]) == "" {
 			return i18n.Errorf("US Kubo swarm peer is not configured; set upload.us_peer to the US service multiaddr", "未配置 US Kubo swarm peer；请将 upload.us_peer 设为 US 服务的 multiaddr")
 		}
-		if err := h.ipfs.SwarmConnect(h.uploadPeer); err != nil {
+		if err := h.ipfs.SwarmConnect(h.uploadPeers[0]); err != nil {
 			return i18n.Errorf("connect temporary local Kubo to US peer: %w", "连接临时本地 Kubo 到 US peer 失败：%w", err)
+		}
+		for _, peer := range h.uploadPeers[1:] {
+			peer = strings.TrimSpace(peer)
+			if peer == "" {
+				continue
+			}
+			if err := h.ipfs.SwarmConnect(peer); err != nil {
+				h.progress("optional upload peer connection failed: %v", "可选上传节点连接失败：%v", err)
+			}
 		}
 		if h.replication == nil {
 			return i18n.Errorf("US replication client is not configured", "未配置 US replication 客户端")

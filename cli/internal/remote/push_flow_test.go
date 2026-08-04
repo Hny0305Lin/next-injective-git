@@ -61,7 +61,7 @@ func (f fakeConfirmer) Confirm(replication.Request) (replication.Response, error
 }
 
 func newPushHelper(c *fakeChain, i *fakeIPFS, r replication.Authorizer) *Helper {
-	return NewHelper(RepoURL{Owner: "inj1owner", Repo: "repo"}, c, i, r, "/dns4/us.example/tcp/4001/p2p/peer", fakeGit{}, strings.NewReader(""), io.Discard, io.Discard)
+	return NewHelper(RepoURL{Owner: "inj1owner", Repo: "repo"}, c, i, r, []string{"/dns4/us.example/tcp/4001/p2p/peer"}, fakeGit{}, strings.NewReader(""), io.Discard, io.Discard)
 }
 
 func TestPushGCOnlyAfterUSPinAndChainUpdate(t *testing.T) {

@@ -68,7 +68,7 @@ systemctl enable --now ipfs
 sleep 8
 systemctl --no-pager status ipfs | head -5
 
-echo "== [5/5] nginx read-only gateway =="
+echo "== [5/5] nginx read gateway + controlled replication =="
 apt-get update -qq && apt-get install -y -qq nginx >/dev/null
 cat > /etc/nginx/sites-available/ipfs-gateway <<'EOF'
 server {
@@ -83,6 +83,16 @@ server {
         client_max_body_size 0;
     }
     location = /healthz { return 200 "ok\n"; }
+    # Controlled replication only; the Kubo API remains loopback-only.
+    location ~ ^/v1/(replications|upload-authorizations)$ {
+        limit_except POST { deny all; }
+        client_max_body_size 16k;
+        proxy_pass http://127.0.0.1:8088;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 12m;
+    }
     location / { return 403; }
 }
 EOF

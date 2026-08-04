@@ -65,13 +65,25 @@ type Gateway struct {
 type Upload struct {
 	// Endpoint is the HTTPS controlled replication/Pin endpoint in the US.
 	Endpoint string `json:"endpoint"`
+	// AuthorizationEndpoint issues short-lived identity tokens accepted by all
+	// project replication endpoints. The helper refreshes from it automatically.
+	AuthorizationEndpoint string `json:"authorization_endpoint"`
 	// Authorization is a short-lived scoped bearer token issued by the upload
-	// authorization service. It is intentionally separate from chain keys.
+	// authorization service. It is retained as an explicit override and for
+	// offline deployments; normal clients use AuthorizationEndpoint.
 	Authorization string `json:"authorization,omitempty"`
 	// USPeer is the US Kubo swarm multiaddr. It is used only before a push so
 	// the US node can fetch the temporary local blocks directly.
 	USPeer string `json:"us_peer"`
+	// HKPeer is the hot-tier Kubo peer. Connecting it during a push makes the
+	// temporary pack immediately reachable by both project regions.
+	HKPeer string `json:"hk_peer"`
 }
+
+const (
+	DefaultUSUploadPeer = "/ip4/162.35.187.224/tcp/4001/p2p/12D3KooWBGyxqNM3q6nHvacFfqnwoXP2uXxP36uSPab2p16ywfFS"
+	DefaultHKUploadPeer = "/dns4/igit-hk.haohanyh.ovh/tcp/4001/p2p/12D3KooWRfRoRqEyC4Qsb4ow2yfGsSAAymTFSxj6vr2SYQnxk55W"
+)
 
 // Tunnel is retained only so older internal profiles can still be parsed by
 // the unused compatibility package. It is no longer part of Config and no
@@ -102,10 +114,32 @@ func Defaults() Config {
 			{Name: "us", URL: "https://igit-us.haohanyh.ovh"},
 		},
 		Upload: Upload{
-			Endpoint: "https://igit-us.haohanyh.ovh/v1/replications",
+			Endpoint:              "https://igit-us.haohanyh.ovh/v1/replications",
+			AuthorizationEndpoint: "https://www.igit.xyz/api/upload-authorization",
+			USPeer:                DefaultUSUploadPeer,
+			HKPeer:                DefaultHKUploadPeer,
 		},
 		PublicGatewayFallbacks: []string{"https://ipfs.io"},
 	}
+}
+
+// EffectiveUploadPeers returns the durable US peer first and the HK hot-tier
+// peer second. Empty legacy config values fall back to the built-in project
+// peers so a fresh CLI can push without copying deployment multiaddrs by hand.
+func (c Config) EffectiveUploadPeers() []string {
+	us := strings.TrimSpace(c.Upload.USPeer)
+	if us == "" {
+		us = DefaultUSUploadPeer
+	}
+	hk := strings.TrimSpace(c.Upload.HKPeer)
+	if hk == "" {
+		hk = DefaultHKUploadPeer
+	}
+	peers := []string{us}
+	if hk != us {
+		peers = append(peers, hk)
+	}
+	return peers
 }
 
 // EffectiveReadGateways returns health-ranked project gateways followed by

@@ -73,8 +73,8 @@ func run() error {
 		repoURL,
 		cc,
 		ic,
-		replication.New(cfg.Upload.Endpoint, cfg.Upload.Authorization),
-		cfg.Upload.USPeer,
+		replication.NewDynamic(cfg.Upload.Endpoint, cfg.Upload.AuthorizationEndpoint, cfg.Upload.Authorization),
+		cfg.EffectiveUploadPeers(),
 		gitRepo,
 		os.Stdin, os.Stdout, os.Stderr,
 	)

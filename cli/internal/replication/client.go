@@ -4,6 +4,7 @@ package replication
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -32,9 +33,10 @@ type Response struct {
 
 // Client is the push-only controlled replication client.
 type Client struct {
-	endpoint string
-	token    string
-	http     *http.Client
+	endpoint         string
+	identityEndpoint string
+	token            string
+	http             *http.Client
 }
 
 const (
@@ -55,17 +57,31 @@ type Authorizer interface {
 }
 
 func New(endpoint, token string) *Client {
+	return NewDynamic(endpoint, "", token)
+}
+
+// NewDynamic creates a replication client that can refresh its identity token
+// from the public igit authorization API. A non-expired explicit token remains
+// a backwards-compatible override for offline/private deployments.
+func NewDynamic(endpoint, identityEndpoint, token string) *Client {
 	return &Client{
-		endpoint: strings.TrimRight(strings.TrimSpace(endpoint), "/"),
-		token:    strings.TrimSpace(token),
-		http:     &http.Client{Timeout: 12 * time.Minute},
+		endpoint:         strings.TrimRight(strings.TrimSpace(endpoint), "/"),
+		identityEndpoint: strings.TrimRight(strings.TrimSpace(identityEndpoint), "/"),
+		token:            strings.TrimSpace(token),
+		http:             &http.Client{Timeout: 12 * time.Minute},
 	}
 }
 
 // Authorize exchanges an identity token after the CID is known for a
 // short-lived ticket whose claims bind this exact replication request.
 func (c *Client) Authorize(reqBody Request) (Confirmer, error) {
-	if c.endpoint == "" || c.token == "" {
+	if c.endpoint == "" {
+		return nil, fmt.Errorf("upload replication endpoint is not configured")
+	}
+	if err := c.refreshIdentityToken(); err != nil {
+		return nil, err
+	}
+	if c.token == "" {
 		return nil, fmt.Errorf("upload identity authorization is missing; sign in to the upload authorization service before pushing")
 	}
 	endpoint := strings.TrimSuffix(c.endpoint, "/replications") + "/upload-authorizations"
@@ -95,6 +111,66 @@ func (c *Client) Authorize(reqBody Request) (Confirmer, error) {
 		return nil, fmt.Errorf("invalid upload authorization response")
 	}
 	return New(c.endpoint, out.Authorization), nil
+}
+
+func (c *Client) refreshIdentityToken() error {
+	if tokenFresh(c.token, 30*time.Second) {
+		return nil
+	}
+	if c.identityEndpoint == "" {
+		return fmt.Errorf("upload identity authorization expired and no authorization endpoint is configured")
+	}
+	req, err := http.NewRequest(http.MethodPost, c.identityEndpoint, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("refresh upload identity authorization: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("refresh upload identity authorization: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(msg)))
+	}
+	var out struct {
+		Authorization string `json:"authorization"`
+		ExpiresAt     int64  `json:"expires_at"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || strings.TrimSpace(out.Authorization) == "" {
+		return fmt.Errorf("invalid upload identity authorization response")
+	}
+	c.token = strings.TrimSpace(out.Authorization)
+	if !tokenFresh(c.token, 5*time.Second) {
+		return fmt.Errorf("upload identity authorization API returned an expired token")
+	}
+	return nil
+}
+
+// tokenFresh only reads the untrusted JWT expiration hint. Signature
+// verification remains the replication server's responsibility. Opaque legacy
+// tokens have no client-readable expiration and are therefore used as-is.
+func tokenFresh(token string, margin time.Duration) bool {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return false
+	}
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return true
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return true
+	}
+	var claims struct {
+		ExpiresAt int64 `json:"exp"`
+	}
+	if json.Unmarshal(raw, &claims) != nil || claims.ExpiresAt == 0 {
+		return true
+	}
+	return claims.ExpiresAt > time.Now().Add(margin).Unix()
 }
 
 // Confirm requests a US fetch and pin. Authorization is a short-lived scoped

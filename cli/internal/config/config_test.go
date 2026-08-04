@@ -30,3 +30,13 @@ func TestEffectiveGatewaysKeepsPublicLegacyGatewayAsFallback(t *testing.T) {
 		t.Fatalf("fallbacks = %#v, want ipfs.io", fallbacks)
 	}
 }
+
+func TestEffectiveUploadPeersUseBuiltInDefaultsForLegacyEmptyValues(t *testing.T) {
+	cfg := Defaults()
+	cfg.Upload.USPeer = ""
+	cfg.Upload.HKPeer = ""
+	peers := cfg.EffectiveUploadPeers()
+	if len(peers) != 2 || peers[0] != DefaultUSUploadPeer || peers[1] != DefaultHKUploadPeer {
+		t.Fatalf("peers = %#v, want built-in US then HK", peers)
+	}
+}
