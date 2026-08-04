@@ -17,3 +17,16 @@ func TestEffectiveGatewaysPrependsCustomLegacyGateway(t *testing.T) {
 		t.Fatalf("gateways = %#v, want custom first", gateways)
 	}
 }
+
+func TestEffectiveGatewaysKeepsPublicLegacyGatewayAsFallback(t *testing.T) {
+	cfg := Defaults()
+	cfg.IPFSGateway = "https://ipfs.io/"
+	gateways := cfg.EffectiveGateways()
+	if len(gateways) != 2 || gateways[0].Name != "hk" || gateways[1].Name != "us" {
+		t.Fatalf("gateways = %#v, want project gateways before public fallback", gateways)
+	}
+	fallbacks := cfg.EffectiveReadFallbacks()
+	if len(fallbacks) != 1 || fallbacks[0] != "https://ipfs.io" {
+		t.Fatalf("fallbacks = %#v, want ipfs.io", fallbacks)
+	}
+}

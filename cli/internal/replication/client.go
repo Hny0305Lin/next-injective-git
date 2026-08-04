@@ -37,6 +37,13 @@ type Client struct {
 	http     *http.Client
 }
 
+const (
+	// Confirm is safe to retry because the server binds the ticket JTI and
+	// returns an idempotent success after the first durable Pin.
+	maxConfirmAttempts = 3
+	confirmRetryDelay  = 250 * time.Millisecond
+)
+
 // Confirmer is a scoped ticket that can request one US replication.
 type Confirmer interface {
 	Confirm(Request) (Response, error)
@@ -103,27 +110,55 @@ func (c *Client) Confirm(reqBody Request) (Response, error) {
 	if err != nil {
 		return Response{}, err
 	}
-	req, err := http.NewRequest(http.MethodPost, c.endpoint, bytes.NewReader(payload))
-	if err != nil {
-		return Response{}, err
+	var lastErr error
+	for attempt := 1; attempt <= maxConfirmAttempts; attempt++ {
+		req, err := http.NewRequest(http.MethodPost, c.endpoint, bytes.NewReader(payload))
+		if err != nil {
+			return Response{}, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+c.token)
+		resp, err := c.http.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("US replication request: %w", err)
+			if attempt < maxConfirmAttempts {
+				time.Sleep(confirmRetryDelay)
+				continue
+			}
+			return Response{}, lastErr
+		}
+
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		resp.Body.Close()
+		if readErr != nil {
+			lastErr = fmt.Errorf("read US replication response: %w", readErr)
+			if attempt < maxConfirmAttempts {
+				time.Sleep(confirmRetryDelay)
+				continue
+			}
+			return Response{}, lastErr
+		}
+		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+			lastErr = fmt.Errorf("US replication request: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+			if retryableConfirmStatus(resp.StatusCode) && attempt < maxConfirmAttempts {
+				time.Sleep(confirmRetryDelay)
+				continue
+			}
+			return Response{}, lastErr
+		}
+
+		var out Response
+		if err := json.Unmarshal(body, &out); err != nil {
+			return Response{}, fmt.Errorf("decode US replication response: %w", err)
+		}
+		if !out.Pinned || out.CID != reqBody.CID {
+			return Response{}, fmt.Errorf("US replication did not confirm pin for %s", reqBody.CID)
+		}
+		return out, nil
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return Response{}, fmt.Errorf("US replication request: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return Response{}, fmt.Errorf("US replication request: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(msg)))
-	}
-	var out Response
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return Response{}, fmt.Errorf("decode US replication response: %w", err)
-	}
-	if !out.Pinned || out.CID != reqBody.CID {
-		return Response{}, fmt.Errorf("US replication did not confirm pin for %s", reqBody.CID)
-	}
-	return out, nil
+	return Response{}, lastErr
+}
+
+func retryableConfirmStatus(status int) bool {
+	return status == http.StatusRequestTimeout || status == http.StatusTooManyRequests || status >= 500
 }

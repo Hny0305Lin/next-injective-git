@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/i18n"
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/secrets"
 )
 
 // Repo wraps a local git directory (the GIT_DIR the helper operates on).
@@ -85,4 +86,21 @@ func (r *Repo) IndexPack(pack io.Reader) error {
 		return i18n.Errorf("git index-pack: %w: %s", "git index-pack 失败：%w：%s", err, errBuf.String())
 	}
 	return nil
+}
+
+// ScanSecrets checks the committed content reachable from rev. It is a
+// warning-only pre-push aid; git grep's non-zero exit for no matches is normal.
+func (r *Repo) ScanSecrets(rev string) []string {
+	cmd := r.cmd("grep", "-I", "-n", "-E", "-----BEGIN (RSA|OPENSSH|EC|DSA) PRIVATE KEY-----|AKIA[0-9A-Z]{16}|github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}", rev, "--")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	var matches []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line != "" && secrets.Match(line) {
+			matches = append(matches, line)
+		}
+	}
+	return matches
 }

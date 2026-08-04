@@ -3,6 +3,7 @@ package replication
 import (
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -29,6 +30,42 @@ func TestConfirmRejectsUnconfirmedPin(t *testing.T) {
 	defer server.Close()
 	if _, err := New(server.URL, "token").Confirm(Request{CID: "bafy-test"}); err == nil {
 		t.Fatal("expected unconfirmed pin error")
+	}
+}
+
+func TestConfirmRetriesTransientFailure(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			http.Error(w, "temporary outage", http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"cid":"bafy-test","pinned":true}`))
+	}))
+	defer server.Close()
+
+	if _, err := New(server.URL, "token").Confirm(Request{CID: "bafy-test"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("request attempts = %d, want 2", got)
+	}
+}
+
+func TestConfirmDoesNotRetryPermanentClientError(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		http.Error(w, "invalid ticket", http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	if _, err := New(server.URL, "token").Confirm(Request{CID: "bafy-test"}); err == nil {
+		t.Fatal("expected unauthorized error")
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("request attempts = %d, want 1", got)
 	}
 }
 

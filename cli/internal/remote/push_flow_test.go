@@ -41,7 +41,8 @@ func (fakeGit) ResolveRef(string) string { return "0123456789abcdef0123456789abc
 func (fakeGit) PackObjects(string, []string) ([]byte, error) {
 	return []byte{'P', 'A', 'C', 'K', 0, 0, 0, 2, 0, 0, 0, 1}, nil
 }
-func (fakeGit) IndexPack(io.Reader) error { return nil }
+func (fakeGit) IndexPack(io.Reader) error   { return nil }
+func (fakeGit) ScanSecrets(string) []string { return nil }
 
 type fakeAuthorizer struct {
 	confirmErr error

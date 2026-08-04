@@ -123,9 +123,10 @@ func (c Config) EffectiveReadFallbacks() []string {
 	return urls
 }
 
-// EffectiveGateways returns the configured endpoints without duplicates. A
-// legacy ipfs_gateway value is kept first only when it is not already named by
-// a gateway profile.
+// EffectiveGateways returns project gateway endpoints without duplicates. A
+// legacy ipfs_gateway value is kept first for backwards compatibility when it
+// is a genuine custom endpoint; values already configured as public fallbacks
+// stay behind the project gateways.
 func (c Config) EffectiveGateways() []Gateway {
 	seen := make(map[string]bool)
 	var gateways []Gateway
@@ -145,11 +146,20 @@ func (c Config) EffectiveGateways() []Gateway {
 			break
 		}
 	}
-	if !legacyNamed {
-		add(Gateway{Name: "custom", URL: legacyURL})
+	legacyPublic := false
+	for _, fallback := range c.PublicGatewayFallbacks {
+		if strings.TrimRight(strings.TrimSpace(fallback), "/") == legacyURL {
+			legacyPublic = true
+			break
+		}
 	}
 	for _, g := range c.Gateways {
 		add(g)
+	}
+	if !legacyNamed && !legacyPublic && legacyURL != "" {
+		custom := Gateway{Name: "custom", URL: legacyURL}
+		custom.URL = strings.TrimRight(strings.TrimSpace(custom.URL), "/")
+		gateways = append([]Gateway{custom}, gateways...)
 	}
 	return gateways
 }
@@ -214,12 +224,24 @@ func Save(cfg Config) error {
 
 // Validate checks the fields required for chain operations.
 func (c Config) Validate() error {
+	if err := c.ValidateContract(); err != nil {
+		return err
+	}
+	if c.KeyName == "" {
+		return i18n.Errorf(
+			"missing config: key_name (run `igit config set <key> <value>`)",
+			"缺少配置：key_name（运行 `igit config set <key> <value>`）",
+		)
+	}
+	return nil
+}
+
+// ValidateContract checks the fields needed by read-only contract queries.
+// Commands such as release verification must not require a signing key.
+func (c Config) ValidateContract() error {
 	var missing []string
 	if c.ContractAddress == "" {
 		missing = append(missing, "contract_address")
-	}
-	if c.KeyName == "" {
-		missing = append(missing, "key_name")
 	}
 	if len(missing) > 0 {
 		return i18n.Errorf(

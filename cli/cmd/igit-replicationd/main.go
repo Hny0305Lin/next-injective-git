@@ -46,22 +46,26 @@ type replicationRequest struct {
 }
 
 type service struct {
-	secret     []byte
-	kuboAPI    string
-	stateFile  string
-	audit      *log.Logger
-	maxBytes   int64
-	ratePerMin int
-	http       *http.Client
-	mu         sync.Mutex
-	used       map[string]string // jti -> cid; identical retries are idempotent
-	window     map[string]*rateWindow
+	secret      []byte
+	kuboAPI     string
+	stateFile   string
+	audit       *log.Logger
+	maxBytes    int64
+	ratePerMin  int
+	bytesPerMin int64
+	http        *http.Client
+	mu          sync.Mutex
+	used        map[string]string // jti -> cid; identical retries are idempotent
+	window      map[string]*rateWindow
 }
 
 type rateWindow struct {
 	start time.Time
 	count int
+	bytes int64
 }
+
+const maxReplicationRequestBody = 64 << 10
 
 func main() {
 	secret := []byte(os.Getenv("IGIT_REPLICATION_JWT_HMAC"))
@@ -75,8 +79,10 @@ func main() {
 	s := &service{
 		secret: secret, kuboAPI: strings.TrimRight(env("KUBO_API", "http://127.0.0.1:5001"), "/"),
 		stateFile: state, audit: log.New(os.Stdout, "audit ", 0), maxBytes: envInt64("IGIT_REPLICATION_MAX_BYTES", 2<<30),
-		ratePerMin: int(envInt64("IGIT_REPLICATION_RATE_PER_MINUTE", 12)), http: &http.Client{Timeout: 12 * time.Minute},
-		used: map[string]string{}, window: map[string]*rateWindow{},
+		ratePerMin:  int(envInt64("IGIT_REPLICATION_RATE_PER_MINUTE", 12)),
+		bytesPerMin: envInt64("IGIT_REPLICATION_BYTES_PER_MINUTE", 4<<30),
+		http:        &http.Client{Timeout: 12 * time.Minute},
+		used:        map[string]string{}, window: map[string]*rateWindow{},
 	}
 	if err := s.loadState(); err != nil {
 		log.Fatal(err)
@@ -85,7 +91,11 @@ func main() {
 	mux.HandleFunc("/v1/upload-authorizations", s.issueAuthorization)
 	mux.HandleFunc("/v1/replications", s.replicate)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	server := &http.Server{Addr: env("LISTEN_ADDR", "127.0.0.1:8088"), Handler: maxBody(mux, s.maxBytes+8192), ReadHeaderTimeout: 5 * time.Second}
+	// Replication requests contain only a small JSON binding; the pack bytes
+	// stay in Kubo. Keep the control-plane parser independent of the pack-size
+	// quota so an attacker cannot force the service to accept multi-gigabyte
+	// request bodies before authentication.
+	server := &http.Server{Addr: env("LISTEN_ADDR", "127.0.0.1:8088"), Handler: maxBody(mux, maxReplicationRequestBody), ReadHeaderTimeout: 5 * time.Second}
 	log.Printf("igit replication service listening on %s", server.Addr)
 	log.Fatal(server.ListenAndServe())
 }
@@ -112,7 +122,7 @@ func (s *service) issueAuthorization(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid upload authorization binding", http.StatusBadRequest)
 		return
 	}
-	if !s.allow(identity.Subject, req.Owner, req.Repo) {
+	if !s.allow(identity.Subject, req.Owner, req.Repo, req.Size) {
 		http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 		return
 	}
@@ -150,12 +160,9 @@ func (s *service) replicate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
-	if !s.allow(cl.Subject, req.Owner, req.Repo) {
-		s.auditf("rate_limited", req, cl.Subject, nil)
-		http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
-		return
-	}
-
+	// The authorization endpoint accounts for the upload quota. A replication
+	// request may be retried after a lost response, so counting it again here
+	// would make an otherwise valid JTI retry fail with 429.
 	s.mu.Lock()
 	if existing, ok := s.used[cl.JTI]; ok {
 		s.mu.Unlock()
@@ -169,6 +176,16 @@ func (s *service) replicate(w http.ResponseWriter, r *http.Request) {
 	// Serialize the state transition: pin success is recorded before the reply,
 	// so a network retry cannot create another authorization use.
 	defer s.mu.Unlock()
+	// A concurrent request with the same JTI may have completed while this
+	// request waited for the state lock. Re-check before touching Kubo.
+	if existing, ok := s.used[cl.JTI]; ok {
+		if existing == req.CID {
+			writeJSON(w, http.StatusOK, map[string]any{"cid": req.CID, "pinned": true, "expires_at": cl.ExpiresAt, "idempotent": true})
+			return
+		}
+		http.Error(w, "authorization already used", http.StatusConflict)
+		return
+	}
 	if err := s.kuboPost("/api/v0/pin/add?arg="+url.QueryEscape(req.CID)+"&recursive=true", nil, nil); err != nil {
 		s.auditf("pin_failed", req, cl.Subject, err)
 		http.Error(w, "US pin failed", http.StatusBadGateway)
@@ -269,20 +286,24 @@ func randomID() string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
-func (s *service) allow(subject, owner, repo string) bool {
+func (s *service) allow(subject, owner, repo string, size int64) bool {
+	if size <= 0 || size > s.maxBytes {
+		return false
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	key := subject + "|" + owner + "/" + repo
 	now := time.Now()
 	w := s.window[key]
 	if w == nil || now.Sub(w.start) >= time.Minute {
-		s.window[key] = &rateWindow{start: now, count: 1}
+		s.window[key] = &rateWindow{start: now, count: 1, bytes: size}
 		return true
 	}
-	if w.count >= s.ratePerMin {
+	if w.count >= s.ratePerMin || (s.bytesPerMin > 0 && w.bytes > s.bytesPerMin-size) {
 		return false
 	}
 	w.count++
+	w.bytes += size
 	return true
 }
 

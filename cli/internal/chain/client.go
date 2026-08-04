@@ -77,11 +77,13 @@ type Coin struct {
 
 // ConfigInfo mirrors the contract's ConfigResponse.
 type ConfigInfo struct {
-	Admin               string `json:"admin"`
-	ModerationCommittee string `json:"moderation_committee"`
-	Treasury            string `json:"treasury"`
-	PlatformFeeBps      uint16 `json:"platform_fee_bps"`
-	UsernameDeposit     Coin   `json:"username_deposit"`
+	Admin               string   `json:"admin"`
+	ModerationCommittee string   `json:"moderation_committee"`
+	Treasury            string   `json:"treasury"`
+	PlatformFeeBps      uint16   `json:"platform_fee_bps"`
+	UsernameDeposit     Coin     `json:"username_deposit"`
+	UsernameFee         Coin     `json:"username_fee"`
+	ReservedUsernames   []string `json:"reserved_usernames"`
 }
 
 // SplitEntry mirrors the contract's revenue split entry.
@@ -100,6 +102,61 @@ type usernameResponse struct {
 
 type addressUsernameResponse struct {
 	Name *string `json:"name"`
+}
+
+// ReleaseArtifact mirrors an immutable on-chain release checksum record.
+type ReleaseArtifact struct {
+	Version      string `json:"version"`
+	Platform     string `json:"platform"`
+	SHA256       string `json:"sha256"`
+	RegisteredBy string `json:"registered_by"`
+	RegisteredAt uint64 `json:"registered_at"`
+}
+
+type OwnershipTransferInfo struct {
+	NewOwner     string `json:"new_owner"`
+	ProposedAt   uint64 `json:"proposed_at"`
+	ExecuteAfter uint64 `json:"execute_after"`
+}
+
+type RecoveryProposalInfo struct {
+	NewOwner     string   `json:"new_owner"`
+	ProposedAt   uint64   `json:"proposed_at"`
+	ExecuteAfter uint64   `json:"execute_after"`
+	Approvals    []string `json:"approvals"`
+}
+
+type OwnershipSecurityInfo struct {
+	Transfer          *OwnershipTransferInfo `json:"transfer"`
+	Recovery          *RecoveryProposalInfo  `json:"recovery"`
+	Guardians         []string               `json:"guardians"`
+	GuardianThreshold uint8                  `json:"guardian_threshold"`
+}
+
+// UpgradeProposalInfo mirrors the contract's delayed upgrade announcement.
+type UpgradeProposalInfo struct {
+	WasmSHA256   string `json:"wasm_sha256"`
+	ProposedAt   uint64 `json:"proposed_at"`
+	ExecuteAfter uint64 `json:"execute_after"`
+}
+
+type UpgradeSecurityInfo struct {
+	Proposal        *UpgradeProposalInfo `json:"proposal"`
+	TimelockSeconds uint64               `json:"timelock_seconds"`
+}
+
+type ModerationReportInfo struct {
+	ID             uint64  `json:"id"`
+	Owner          string  `json:"owner"`
+	Repo           string  `json:"repo"`
+	Reporter       string  `json:"reporter"`
+	ReasonHash     string  `json:"reason_hash"`
+	Status         string  `json:"status"`
+	Resolution     string  `json:"resolution"`
+	ResolutionHash *string `json:"resolution_hash"`
+	AppealHash     *string `json:"appeal_hash"`
+	CreatedAt      uint64  `json:"created_at"`
+	UpdatedAt      uint64  `json:"updated_at"`
 }
 
 // ---- smart queries via LCD ----
@@ -387,6 +444,48 @@ func (c *Client) TransferOwnership(repo, newOwner string) error {
 	})
 }
 
+func (c *Client) CancelOwnershipTransfer(repo string) error {
+	return c.Execute(map[string]any{"cancel_ownership_transfer": map[string]any{"repo": repo}})
+}
+
+func (c *Client) AcceptOwnership(owner, repo string) error {
+	return c.Execute(map[string]any{"accept_ownership": map[string]any{"owner": owner, "repo": repo}})
+}
+
+func (c *Client) SetGuardians(repo string, guardians []string, threshold uint8) error {
+	return c.Execute(map[string]any{"set_guardians": map[string]any{
+		"repo": repo, "guardians": guardians, "threshold": threshold,
+	}})
+}
+
+func (c *Client) ProposeRecovery(owner, repo, newOwner string) error {
+	return c.Execute(map[string]any{"propose_recovery": map[string]any{
+		"owner": owner, "repo": repo, "new_owner": newOwner,
+	}})
+}
+
+func (c *Client) ApproveRecovery(owner, repo string) error {
+	return c.Execute(map[string]any{"approve_recovery": map[string]any{"owner": owner, "repo": repo}})
+}
+
+func (c *Client) CancelRecovery(repo string) error {
+	return c.Execute(map[string]any{"cancel_recovery": map[string]any{"repo": repo}})
+}
+
+func (c *Client) AcceptRecovery(owner, repo string) error {
+	return c.Execute(map[string]any{"accept_recovery": map[string]any{"owner": owner, "repo": repo}})
+}
+
+func (c *Client) OwnershipSecurity(owner, repo string) (*OwnershipSecurityInfo, error) {
+	var out OwnershipSecurityInfo
+	if err := c.SmartQuery(map[string]any{
+		"ownership_security": map[string]any{"owner": owner, "repo": repo},
+	}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // UpdateRepoInfo updates description and/or default branch. Owner only;
 // nil pointers leave the field unchanged.
 func (c *Client) UpdateRepoInfo(repo string, description, defaultBranch *string) error {
@@ -412,6 +511,40 @@ func (c *Client) SetModerationStatus(owner, repo, status, reasonHash string) err
 		inner["reason_hash"] = reasonHash
 	}
 	return c.Execute(map[string]any{"set_moderation_status": inner})
+}
+
+func (c *Client) SubmitModerationReport(owner, repo, reasonHash string) error {
+	return c.Execute(map[string]any{"submit_moderation_report": map[string]any{
+		"owner": owner, "repo": repo, "reason_hash": reasonHash,
+	}})
+}
+
+func (c *Client) ResolveModerationReport(id uint64, status, reasonHash string) error {
+	return c.Execute(map[string]any{"resolve_moderation_report": map[string]any{
+		"report_id": id, "status": status, "reason_hash": reasonHash,
+	}})
+}
+
+func (c *Client) AppealModerationReport(id uint64, reasonHash string) error {
+	return c.Execute(map[string]any{"appeal_moderation_report": map[string]any{
+		"report_id": id, "reason_hash": reasonHash,
+	}})
+}
+
+func (c *Client) ResolveModerationAppeal(id uint64, status, reasonHash string) error {
+	return c.Execute(map[string]any{"resolve_moderation_appeal": map[string]any{
+		"report_id": id, "status": status, "reason_hash": reasonHash,
+	}})
+}
+
+func (c *Client) ModerationReport(id uint64) (*ModerationReportInfo, error) {
+	var out ModerationReportInfo
+	if err := c.SmartQuery(map[string]any{
+		"moderation_report": map[string]any{"report_id": id},
+	}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 // Sponsor sends funds to a repo; the contract splits them instantly.
@@ -460,6 +593,58 @@ func (c *Client) AwardBadge(repo, recipient, reason string) error {
 			"reason":    reason,
 		},
 	})
+}
+
+// RegisterRelease publishes immutable SHA-256 records for one release.
+func (c *Client) RegisterRelease(version string, artifacts []ReleaseArtifact) error {
+	inputs := make([]map[string]string, 0, len(artifacts))
+	for _, artifact := range artifacts {
+		inputs = append(inputs, map[string]string{
+			"platform": artifact.Platform,
+			"sha256":   artifact.SHA256,
+		})
+	}
+	return c.Execute(map[string]any{
+		"register_release": map[string]any{
+			"version":   version,
+			"artifacts": inputs,
+		},
+	})
+}
+
+// ScheduleUpgrade announces an exact Wasm hash. The contract enforces its
+// 14-day delay before a matching migrate transaction can execute.
+func (c *Client) ScheduleUpgrade(wasmSHA256 string) error {
+	return c.Execute(map[string]any{"schedule_upgrade": map[string]any{
+		"wasm_sha256": strings.ToLower(wasmSHA256),
+	}})
+}
+
+// CancelUpgrade removes the pending upgrade announcement.
+func (c *Client) CancelUpgrade() error {
+	return c.Execute(map[string]any{"cancel_upgrade": map[string]any{}})
+}
+
+// UpgradeSecurity returns the pending upgrade proposal and delay.
+func (c *Client) UpgradeSecurity() (*UpgradeSecurityInfo, error) {
+	var out UpgradeSecurityInfo
+	if err := c.SmartQuery(map[string]any{"upgrade_security": map[string]any{}}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ReleaseArtifacts returns the chain-registered checksums for a version.
+func (c *Client) ReleaseArtifacts(version string) ([]ReleaseArtifact, error) {
+	var out struct {
+		Artifacts []ReleaseArtifact `json:"artifacts"`
+	}
+	if err := c.SmartQuery(map[string]any{
+		"release_artifacts": map[string]any{"version": version},
+	}, &out); err != nil {
+		return nil, err
+	}
+	return out.Artifacts, nil
 }
 
 // Badge mirrors the contract's Badge struct.

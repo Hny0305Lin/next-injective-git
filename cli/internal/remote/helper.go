@@ -53,6 +53,7 @@ type gitRepo interface {
 	ResolveRef(ref string) string
 	PackObjects(tip string, exclude []string) ([]byte, error)
 	IndexPack(pack io.Reader) error
+	ScanSecrets(ref string) []string
 }
 
 // NewHelper wires up the helper dependencies.
@@ -252,6 +253,9 @@ func (h *Helper) pushOne(spec pushSpec) error {
 	localSha := h.git.ResolveRef(spec.src)
 	if localSha == "" {
 		return i18n.Errorf("cannot resolve local ref %s", "无法解析本地 ref %s", spec.src)
+	}
+	for _, match := range h.git.ScanSecrets(localSha) {
+		h.progress("warning: possible credential in %s", "警告：%s 中可能包含凭据", match)
 	}
 
 	// build incremental pack: exclude every remote tip we already have.
