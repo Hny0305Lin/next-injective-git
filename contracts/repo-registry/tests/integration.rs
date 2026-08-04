@@ -3,7 +3,8 @@ use cw_multi_test::{App, ContractWrapper, Executor};
 
 use repo_registry::msg::{
     BadgesResponse, ExecuteMsg, InstantiateMsg, ListRefsResponse, ListReposResponse, MigrateMsg,
-    QueryMsg, RepoInfoResponse, ResolveRefResponse, SplitRecipient, SponsorTotalsResponse,
+    ModerationReportResponse, QueryMsg, ReleaseArtifactsResponse, ReleaseArtifactInput, RepoInfoResponse,
+    ResolveRefResponse, SplitRecipient, SponsorTotalsResponse,
 };
 use repo_registry::state::{ModerationStatus, Role};
 use repo_registry::ContractError;
@@ -42,6 +43,8 @@ fn setup() -> TestEnv {
                 treasury: None,
                 platform_fee_bps: None,
                 username_deposit: None,
+                username_fee: None,
+                reserved_usernames: None,
             },
             &[],
             "repo-registry",
@@ -508,6 +511,50 @@ fn transfer_ownership_moves_refs() {
         )
         .unwrap();
 
+    // transfer is timelocked; the repo remains under alice until bob accepts
+    let repos: ListReposResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::ListRepos {
+                owner: bob.to_string(),
+                start_after: None,
+                limit: None,
+            },
+        )
+        .unwrap();
+    assert_eq!(repos.repos.len(), 0);
+
+    let early = env.app.execute_contract(
+        bob.clone(),
+        env.contract.clone(),
+        &ExecuteMsg::AcceptOwnership {
+            owner: alice.to_string(),
+            repo: "hello".to_string(),
+        },
+        &[],
+    );
+    assert!(matches!(
+        early.unwrap_err().downcast::<ContractError>().unwrap(),
+        ContractError::OwnershipTransferTooEarly { .. }
+    ));
+
+    env.app.update_block(|block| {
+        block.time = block.time.plus_seconds(7 * 24 * 60 * 60);
+    });
+    env.app
+        .execute_contract(
+            bob.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::AcceptOwnership {
+                owner: alice.to_string(),
+                repo: "hello".to_string(),
+            },
+            &[],
+        )
+        .unwrap();
+
     // repo now listed under bob, refs preserved
     let repos: ListReposResponse = env
         .app
@@ -560,6 +607,93 @@ fn transfer_ownership_moves_refs() {
         err.downcast::<ContractError>().unwrap(),
         ContractError::Unauthorized {}
     ));
+}
+
+#[test]
+fn guardian_recovery_requires_threshold_and_timelock() {
+    let mut env = setup();
+    let (alice, bob, carol) = (env.alice.clone(), env.bob.clone(), env.carol.clone());
+    let dave = env.app.api().addr_make("dave");
+    create_repo(&mut env, &alice, "recover");
+
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::SetGuardians {
+                repo: "recover".to_string(),
+                guardians: vec![bob.to_string(), carol.to_string()],
+                threshold: 2,
+            },
+            &[],
+        )
+        .unwrap();
+    env.app
+        .execute_contract(
+            bob.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::ProposeRecovery {
+                owner: alice.to_string(),
+                repo: "recover".to_string(),
+                new_owner: dave.to_string(),
+            },
+            &[],
+        )
+        .unwrap();
+
+    let insufficient = env.app.execute_contract(
+        dave.clone(),
+        env.contract.clone(),
+        &ExecuteMsg::AcceptRecovery {
+            owner: alice.to_string(),
+            repo: "recover".to_string(),
+        },
+        &[],
+    );
+    assert!(matches!(
+        insufficient.unwrap_err().downcast::<ContractError>().unwrap(),
+        ContractError::OwnershipTransferTooEarly { .. }
+    ));
+
+    env.app
+        .execute_contract(
+            carol.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::ApproveRecovery {
+                owner: alice.to_string(),
+                repo: "recover".to_string(),
+            },
+            &[],
+        )
+        .unwrap();
+    env.app.update_block(|block| {
+        block.time = block.time.plus_seconds(7 * 24 * 60 * 60);
+    });
+    env.app
+        .execute_contract(
+            dave.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::AcceptRecovery {
+                owner: alice.to_string(),
+                repo: "recover".to_string(),
+            },
+            &[],
+        )
+        .unwrap();
+
+    let repos: ListReposResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::ListRepos {
+                owner: dave.to_string(),
+                start_after: None,
+                limit: None,
+            },
+        )
+        .unwrap();
+    assert_eq!(repos.repos.len(), 1);
 }
 
 #[test]
@@ -772,6 +906,88 @@ fn moderation_freeze_blocks_push() {
 }
 
 #[test]
+fn moderation_report_and_appeal_are_auditable() {
+    let mut env = setup();
+    let (alice, bob, carol) = (env.alice.clone(), env.bob.clone(), env.carol.clone());
+    create_repo(&mut env, &bob, "reported");
+
+    env.app
+        .execute_contract(
+            carol.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::SubmitModerationReport {
+                owner: bob.to_string(),
+                repo: "reported".to_string(),
+                reason_hash: "report-hash".to_string(),
+            },
+            &[],
+        )
+        .unwrap();
+    let open: ModerationReportResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(&env.contract, &QueryMsg::ModerationReport { report_id: 1 })
+        .unwrap();
+    assert_eq!(open.reporter, carol.to_string());
+
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::ResolveModerationReport {
+                report_id: 1,
+                status: ModerationStatus::Frozen,
+                reason_hash: "decision-hash".to_string(),
+            },
+            &[],
+        )
+        .unwrap();
+    env.app
+        .execute_contract(
+            bob.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::AppealModerationReport {
+                report_id: 1,
+                reason_hash: "appeal-hash".to_string(),
+            },
+            &[],
+        )
+        .unwrap();
+    let unauthorized = env.app.execute_contract(
+        carol,
+        env.contract.clone(),
+        &ExecuteMsg::ResolveModerationAppeal {
+            report_id: 1,
+            status: ModerationStatus::Active,
+            reason_hash: "bad-resolution".to_string(),
+        },
+        &[],
+    );
+    assert!(matches!(
+        unauthorized.unwrap_err().downcast::<ContractError>().unwrap(),
+        ContractError::Unauthorized {}
+    ));
+    env.app
+        .execute_contract(
+            alice,
+            env.contract.clone(),
+            &ExecuteMsg::ResolveModerationAppeal {
+                report_id: 1,
+                status: ModerationStatus::Active,
+                reason_hash: "appeal-decision".to_string(),
+            },
+            &[],
+        )
+        .unwrap();
+    let resolved: ModerationReportResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(&env.contract, &QueryMsg::ModerationReport { report_id: 1 })
+        .unwrap();
+    assert!(matches!(resolved.status, repo_registry::state::ReportStatus::AppealResolved));
+}
+
+#[test]
 fn migrate_same_contract_ok() {
     let mut env = setup();
     let alice = env.alice.clone();
@@ -784,9 +1000,100 @@ fn migrate_same_contract_ok() {
     )
     .with_migrate(repo_registry::contract::migrate);
     let new_code_id = env.app.store_code(Box::new(code));
+    let hash = "a".repeat(64);
     env.app
-        .migrate_contract(alice, env.contract.clone(), &MigrateMsg {}, new_code_id)
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::ScheduleUpgrade {
+                wasm_sha256: hash.clone(),
+            },
+            &[],
+        )
         .unwrap();
+    env.app.update_block(|block| {
+        block.time = block.time.plus_seconds(14 * 24 * 60 * 60);
+    });
+    env.app
+        .migrate_contract(
+            alice,
+            env.contract.clone(),
+            &MigrateMsg {
+                wasm_sha256: Some(hash),
+            },
+            new_code_id,
+        )
+        .unwrap();
+}
+
+#[test]
+fn upgrade_schedule_is_admin_only_and_timelocked() {
+    let mut env = setup();
+    let hash = "a".repeat(64);
+
+    let unauthorized = env.app.execute_contract(
+        env.bob.clone(),
+        env.contract.clone(),
+        &ExecuteMsg::ScheduleUpgrade {
+            wasm_sha256: hash.clone(),
+        },
+        &[],
+    );
+    assert!(matches!(
+        unauthorized.unwrap_err().downcast::<ContractError>().unwrap(),
+        ContractError::Unauthorized {}
+    ));
+
+    env.app
+        .execute_contract(
+            env.alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::ScheduleUpgrade {
+                wasm_sha256: hash.clone(),
+            },
+            &[],
+        )
+        .unwrap();
+
+    let security: repo_registry::msg::UpgradeSecurityResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(&env.contract, &QueryMsg::UpgradeSecurity {})
+        .unwrap();
+    let proposal = security.proposal.expect("upgrade proposal");
+    assert_eq!(proposal.wasm_sha256, hash);
+    assert_eq!(
+        proposal.execute_after - proposal.proposed_at,
+        14 * 24 * 60 * 60
+    );
+
+    let duplicate = env.app.execute_contract(
+        env.alice.clone(),
+        env.contract.clone(),
+        &ExecuteMsg::ScheduleUpgrade {
+            wasm_sha256: "b".repeat(64),
+        },
+        &[],
+    );
+    assert!(matches!(
+        duplicate.unwrap_err().downcast::<ContractError>().unwrap(),
+        ContractError::UpgradeAlreadyScheduled {}
+    ));
+
+    env.app
+        .execute_contract(
+            env.alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::CancelUpgrade {},
+            &[],
+        )
+        .unwrap();
+    let cleared: repo_registry::msg::UpgradeSecurityResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(&env.contract, &QueryMsg::UpgradeSecurity {})
+        .unwrap();
+    assert!(cleared.proposal.is_none());
 }
 
 #[test]
@@ -1089,6 +1396,8 @@ fn setup_funded() -> (TestEnv, Addr) {
                 treasury: Some(dave.to_string()),
                 platform_fee_bps: None, // default 300 = 3%
                 username_deposit: None, // default 0.1 INJ
+                username_fee: Some(cosmwasm_std::coin(INJ / 100, "inj")),
+                reserved_usernames: None,
             },
             &[],
             "repo-registry",
@@ -1311,9 +1620,11 @@ fn revenue_splits_validation() {
 
 #[test]
 fn username_register_and_release() {
-    let (mut env, _dave) = setup_funded();
+    let (mut env, dave) = setup_funded();
     let (alice, bob) = (env.alice.clone(), env.bob.clone());
     let deposit = INJ / 10; // default 0.1 INJ
+    let fee = INJ / 100; // configured non-refundable registration fee
+    let registration_cost = deposit + fee;
 
     // wrong deposit rejected
     let err = env
@@ -1340,7 +1651,7 @@ fn username_register_and_release() {
             &ExecuteMsg::RegisterUsername {
                 name: "alice-dev".to_string(),
             },
-            &coins(deposit, "inj"),
+            &coins(registration_cost, "inj"),
         )
         .unwrap();
 
@@ -1361,6 +1672,23 @@ fn username_register_and_release() {
         ContractError::UsernameTaken { .. }
     ));
 
+    // reserved names are rejected even when the registration fee is paid
+    let err = env
+        .app
+        .execute_contract(
+            bob.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::RegisterUsername {
+                name: "admin".to_string(),
+            },
+            &coins(registration_cost, "inj"),
+        )
+        .unwrap_err();
+    assert!(matches!(
+        err.downcast::<ContractError>().unwrap(),
+        ContractError::UsernameReserved { .. }
+    ));
+
     // one name per address
     let err = env
         .app
@@ -1370,7 +1698,7 @@ fn username_register_and_release() {
             &ExecuteMsg::RegisterUsername {
                 name: "alice-two".to_string(),
             },
-            &coins(deposit, "inj"),
+            &coins(registration_cost, "inj"),
         )
         .unwrap_err();
     assert!(matches!(
@@ -1388,7 +1716,7 @@ fn username_register_and_release() {
                 &ExecuteMsg::RegisterUsername {
                     name: bad.to_string(),
                 },
-                &coins(deposit, "inj"),
+                &coins(registration_cost, "inj"),
             )
             .unwrap_err();
         assert!(matches!(
@@ -1408,6 +1736,7 @@ fn username_register_and_release() {
         )
         .unwrap();
     assert_eq!(balance(&env, &alice) - a0, deposit);
+    assert_eq!(balance(&env, &dave), fee);
     env.app
         .execute_contract(
             bob.clone(),
@@ -1415,7 +1744,79 @@ fn username_register_and_release() {
             &ExecuteMsg::RegisterUsername {
                 name: "alice-dev".to_string(),
             },
-            &coins(deposit, "inj"),
+            &coins(registration_cost, "inj"),
         )
         .unwrap();
+}
+
+#[test]
+fn admin_registers_immutable_release_checksums() {
+    let mut env = setup();
+    let version = "v0.5.0".to_string();
+    let digest = "ABCDEFabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123";
+    env.app
+        .execute_contract(
+            env.alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::RegisterRelease {
+                version: version.clone(),
+                artifacts: vec![
+                    ReleaseArtifactInput {
+                        platform: "linux-amd64".to_string(),
+                        sha256: digest.to_string(),
+                    },
+                    ReleaseArtifactInput {
+                        platform: "repo-registry.wasm".to_string(),
+                        sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+                    },
+                ],
+            },
+            &[],
+        )
+        .unwrap();
+
+    let out: ReleaseArtifactsResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::ReleaseArtifacts { version: version.clone() },
+        )
+        .unwrap();
+    assert_eq!(out.artifacts.len(), 2);
+    assert_eq!(out.artifacts[0].sha256, digest.to_ascii_lowercase());
+
+    let duplicate = env.app.execute_contract(
+        env.alice.clone(),
+        env.contract.clone(),
+        &ExecuteMsg::RegisterRelease {
+            version,
+            artifacts: vec![ReleaseArtifactInput {
+                platform: "linux-amd64".to_string(),
+                sha256: digest.to_string(),
+            }],
+        },
+        &[],
+    );
+    assert!(matches!(
+        duplicate.unwrap_err().downcast::<ContractError>().unwrap(),
+        ContractError::ReleaseArtifactExists { .. }
+    ));
+
+    let unauthorized = env.app.execute_contract(
+        env.bob.clone(),
+        env.contract.clone(),
+        &ExecuteMsg::RegisterRelease {
+            version: "v0.5.1".to_string(),
+            artifacts: vec![ReleaseArtifactInput {
+                platform: "linux-amd64".to_string(),
+                sha256: digest.to_string(),
+            }],
+        },
+        &[],
+    );
+    assert!(matches!(
+        unauthorized.unwrap_err().downcast::<ContractError>().unwrap(),
+        ContractError::Unauthorized {}
+    ));
 }

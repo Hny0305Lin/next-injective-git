@@ -18,6 +18,26 @@ pub struct Config {
     pub platform_fee_bps: u16,
     /// Refundable deposit locked while a username is held (§4).
     pub username_deposit: Coin,
+    /// Non-refundable registration fee sent to the treasury (§4).
+    #[serde(default = "default_username_fee")]
+    pub username_fee: Coin,
+    /// Names that cannot be claimed by users.
+    #[serde(default = "default_reserved_usernames")]
+    pub reserved_usernames: Vec<String>,
+}
+
+fn default_username_fee() -> Coin {
+    Coin {
+        denom: "inj".to_string(),
+        amount: Uint128::zero(),
+    }
+}
+
+fn default_reserved_usernames() -> Vec<String> {
+    ["admin", "api", "git", "help", "injective", "owner", "root", "support", "www"]
+        .into_iter()
+        .map(str::to_string)
+        .collect()
 }
 
 /// Hard cap for the platform fee: 5% (§3 已定案).
@@ -115,6 +135,73 @@ pub struct Badge {
     pub awarded_at: u64,
 }
 
+#[cw_serde]
+pub enum ReportStatus {
+    Open,
+    Resolved,
+    Appealed,
+    AppealResolved,
+}
+
+#[cw_serde]
+pub struct ModerationReport {
+    pub id: u64,
+    pub owner: Addr,
+    pub repo: String,
+    pub reporter: Addr,
+    pub reason_hash: String,
+    pub status: ReportStatus,
+    pub resolution: Option<ModerationStatus>,
+    pub resolution_hash: Option<String>,
+    pub appeal_hash: Option<String>,
+    pub created_at: u64,
+    pub updated_at: u64,
+}
+
+/// Immutable checksum record for a published CLI/helper/Wasm artifact.
+/// Registration is keyed by (semantic version, platform).
+#[cw_serde]
+pub struct ReleaseArtifact {
+    pub version: String,
+    pub platform: String,
+    pub sha256: String,
+    pub registered_by: Addr,
+    pub registered_at: u64,
+}
+
+#[cw_serde]
+pub struct OwnershipTransfer {
+    pub new_owner: Addr,
+    pub proposed_at: u64,
+    pub execute_after: u64,
+}
+
+#[cw_serde]
+pub struct RecoveryProposal {
+    pub new_owner: Addr,
+    pub proposed_at: u64,
+    pub execute_after: u64,
+    pub approvals: Vec<Addr>,
+}
+
+#[cw_serde]
+pub struct GuardianConfig {
+    pub threshold: u8,
+}
+
+/// A scheduled contract upgrade. The chain-level admin (configured as a
+/// multisig in production) must announce the exact Wasm hash and wait before
+/// invoking the migration entry point.
+#[cw_serde]
+pub struct UpgradeProposal {
+    pub wasm_sha256: String,
+    pub proposed_at: u64,
+    pub execute_after: u64,
+}
+
+/// Production upgrade delay required by the governance policy.
+pub const UPGRADE_TIMELOCK_SECONDS: u64 = 14 * 24 * 60 * 60;
+
 pub const CONFIG: Item<Config> = Item::new("config");
 
 /// (owner, repo_name) => Repo
@@ -142,6 +229,9 @@ pub const SPONSOR_TOTALS: Map<(&Addr, &str, &str), Uint128> = Map::new("sponsor_
 /// Monotonic badge id.
 pub const NEXT_BADGE_ID: Item<u64> = Item::new("next_badge_id");
 
+/// Monotonic moderation report id.
+pub const NEXT_REPORT_ID: Item<u64> = Item::new("next_report_id");
+
 /// id => Badge
 pub const BADGES: Map<u64, Badge> = Map::new("badges");
 
@@ -150,3 +240,25 @@ pub const BADGES_BY_RECIPIENT: Map<(&Addr, u64), ()> = Map::new("badges_by_recip
 
 /// (repo_owner, repo_name, id) => () — per-repo awarded index
 pub const BADGES_BY_REPO: Map<(&Addr, &str, u64), ()> = Map::new("badges_by_repo");
+
+pub const REPORTS: Map<u64, ModerationReport> = Map::new("moderation_reports");
+
+/// (release version, platform) => immutable SHA-256 registration.
+pub const RELEASE_ARTIFACTS: Map<(&str, &str), ReleaseArtifact> = Map::new("release_artifacts");
+
+/// Pending owner-initiated transfer keyed by the current owner/repo.
+pub const OWNERSHIP_TRANSFERS: Map<(&Addr, &str), OwnershipTransfer> =
+    Map::new("ownership_transfers");
+
+/// Pending guardian recovery keyed by the current owner/repo.
+pub const RECOVERY_PROPOSALS: Map<(&Addr, &str), RecoveryProposal> =
+    Map::new("recovery_proposals");
+
+/// Guardian threshold keyed by the current owner/repo.
+pub const GUARDIAN_CONFIGS: Map<(&Addr, &str), GuardianConfig> = Map::new("guardian_configs");
+
+/// (current owner, repo, guardian) => membership marker.
+pub const GUARDIANS: Map<(&Addr, &str, &Addr), ()> = Map::new("guardians");
+
+/// At most one pending global contract upgrade.
+pub const UPGRADE_PROPOSAL: Item<UpgradeProposal> = Item::new("upgrade_proposal");

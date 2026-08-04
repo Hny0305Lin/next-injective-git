@@ -11,14 +11,18 @@ use crate::error::ContractError;
 use crate::msg::{
     AddressUsernameResponse, BadgesResponse, CollaboratorInfo, ConfigResponse, ExecuteMsg,
     InstantiateMsg, ListCollaboratorsResponse, ListRefsResponse, ListReposResponse, MigrateMsg,
-    QueryMsg, RefInfo, RepoInfoResponse, ResolveRefResponse, RevenueSplitsResponse,
-    SplitRecipient, SponsorTotal, SponsorTotalsResponse, UsernameResponse,
+    QueryMsg, RefInfo, ReleaseArtifactInfo, ReleaseArtifactInput, ReleaseArtifactsResponse,
+    RepoInfoResponse, ResolveRefResponse, RevenueSplitsResponse, SplitRecipient, SponsorTotal,
+    SponsorTotalsResponse, UsernameResponse, OwnershipSecurityResponse, OwnershipTransferInfo,
+    RecoveryProposalInfo, ModerationReportResponse, UpgradeProposalInfo, UpgradeSecurityResponse,
 };
 use crate::state::{
     Badge, Config, ModerationStatus, Repo, RefEntry, Role, SplitEntry, UsernameRecord,
     ADDR_TO_NAME, BADGES, BADGES_BY_RECIPIENT, BADGES_BY_REPO, COLLABORATORS, CONFIG,
-    DEFAULT_PLATFORM_FEE_BPS, MAX_PLATFORM_FEE_BPS, NEXT_BADGE_ID, REFS, REPOS, REVENUE_SPLITS,
-    SPONSOR_TOTALS, USERNAMES,
+    DEFAULT_PLATFORM_FEE_BPS, GUARDIANS, GUARDIAN_CONFIGS, MAX_PLATFORM_FEE_BPS, NEXT_BADGE_ID,
+    OWNERSHIP_TRANSFERS, RECOVERY_PROPOSALS, REFS, RELEASE_ARTIFACTS, REPOS, REVENUE_SPLITS,
+    NEXT_REPORT_ID, REPORTS, SPONSOR_TOTALS, USERNAMES, UpgradeProposal, UPGRADE_PROPOSAL,
+    UPGRADE_TIMELOCK_SECONDS,
 };
 
 const CONTRACT_NAME: &str = "crates.io:igit-repo-registry";
@@ -59,6 +63,15 @@ pub fn instantiate(
         denom: "inj".to_string(),
         amount: Uint128::new(100_000_000_000_000_000),
     });
+    let username_fee = msg.username_fee.unwrap_or(Coin {
+        denom: username_deposit.denom.clone(),
+        amount: Uint128::zero(),
+    });
+    validate_username_fee(&username_deposit, &username_fee)?;
+    let reserved_usernames = msg
+        .reserved_usernames
+        .unwrap_or_else(default_reserved_usernames);
+    validate_reserved_usernames(&reserved_usernames)?;
     CONFIG.save(
         deps.storage,
         &Config {
@@ -67,6 +80,8 @@ pub fn instantiate(
             treasury,
             platform_fee_bps,
             username_deposit,
+            username_fee,
+            reserved_usernames,
         },
     )?;
     Ok(Response::new()
@@ -75,18 +90,34 @@ pub fn instantiate(
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
+pub fn migrate(deps: DepsMut, env: Env, msg: MigrateMsg) -> Result<Response, ContractError> {
     // reject wasm blobs of a different contract; version-specific state
     // transforms hook in here as the schema evolves.
     let stored = cw2::get_contract_version(deps.storage)?;
     if stored.contract != CONTRACT_NAME {
         return Err(ContractError::Unauthorized {});
     }
+    let proposal = UPGRADE_PROPOSAL
+        .may_load(deps.storage)?
+        .ok_or(ContractError::NoUpgradeScheduled {})?;
+    if env.block.time.seconds() < proposal.execute_after {
+        return Err(ContractError::UpgradeTooEarly {
+            execute_after: proposal.execute_after,
+        });
+    }
+    let provided_hash = msg
+        .wasm_sha256
+        .ok_or(ContractError::UpgradeHashRequired {})?;
+    if provided_hash.to_ascii_lowercase() != proposal.wasm_sha256 {
+        return Err(ContractError::UpgradeHashMismatch {});
+    }
+    UPGRADE_PROPOSAL.remove(deps.storage);
     cw2::set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
     Ok(Response::new()
         .add_attribute("action", "migrate")
         .add_attribute("from_version", stored.version)
-        .add_attribute("to_version", CONTRACT_VERSION))
+        .add_attribute("to_version", CONTRACT_VERSION)
+        .add_attribute("upgrade_timelock", UPGRADE_TIMELOCK_SECONDS.to_string()))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -124,7 +155,30 @@ pub fn execute(
             role,
         } => exec_set_collaborator(deps, info, repo, collaborator, role),
         ExecuteMsg::TransferOwnership { repo, new_owner } => {
-            exec_transfer_ownership(deps, info, repo, new_owner)
+            exec_transfer_ownership(deps, env, info, repo, new_owner)
+        }
+        ExecuteMsg::CancelOwnershipTransfer { repo } => {
+            exec_cancel_ownership_transfer(deps, info, repo)
+        }
+        ExecuteMsg::AcceptOwnership { owner, repo } => {
+            exec_accept_ownership(deps, env, info, owner, repo)
+        }
+        ExecuteMsg::SetGuardians {
+            repo,
+            guardians,
+            threshold,
+        } => exec_set_guardians(deps, info, repo, guardians, threshold),
+        ExecuteMsg::ProposeRecovery {
+            owner,
+            repo,
+            new_owner,
+        } => exec_propose_recovery(deps, env, info, owner, repo, new_owner),
+        ExecuteMsg::ApproveRecovery { owner, repo } => {
+            exec_approve_recovery(deps, info, owner, repo)
+        }
+        ExecuteMsg::CancelRecovery { repo } => exec_cancel_recovery(deps, info, repo),
+        ExecuteMsg::AcceptRecovery { owner, repo } => {
+            exec_accept_recovery(deps, env, info, owner, repo)
         }
         ExecuteMsg::UpdateRepoInfo {
             repo,
@@ -140,6 +194,25 @@ pub fn execute(
         ExecuteMsg::SetModerationCommittee { committee } => {
             exec_set_moderation_committee(deps, info, committee)
         }
+        ExecuteMsg::SubmitModerationReport {
+            owner,
+            repo,
+            reason_hash,
+        } => exec_submit_moderation_report(deps, env, info, owner, repo, reason_hash),
+        ExecuteMsg::ResolveModerationReport {
+            report_id,
+            status,
+            reason_hash,
+        } => exec_resolve_moderation_report(deps, env, info, report_id, status, reason_hash),
+        ExecuteMsg::AppealModerationReport {
+            report_id,
+            reason_hash,
+        } => exec_appeal_moderation_report(deps, env, info, report_id, reason_hash),
+        ExecuteMsg::ResolveModerationAppeal {
+            report_id,
+            status,
+            reason_hash,
+        } => exec_resolve_moderation_appeal(deps, env, info, report_id, status, reason_hash),
         ExecuteMsg::Sponsor {
             owner,
             repo,
@@ -154,6 +227,14 @@ pub fn execute(
             treasury,
             platform_fee_bps,
         } => exec_set_fee_config(deps, info, treasury, platform_fee_bps),
+        ExecuteMsg::SetUsernamePolicy {
+            username_fee,
+            reserved_usernames,
+        } => exec_set_username_policy(deps, info, username_fee, reserved_usernames),
+        ExecuteMsg::ScheduleUpgrade { wasm_sha256 } => {
+            exec_schedule_upgrade(deps, env, info, wasm_sha256)
+        }
+        ExecuteMsg::CancelUpgrade {} => exec_cancel_upgrade(deps, info),
         ExecuteMsg::ForkRepo { owner, repo, name } => {
             exec_fork_repo(deps, env, info, owner, repo, name)
         }
@@ -162,6 +243,9 @@ pub fn execute(
             recipient,
             reason,
         } => exec_award_badge(deps, env, info, repo, recipient, reason),
+        ExecuteMsg::RegisterRelease { version, artifacts } => {
+            exec_register_release(deps, env, info, version, artifacts)
+        }
     }
 }
 
@@ -218,6 +302,34 @@ fn validate_pack_uri(uri: &str) -> Result<(), ContractError> {
     } else {
         Err(ContractError::InvalidPackUri {
             uri: uri.to_string(),
+        })
+    }
+}
+
+fn validate_release_token(field: &str, value: &str, max_len: usize) -> Result<(), ContractError> {
+    let ok = !value.is_empty()
+        && value.len() <= max_len
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'));
+    if ok {
+        Ok(())
+    } else {
+        Err(ContractError::InvalidReleaseField {
+            field: field.to_string(),
+            value: value.to_string(),
+        })
+    }
+}
+
+fn validate_release_sha256(value: &str) -> Result<(), ContractError> {
+    let ok = value.len() == 64 && value.chars().all(|c| c.is_ascii_hexdigit());
+    if ok {
+        Ok(())
+    } else {
+        Err(ContractError::InvalidReleaseField {
+            field: "sha256".to_string(),
+            value: value.to_string(),
         })
     }
 }
@@ -418,62 +530,323 @@ fn exec_set_collaborator(
         .add_attribute("collaborator", collaborator))
 }
 
+const OWNERSHIP_TIMELOCK: u64 = 7 * 24 * 60 * 60;
+
 fn exec_transfer_ownership(
     deps: DepsMut,
+    env: Env,
     info: MessageInfo,
     repo: String,
     new_owner: String,
 ) -> Result<Response, ContractError> {
     let new_owner = deps.api.addr_validate(&new_owner)?;
-    let mut repo_meta = load_repo(deps.as_ref(), &info.sender, &repo)?;
+    if new_owner == info.sender {
+        return Err(ContractError::InvalidGuardians {
+            reason: "new owner must differ from current owner".to_string(),
+        });
+    }
+    load_repo(deps.as_ref(), &info.sender, &repo)?;
     if REPOS.has(deps.storage, (&new_owner, &repo)) {
         return Err(ContractError::RepoExists { name: repo });
     }
+    if OWNERSHIP_TRANSFERS.has(deps.storage, (&info.sender, &repo)) {
+        return Err(ContractError::OwnershipTransferPending {});
+    }
+    if RECOVERY_PROPOSALS.has(deps.storage, (&info.sender, &repo)) {
+        return Err(ContractError::RecoveryPending {});
+    }
+    let proposed_at = env.block.time.seconds();
+    OWNERSHIP_TRANSFERS.save(
+        deps.storage,
+        (&info.sender, &repo),
+        &crate::state::OwnershipTransfer {
+            new_owner: new_owner.clone(),
+            proposed_at,
+            execute_after: proposed_at + OWNERSHIP_TIMELOCK,
+        },
+    )?;
+    Ok(Response::new()
+        .add_attribute("action", "transfer_ownership_started")
+        .add_attribute("repo", repo)
+        .add_attribute("old_owner", info.sender)
+        .add_attribute("new_owner", new_owner)
+        .add_attribute("execute_after", (proposed_at + OWNERSHIP_TIMELOCK).to_string()))
+}
 
-    // move repo metadata
+fn exec_cancel_ownership_transfer(
+    deps: DepsMut,
+    info: MessageInfo,
+    repo: String,
+) -> Result<Response, ContractError> {
+    load_repo(deps.as_ref(), &info.sender, &repo)?;
+    if !OWNERSHIP_TRANSFERS.has(deps.storage, (&info.sender, &repo)) {
+        return Err(ContractError::NoOwnershipTransfer {});
+    }
+    OWNERSHIP_TRANSFERS.remove(deps.storage, (&info.sender, &repo));
+    Ok(Response::new()
+        .add_attribute("action", "transfer_ownership_cancelled")
+        .add_attribute("repo", repo)
+        .add_attribute("owner", info.sender))
+}
+
+fn exec_accept_ownership(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    owner: String,
+    repo: String,
+) -> Result<Response, ContractError> {
+    let owner = deps.api.addr_validate(&owner)?;
+    let pending = OWNERSHIP_TRANSFERS
+        .may_load(deps.storage, (&owner, &repo))?
+        .ok_or(ContractError::NoOwnershipTransfer {})?;
+    if info.sender != pending.new_owner {
+        return Err(ContractError::Unauthorized {});
+    }
+    let now = env.block.time.seconds();
+    if now < pending.execute_after {
+        return Err(ContractError::OwnershipTransferTooEarly {
+            execute_after: pending.execute_after,
+        });
+    }
+    OWNERSHIP_TRANSFERS.remove(deps.storage, (&owner, &repo));
+    move_repo_ownership(deps, owner, pending.new_owner, repo, info.sender)
+}
+
+fn move_repo_ownership(
+    deps: DepsMut,
+    old_owner: Addr,
+    new_owner: Addr,
+    repo: String,
+    accepted_by: Addr,
+) -> Result<Response, ContractError> {
+    let mut repo_meta = load_repo(deps.as_ref(), &old_owner, &repo)?;
+    if REPOS.has(deps.storage, (&new_owner, &repo)) {
+        return Err(ContractError::RepoExists { name: repo });
+    }
     repo_meta.owner = new_owner.clone();
-    REPOS.remove(deps.storage, (&info.sender, &repo));
+    REPOS.remove(deps.storage, (&old_owner, &repo));
     REPOS.save(deps.storage, (&new_owner, &repo), &repo_meta)?;
 
-    // move refs under the new owner key
     let refs: Vec<(String, RefEntry)> = REFS
-        .prefix((&info.sender, &repo))
+        .prefix((&old_owner, &repo))
         .range(deps.storage, None, None, Order::Ascending)
         .collect::<StdResult<_>>()?;
     for (ref_name, entry) in refs {
-        REFS.remove(deps.storage, (&info.sender, &repo, &ref_name));
+        REFS.remove(deps.storage, (&old_owner, &repo, &ref_name));
         REFS.save(deps.storage, (&new_owner, &repo, &ref_name), &entry)?;
     }
 
-    // move collaborators; drop new owner if they were a collaborator
     let collabs: Vec<(Addr, Role)> = COLLABORATORS
-        .prefix((&info.sender, &repo))
+        .prefix((&old_owner, &repo))
         .range(deps.storage, None, None, Order::Ascending)
         .collect::<StdResult<_>>()?;
     for (addr, role) in collabs {
-        COLLABORATORS.remove(deps.storage, (&info.sender, &repo, &addr));
+        COLLABORATORS.remove(deps.storage, (&old_owner, &repo, &addr));
         if addr != new_owner {
             COLLABORATORS.save(deps.storage, (&new_owner, &repo, &addr), &role)?;
         }
     }
 
-    // revenue splits do NOT follow the repo — the new owner decides anew (§3)
-    REVENUE_SPLITS.remove(deps.storage, (&info.sender, &repo));
-    // sponsorship history follows the repo (sponsor wall / §14 metrics)
+    REVENUE_SPLITS.remove(deps.storage, (&old_owner, &repo));
     let totals: Vec<(String, Uint128)> = SPONSOR_TOTALS
-        .prefix((&info.sender, &repo))
+        .prefix((&old_owner, &repo))
         .range(deps.storage, None, None, Order::Ascending)
         .collect::<StdResult<_>>()?;
     for (denom, amount) in totals {
-        SPONSOR_TOTALS.remove(deps.storage, (&info.sender, &repo, &denom));
+        SPONSOR_TOTALS.remove(deps.storage, (&old_owner, &repo, &denom));
         SPONSOR_TOTALS.save(deps.storage, (&new_owner, &repo, &denom), &amount)?;
     }
+
+    // Guardians are personal recovery delegates; reset them after ownership
+    // changes so the new owner explicitly chooses its own trust set.
+    let guardians: Vec<Addr> = GUARDIANS
+        .prefix((&old_owner, &repo))
+        .range(deps.storage, None, None, Order::Ascending)
+        .map(|item| item.map(|(addr, _)| addr))
+        .collect::<StdResult<_>>()?;
+    for guardian in guardians {
+        GUARDIANS.remove(deps.storage, (&old_owner, &repo, &guardian));
+    }
+    GUARDIAN_CONFIGS.remove(deps.storage, (&old_owner, &repo));
+    RECOVERY_PROPOSALS.remove(deps.storage, (&old_owner, &repo));
 
     Ok(Response::new()
         .add_attribute("action", "transfer_ownership")
         .add_attribute("repo", repo)
-        .add_attribute("old_owner", info.sender)
-        .add_attribute("new_owner", new_owner))
+        .add_attribute("old_owner", old_owner)
+        .add_attribute("new_owner", new_owner)
+        .add_attribute("accepted_by", accepted_by))
+}
+
+fn ensure_guardian(deps: Deps, owner: &Addr, repo: &str, sender: &Addr) -> Result<(), ContractError> {
+    if GUARDIANS.has(deps.storage, (owner, repo, sender)) {
+        Ok(())
+    } else {
+        Err(ContractError::NotGuardian {})
+    }
+}
+
+fn exec_set_guardians(
+    deps: DepsMut,
+    info: MessageInfo,
+    repo: String,
+    guardians: Vec<String>,
+    threshold: u8,
+) -> Result<Response, ContractError> {
+    load_repo(deps.as_ref(), &info.sender, &repo)?;
+    if guardians.is_empty() || guardians.len() > 10 || threshold == 0 || usize::from(threshold) > guardians.len() {
+        return Err(ContractError::InvalidGuardians {
+            reason: "need 1..=10 guardians and threshold between 1 and count".to_string(),
+        });
+    }
+    let mut validated = Vec::with_capacity(guardians.len());
+    for raw in guardians {
+        let guardian = deps.api.addr_validate(&raw)?;
+        if guardian == info.sender || validated.iter().any(|a: &Addr| a == &guardian) {
+            return Err(ContractError::InvalidGuardians {
+                reason: "guardian list contains owner or duplicate address".to_string(),
+            });
+        }
+        validated.push(guardian);
+    }
+    let old: Vec<Addr> = GUARDIANS
+        .prefix((&info.sender, &repo))
+        .range(deps.storage, None, None, Order::Ascending)
+        .map(|item| item.map(|(addr, _)| addr))
+        .collect::<StdResult<_>>()?;
+    for guardian in old {
+        GUARDIANS.remove(deps.storage, (&info.sender, &repo, &guardian));
+    }
+    for guardian in &validated {
+        GUARDIANS.save(deps.storage, (&info.sender, &repo, guardian), &())?;
+    }
+    GUARDIAN_CONFIGS.save(
+        deps.storage,
+        (&info.sender, &repo),
+        &crate::state::GuardianConfig { threshold },
+    )?;
+    Ok(Response::new()
+        .add_attribute("action", "set_guardians")
+        .add_attribute("owner", info.sender)
+        .add_attribute("repo", repo)
+        .add_attribute("threshold", threshold.to_string()))
+}
+
+fn exec_propose_recovery(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    owner: String,
+    repo: String,
+    new_owner: String,
+) -> Result<Response, ContractError> {
+    let owner = deps.api.addr_validate(&owner)?;
+    let new_owner = deps.api.addr_validate(&new_owner)?;
+    load_repo(deps.as_ref(), &owner, &repo)?;
+    ensure_guardian(deps.as_ref(), &owner, &repo, &info.sender)?;
+    if new_owner == owner || REPOS.has(deps.storage, (&new_owner, &repo)) {
+        return Err(ContractError::InvalidGuardians {
+            reason: "recovery target must be a different address without the same repo".to_string(),
+        });
+    }
+    if RECOVERY_PROPOSALS.has(deps.storage, (&owner, &repo)) {
+        return Err(ContractError::RecoveryPending {});
+    }
+    if OWNERSHIP_TRANSFERS.has(deps.storage, (&owner, &repo)) {
+        return Err(ContractError::OwnershipTransferPending {});
+    }
+    let proposed_at = env.block.time.seconds();
+    RECOVERY_PROPOSALS.save(
+        deps.storage,
+        (&owner, &repo),
+        &crate::state::RecoveryProposal {
+            new_owner: new_owner.clone(),
+            proposed_at,
+            execute_after: proposed_at + OWNERSHIP_TIMELOCK,
+            approvals: vec![info.sender.clone()],
+        },
+    )?;
+    Ok(Response::new()
+        .add_attribute("action", "recovery_proposed")
+        .add_attribute("owner", owner)
+        .add_attribute("repo", repo)
+        .add_attribute("new_owner", new_owner)
+        .add_attribute("execute_after", (proposed_at + OWNERSHIP_TIMELOCK).to_string()))
+}
+
+fn exec_approve_recovery(
+    deps: DepsMut,
+    info: MessageInfo,
+    owner: String,
+    repo: String,
+) -> Result<Response, ContractError> {
+    let owner = deps.api.addr_validate(&owner)?;
+    ensure_guardian(deps.as_ref(), &owner, &repo, &info.sender)?;
+    let mut proposal = RECOVERY_PROPOSALS
+        .may_load(deps.storage, (&owner, &repo))?
+        .ok_or(ContractError::NoRecoveryProposal {})?;
+    if !proposal.approvals.iter().any(|a| a == &info.sender) {
+        proposal.approvals.push(info.sender.clone());
+        RECOVERY_PROPOSALS.save(deps.storage, (&owner, &repo), &proposal)?;
+    }
+    Ok(Response::new()
+        .add_attribute("action", "recovery_approved")
+        .add_attribute("owner", owner)
+        .add_attribute("repo", repo)
+        .add_attribute("guardian", info.sender)
+        .add_attribute("approvals", proposal.approvals.len().to_string()))
+}
+
+fn exec_cancel_recovery(
+    deps: DepsMut,
+    info: MessageInfo,
+    repo: String,
+) -> Result<Response, ContractError> {
+    load_repo(deps.as_ref(), &info.sender, &repo)?;
+    if !RECOVERY_PROPOSALS.has(deps.storage, (&info.sender, &repo)) {
+        return Err(ContractError::NoRecoveryProposal {});
+    }
+    RECOVERY_PROPOSALS.remove(deps.storage, (&info.sender, &repo));
+    Ok(Response::new()
+        .add_attribute("action", "recovery_cancelled")
+        .add_attribute("owner", info.sender)
+        .add_attribute("repo", repo))
+}
+
+fn exec_accept_recovery(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    owner: String,
+    repo: String,
+) -> Result<Response, ContractError> {
+    let owner = deps.api.addr_validate(&owner)?;
+    let proposal = RECOVERY_PROPOSALS
+        .may_load(deps.storage, (&owner, &repo))?
+        .ok_or(ContractError::NoRecoveryProposal {})?;
+    if info.sender != proposal.new_owner {
+        return Err(ContractError::Unauthorized {});
+    }
+    if env.block.time.seconds() < proposal.execute_after {
+        return Err(ContractError::OwnershipTransferTooEarly {
+            execute_after: proposal.execute_after,
+        });
+    }
+    let threshold = GUARDIAN_CONFIGS
+        .may_load(deps.storage, (&owner, &repo))?
+        .ok_or_else(|| ContractError::InvalidGuardians {
+            reason: "guardian threshold is not configured".to_string(),
+        })?
+        .threshold;
+    if proposal.approvals.len() < usize::from(threshold) {
+        return Err(ContractError::RecoveryApprovalsInsufficient {
+            required: threshold,
+            actual: proposal.approvals.len() as u8,
+        });
+    }
+    RECOVERY_PROPOSALS.remove(deps.storage, (&owner, &repo));
+    move_repo_ownership(deps, owner, proposal.new_owner, repo, info.sender)
 }
 
 fn exec_update_repo_info(
@@ -549,6 +922,155 @@ fn exec_set_moderation_committee(
                 .map(|a| a.to_string())
                 .unwrap_or_default(),
         ))
+}
+
+fn validate_report_reason(reason_hash: &str) -> Result<(), ContractError> {
+    if reason_hash.is_empty() || reason_hash.len() > 128 {
+        return Err(ContractError::InvalidReportReason {});
+    }
+    Ok(())
+}
+
+fn ensure_moderator(deps: Deps, sender: &Addr) -> Result<(), ContractError> {
+    let cfg = CONFIG.load(deps.storage)?;
+    let moderator = cfg.moderation_committee.as_ref().unwrap_or(&cfg.admin);
+    if sender == moderator {
+        Ok(())
+    } else {
+        Err(ContractError::Unauthorized {})
+    }
+}
+
+fn exec_submit_moderation_report(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    owner: String,
+    repo: String,
+    reason_hash: String,
+) -> Result<Response, ContractError> {
+    validate_report_reason(&reason_hash)?;
+    let owner_addr = deps.api.addr_validate(&owner)?;
+    load_repo(deps.as_ref(), &owner_addr, &repo)?;
+    let id = NEXT_REPORT_ID.may_load(deps.storage)?.unwrap_or(1);
+    let now = env.block.time.seconds();
+    REPORTS.save(
+        deps.storage,
+        id,
+        &crate::state::ModerationReport {
+            id,
+            owner: owner_addr.clone(),
+            repo: repo.clone(),
+            reporter: info.sender.clone(),
+            reason_hash: reason_hash.clone(),
+            status: crate::state::ReportStatus::Open,
+            resolution: None,
+            resolution_hash: None,
+            appeal_hash: None,
+            created_at: now,
+            updated_at: now,
+        },
+    )?;
+    NEXT_REPORT_ID.save(deps.storage, &(id + 1))?;
+    Ok(Response::new()
+        .add_attribute("action", "submit_moderation_report")
+        .add_attribute("report_id", id.to_string())
+        .add_attribute("owner", owner_addr)
+        .add_attribute("repo", repo)
+        .add_attribute("reporter", info.sender)
+        .add_attribute("reason_hash", reason_hash))
+}
+
+fn exec_resolve_moderation_report(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    report_id: u64,
+    status: ModerationStatus,
+    reason_hash: String,
+) -> Result<Response, ContractError> {
+    ensure_moderator(deps.as_ref(), &info.sender)?;
+    validate_report_reason(&reason_hash)?;
+    let mut report = REPORTS
+        .may_load(deps.storage, report_id)?
+        .ok_or(ContractError::ReportNotFound { id: report_id })?;
+    if !matches!(report.status, crate::state::ReportStatus::Open) {
+        return Err(ContractError::ReportNotAppealable {});
+    }
+    let mut repo = load_repo(deps.as_ref(), &report.owner, &report.repo)?;
+    repo.moderation_status = status.clone();
+    repo.updated_at = env.block.time.seconds();
+    REPOS.save(deps.storage, (&report.owner, &report.repo), &repo)?;
+    report.status = crate::state::ReportStatus::Resolved;
+    report.resolution = Some(status.clone());
+    report.resolution_hash = Some(reason_hash.clone());
+    report.updated_at = env.block.time.seconds();
+    REPORTS.save(deps.storage, report_id, &report)?;
+    Ok(Response::new()
+        .add_attribute("action", "resolve_moderation_report")
+        .add_attribute("report_id", report_id.to_string())
+        .add_attribute("status", format!("{status:?}").to_lowercase())
+        .add_attribute("reason_hash", reason_hash))
+}
+
+fn exec_appeal_moderation_report(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    report_id: u64,
+    reason_hash: String,
+) -> Result<Response, ContractError> {
+    validate_report_reason(&reason_hash)?;
+    let mut report = REPORTS
+        .may_load(deps.storage, report_id)?
+        .ok_or(ContractError::ReportNotFound { id: report_id })?;
+    if info.sender != report.owner {
+        return Err(ContractError::ReportAppealUnauthorized {});
+    }
+    if !matches!(report.status, crate::state::ReportStatus::Resolved) {
+        return Err(ContractError::ReportNotAppealable {});
+    }
+    report.status = crate::state::ReportStatus::Appealed;
+    report.appeal_hash = Some(reason_hash.clone());
+    report.updated_at = env.block.time.seconds();
+    REPORTS.save(deps.storage, report_id, &report)?;
+    Ok(Response::new()
+        .add_attribute("action", "appeal_moderation_report")
+        .add_attribute("report_id", report_id.to_string())
+        .add_attribute("owner", info.sender)
+        .add_attribute("reason_hash", reason_hash))
+}
+
+fn exec_resolve_moderation_appeal(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    report_id: u64,
+    status: ModerationStatus,
+    reason_hash: String,
+) -> Result<Response, ContractError> {
+    ensure_moderator(deps.as_ref(), &info.sender)?;
+    validate_report_reason(&reason_hash)?;
+    let mut report = REPORTS
+        .may_load(deps.storage, report_id)?
+        .ok_or(ContractError::ReportNotFound { id: report_id })?;
+    if !matches!(report.status, crate::state::ReportStatus::Appealed) {
+        return Err(ContractError::ReportNotAppealable {});
+    }
+    let mut repo = load_repo(deps.as_ref(), &report.owner, &report.repo)?;
+    repo.moderation_status = status.clone();
+    repo.updated_at = env.block.time.seconds();
+    REPOS.save(deps.storage, (&report.owner, &report.repo), &repo)?;
+    report.status = crate::state::ReportStatus::AppealResolved;
+    report.resolution = Some(status.clone());
+    report.resolution_hash = Some(reason_hash.clone());
+    report.updated_at = env.block.time.seconds();
+    REPORTS.save(deps.storage, report_id, &report)?;
+    Ok(Response::new()
+        .add_attribute("action", "resolve_moderation_appeal")
+        .add_attribute("report_id", report_id.to_string())
+        .add_attribute("status", format!("{status:?}").to_lowercase())
+        .add_attribute("reason_hash", reason_hash))
 }
 
 /// Sponsor a repo: split attached funds instantly, custody nothing (§3).
@@ -725,17 +1247,22 @@ fn exec_register_username(
     if USERNAMES.has(deps.storage, &name) {
         return Err(ContractError::UsernameTaken { name });
     }
+    let cfg = CONFIG.load(deps.storage)?;
+    if cfg.reserved_usernames.iter().any(|reserved| reserved == &name) {
+        return Err(ContractError::UsernameReserved { name });
+    }
     if let Some(existing) = ADDR_TO_NAME.may_load(deps.storage, &info.sender)? {
         return Err(ContractError::AlreadyHasUsername { name: existing });
     }
-    let cfg = CONFIG.load(deps.storage)?;
     let expected = &cfg.username_deposit;
+    validate_username_fee(expected, &cfg.username_fee)?;
+    let total = expected.amount + cfg.username_fee.amount;
     let paid_ok = info.funds.len() == 1
         && info.funds[0].denom == expected.denom
-        && info.funds[0].amount == expected.amount;
+        && info.funds[0].amount == total;
     if !paid_ok {
         return Err(ContractError::DepositMismatch {
-            expected: format!("{}{}", expected.amount, expected.denom),
+            expected: format!("{}{}", total, expected.denom),
             actual: info
                 .funds
                 .iter()
@@ -754,10 +1281,17 @@ fn exec_register_username(
         },
     )?;
     ADDR_TO_NAME.save(deps.storage, &info.sender, &name)?;
-    Ok(Response::new()
+    let mut response = Response::new()
         .add_attribute("action", "register_username")
         .add_attribute("name", name)
-        .add_attribute("owner", info.sender))
+        .add_attribute("owner", info.sender);
+    if !cfg.username_fee.amount.is_zero() {
+        response = response.add_message(BankMsg::Send {
+            to_address: cfg.treasury.to_string(),
+            amount: vec![cfg.username_fee],
+        });
+    }
+    Ok(response)
 }
 
 /// Release the sender's username and refund the escrowed deposit.
@@ -808,6 +1342,81 @@ fn exec_set_fee_config(
         .add_attribute("action", "set_fee_config")
         .add_attribute("treasury", cfg.treasury)
         .add_attribute("platform_fee_bps", cfg.platform_fee_bps.to_string()))
+}
+
+fn exec_set_username_policy(
+    deps: DepsMut,
+    info: MessageInfo,
+    username_fee: Option<Coin>,
+    reserved_usernames: Option<Vec<String>>,
+) -> Result<Response, ContractError> {
+    let mut cfg = CONFIG.load(deps.storage)?;
+    if info.sender != cfg.admin {
+        return Err(ContractError::Unauthorized {});
+    }
+    if let Some(fee) = username_fee {
+        validate_username_fee(&cfg.username_deposit, &fee)?;
+        cfg.username_fee = fee;
+    }
+    if let Some(names) = reserved_usernames {
+        validate_reserved_usernames(&names)?;
+        cfg.reserved_usernames = names;
+    }
+    CONFIG.save(deps.storage, &cfg)?;
+    Ok(Response::new()
+        .add_attribute("action", "set_username_policy")
+        .add_attribute("username_fee", format!("{}{}", cfg.username_fee.amount, cfg.username_fee.denom))
+        .add_attribute("reserved_count", cfg.reserved_usernames.len().to_string()))
+}
+
+fn validate_upgrade_hash(hash: &str) -> Result<String, ContractError> {
+    if hash.len() != 64 || !hash.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(ContractError::InvalidUpgradeHash {});
+    }
+    Ok(hash.to_ascii_lowercase())
+}
+
+fn exec_schedule_upgrade(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    wasm_sha256: String,
+) -> Result<Response, ContractError> {
+    let cfg = CONFIG.load(deps.storage)?;
+    if info.sender != cfg.admin {
+        return Err(ContractError::Unauthorized {});
+    }
+    if UPGRADE_PROPOSAL.may_load(deps.storage)?.is_some() {
+        return Err(ContractError::UpgradeAlreadyScheduled {});
+    }
+    let wasm_sha256 = validate_upgrade_hash(&wasm_sha256)?;
+    let proposed_at = env.block.time.seconds();
+    let execute_after = proposed_at + UPGRADE_TIMELOCK_SECONDS;
+    UPGRADE_PROPOSAL.save(
+        deps.storage,
+        &UpgradeProposal {
+            wasm_sha256: wasm_sha256.clone(),
+            proposed_at,
+            execute_after,
+        },
+    )?;
+    Ok(Response::new()
+        .add_attribute("action", "schedule_upgrade")
+        .add_attribute("wasm_sha256", wasm_sha256)
+        .add_attribute("proposed_at", proposed_at.to_string())
+        .add_attribute("execute_after", execute_after.to_string()))
+}
+
+fn exec_cancel_upgrade(deps: DepsMut, info: MessageInfo) -> Result<Response, ContractError> {
+    let cfg = CONFIG.load(deps.storage)?;
+    if info.sender != cfg.admin {
+        return Err(ContractError::Unauthorized {});
+    }
+    if UPGRADE_PROPOSAL.may_load(deps.storage)?.is_none() {
+        return Err(ContractError::NoUpgradeScheduled {});
+    }
+    UPGRADE_PROPOSAL.remove(deps.storage);
+    Ok(Response::new().add_attribute("action", "cancel_upgrade"))
 }
 
 /// Fork owner/repo into the sender's namespace. Refs are copied by
@@ -921,6 +1530,67 @@ fn exec_award_badge(
         .add_attribute("recipient", recipient))
 }
 
+/// Register immutable release artifact checksums. Corrections require a new
+/// version rather than mutating an already published artifact.
+fn exec_register_release(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    version: String,
+    artifacts: Vec<ReleaseArtifactInput>,
+) -> Result<Response, ContractError> {
+    let cfg = CONFIG.load(deps.storage)?;
+    if info.sender != cfg.admin {
+        return Err(ContractError::Unauthorized {});
+    }
+    validate_release_token("version", &version, 64)?;
+    if artifacts.is_empty() {
+        return Err(ContractError::EmptyReleaseArtifacts {});
+    }
+    if artifacts.len() > 32 {
+        return Err(ContractError::InvalidReleaseField {
+            field: "artifacts".to_string(),
+            value: "too many artifacts (max 32)".to_string(),
+        });
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for artifact in &artifacts {
+        validate_release_token("platform", &artifact.platform, 64)?;
+        validate_release_sha256(&artifact.sha256)?;
+        if !seen.insert(artifact.platform.clone()) {
+            return Err(ContractError::InvalidReleaseField {
+                field: "platform".to_string(),
+                value: format!("duplicate platform {}", artifact.platform),
+            });
+        }
+        if RELEASE_ARTIFACTS.has(deps.storage, (&version, &artifact.platform)) {
+            return Err(ContractError::ReleaseArtifactExists {
+                version: version.clone(),
+                platform: artifact.platform.clone(),
+            });
+        }
+    }
+    let now = env.block.time.seconds();
+    for artifact in artifacts {
+        let platform = artifact.platform.clone();
+        RELEASE_ARTIFACTS.save(
+            deps.storage,
+            (&version, &platform),
+            &crate::state::ReleaseArtifact {
+                version: version.clone(),
+                platform: platform.clone(),
+                sha256: artifact.sha256.to_ascii_lowercase(),
+                registered_by: info.sender.clone(),
+                registered_at: now,
+            },
+        )?;
+    }
+    Ok(Response::new()
+        .add_attribute("action", "register_release")
+        .add_attribute("version", version)
+        .add_attribute("artifacts", seen.len().to_string()))
+}
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
@@ -961,6 +1631,21 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
                 treasury: cfg.treasury.to_string(),
                 platform_fee_bps: cfg.platform_fee_bps,
                 username_deposit: cfg.username_deposit,
+                username_fee: cfg.username_fee,
+                reserved_usernames: cfg.reserved_usernames,
+            })
+        }
+        QueryMsg::UpgradeSecurity {} => {
+            let proposal = UPGRADE_PROPOSAL
+                .may_load(deps.storage)?
+                .map(|proposal| UpgradeProposalInfo {
+                    wasm_sha256: proposal.wasm_sha256,
+                    proposed_at: proposal.proposed_at,
+                    execute_after: proposal.execute_after,
+                });
+            to_json_binary(&UpgradeSecurityResponse {
+                proposal,
+                timelock_seconds: UPGRADE_TIMELOCK_SECONDS,
             })
         }
         QueryMsg::ResolveUsername { name } => {
@@ -1042,7 +1727,109 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
                 .collect::<StdResult<_>>()?;
             to_json_binary(&BadgesResponse { badges })
         }
+        QueryMsg::ReleaseArtifacts { version } => {
+            let artifacts = RELEASE_ARTIFACTS
+                .prefix(&version)
+                .range(deps.storage, None, None, Order::Ascending)
+                .map(|item| {
+                    let (_platform, artifact) = item?;
+                    Ok(ReleaseArtifactInfo {
+                        version: artifact.version,
+                        platform: artifact.platform,
+                        sha256: artifact.sha256,
+                        registered_by: artifact.registered_by.to_string(),
+                        registered_at: artifact.registered_at,
+                    })
+                })
+                .collect::<StdResult<_>>()?;
+            to_json_binary(&ReleaseArtifactsResponse { version, artifacts })
+        }
+        QueryMsg::OwnershipSecurity { owner, repo } => {
+            let owner_addr = deps.api.addr_validate(&owner)?;
+            let transfer = OWNERSHIP_TRANSFERS
+                .may_load(deps.storage, (&owner_addr, &repo))?
+                .map(|pending| OwnershipTransferInfo {
+                    new_owner: pending.new_owner.to_string(),
+                    proposed_at: pending.proposed_at,
+                    execute_after: pending.execute_after,
+                });
+            let recovery = RECOVERY_PROPOSALS
+                .may_load(deps.storage, (&owner_addr, &repo))?
+                .map(|proposal| RecoveryProposalInfo {
+                    new_owner: proposal.new_owner.to_string(),
+                    proposed_at: proposal.proposed_at,
+                    execute_after: proposal.execute_after,
+                    approvals: proposal.approvals.into_iter().map(|a| a.to_string()).collect(),
+                });
+            let guardians = GUARDIANS
+                .prefix((&owner_addr, &repo))
+                .range(deps.storage, None, None, Order::Ascending)
+                .map(|item| item.map(|(addr, _)| addr.to_string()))
+                .collect::<StdResult<_>>()?;
+            let guardian_threshold = GUARDIAN_CONFIGS
+                .may_load(deps.storage, (&owner_addr, &repo))?
+                .map(|cfg| cfg.threshold)
+                .unwrap_or(0);
+            to_json_binary(&OwnershipSecurityResponse {
+                transfer,
+                recovery,
+                guardians,
+                guardian_threshold,
+            })
+        }
+        QueryMsg::ModerationReport { report_id } => {
+            let report = REPORTS
+                .may_load(deps.storage, report_id)?
+                .ok_or_else(|| cosmwasm_std::StdError::not_found("moderation report"))?;
+            to_json_binary(&ModerationReportResponse {
+                id: report.id,
+                owner: report.owner.to_string(),
+                repo: report.repo,
+                reporter: report.reporter.to_string(),
+                reason_hash: report.reason_hash,
+                status: report.status,
+                resolution: report.resolution,
+                resolution_hash: report.resolution_hash,
+                appeal_hash: report.appeal_hash,
+                created_at: report.created_at,
+                updated_at: report.updated_at,
+            })
+        }
     }
+}
+
+fn default_reserved_usernames() -> Vec<String> {
+    ["admin", "api", "git", "help", "injective", "owner", "root", "support", "www"]
+        .into_iter()
+        .map(str::to_string)
+        .collect()
+}
+
+fn validate_reserved_usernames(names: &[String]) -> Result<(), ContractError> {
+    if names.len() > 128 {
+        return Err(ContractError::InvalidUsernamePolicy {
+            reason: "too many reserved names (max 128)".to_string(),
+        });
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for name in names {
+        validate_username(name)?;
+        if !seen.insert(name) {
+            return Err(ContractError::InvalidUsernamePolicy {
+                reason: format!("duplicate reserved name {name}"),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn validate_username_fee(deposit: &Coin, fee: &Coin) -> Result<(), ContractError> {
+    if deposit.denom.is_empty() || fee.denom != deposit.denom {
+        return Err(ContractError::InvalidUsernamePolicy {
+            reason: "username deposit and fee must use the same non-empty denom".to_string(),
+        });
+    }
+    Ok(())
 }
 
 fn repo_to_response(repo: Repo) -> RepoInfoResponse {
@@ -1152,4 +1939,113 @@ fn query_list_collaborators(
         })
         .collect::<StdResult<_>>()?;
     Ok(ListCollaboratorsResponse { collaborators })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cosmwasm_std::testing::{message_info, mock_dependencies, mock_env};
+
+    fn admin_info() -> MessageInfo {
+        message_info(&Addr::unchecked("admin"), &[])
+    }
+
+    fn instantiate_for_test(deps: DepsMut) {
+        instantiate(
+            deps,
+            mock_env(),
+            admin_info(),
+            InstantiateMsg {
+                admin: None,
+                moderation_committee: None,
+                treasury: None,
+                platform_fee_bps: None,
+                username_deposit: None,
+                username_fee: None,
+                reserved_usernames: None,
+            },
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn migrate_requires_scheduled_hash_and_delay() {
+        let mut deps = mock_dependencies();
+        instantiate_for_test(deps.as_mut());
+        let hash = "a".repeat(64);
+
+        // Simulate a previous deployed version. A future migration cannot
+        // bypass the proposal state just because the chain-level admin signed.
+        cw2::set_contract_version(deps.as_mut().storage, CONTRACT_NAME, "0.4.0").unwrap();
+        let env = mock_env();
+        let err = migrate(
+            deps.as_mut(),
+            env.clone(),
+            MigrateMsg {
+                wasm_sha256: Some(hash.clone()),
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(err, ContractError::NoUpgradeScheduled {}));
+
+        execute(
+            deps.as_mut(),
+            env.clone(),
+            admin_info(),
+            ExecuteMsg::ScheduleUpgrade {
+                wasm_sha256: hash.clone(),
+            },
+        )
+        .unwrap();
+        let err = migrate(
+            deps.as_mut(),
+            env.clone(),
+            MigrateMsg {
+                wasm_sha256: Some(hash.clone()),
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(err, ContractError::UpgradeTooEarly { .. }));
+
+        let mut late = env;
+        late.block.time = late.block.time.plus_seconds(UPGRADE_TIMELOCK_SECONDS);
+        let err = migrate(
+            deps.as_mut(),
+            late.clone(),
+            MigrateMsg {
+                wasm_sha256: Some("b".repeat(64)),
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(err, ContractError::UpgradeHashMismatch {}));
+
+        migrate(
+            deps.as_mut(),
+            late,
+            MigrateMsg {
+                wasm_sha256: Some(hash),
+            },
+        )
+        .unwrap();
+        assert!(UPGRADE_PROPOSAL
+            .may_load(deps.as_ref().storage)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn upgrade_hash_validation_is_strict() {
+        let mut deps = mock_dependencies();
+        instantiate_for_test(deps.as_mut());
+        let err = execute(
+            deps.as_mut(),
+            mock_env(),
+            admin_info(),
+            ExecuteMsg::ScheduleUpgrade {
+                wasm_sha256: "not-a-hash".to_string(),
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(err, ContractError::InvalidUpgradeHash {}));
+    }
 }
