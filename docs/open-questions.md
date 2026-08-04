@@ -4,6 +4,8 @@
 >
 > MVP 不阻塞，但产品化前必须逐一定论。每项讨论后在本文件记录结论与日期。
 
+> 实施状态同步（2026-08）：代码级安全与发布信任改动已进入合约 v0.5.0；生产部署、主网多签和 fee grant 仍以 [backlog.md](backlog.md) 的运行证据为准。
+
 ## 1. 私有仓库
 
 **现状**：所有 packfile 公开在 IPFS，任何人可克隆。
@@ -58,7 +60,7 @@
 - name → 地址映射，先到先得 + 押金防抢注；注册费进金库（金库第二收入源）
 - URL 升级为 `inj://alice/repo`，CLI 解析时先查用户名表再回退裸地址（兼容两种写法）
 - 待细化：押金金额、用户名规则（长度/字符集/保留字）、是否允许转让/释放
-- **✅ 已实施（合约 v0.3.0，2026-07）**：RegisterUsername/ReleaseUsername/ResolveUsername/AddressUsername 上线；规则：3-32 位 `[a-z0-9-]`、禁首尾连字符、禁 `inj1` 前缀；押金可配置（testnet 默认 0.1 INJ）、释放全额退还、不可转让；CLI `igit username` + `inj://<name>/<repo>` URL 已支持。仍待：不可退的注册费（金库收入）与保留字表
+- **✅ 已实施（合约 v0.5.0，2026-08）**：RegisterUsername/ReleaseUsername/ResolveUsername/AddressUsername 上线；规则：3-32 位 `[a-z0-9-]`、禁首尾连字符、禁 `inj1` 前缀；押金可配置并在释放时退还，注册费进入 treasury，保留字表由 admin 配置；CLI 会读取押金+注册费并一次性支付。主网费率和最终保留字表仍待配置。
 
 ## 5. 存储层再审视（2026-07 新增，高优先级）
 
@@ -82,7 +84,7 @@
 - 执行权：平台多签委员会（建议 3/5），每次屏蔽/解除需多签，屏蔽理由文档 hash 上链，全程事件可审计（"审查行为本身透明"作为与 Web2 黑箱下架的差异化点）
 - 流程：举报（链下）→ 委员会审核 → 多签执行 → 申诉（多签解除）；远期有代币后可过渡到 DAO
 - 预防件：CLI push 前本地扫描常见密钥格式，发现即警告（不阻断）
-- 合约实施：Repo 增加 `moderation_status` 字段（Active/Delisted/Frozen）+ 委员会地址配置。**✅ 已实施（合约 v0.2.0，2026-07）**：字段 + `set_moderation_status`（带 reason_hash 上链）+ `set_moderation_committee` 已上线，Frozen 拒绝 ref 写入；多签委员会地址、举报/申诉流程、CLI 密钥扫描仍待实施
+- 合约实施：Repo 增加 `moderation_status` 字段（Active/Delisted/Frozen）+ 委员会地址配置。**✅ 已实施（合约 v0.5.0，2026-08）**：字段、`set_moderation_status`、独立 committee 地址、链上举报/裁决/申诉记录以及 CLI push 前密钥扫描已上线；committee 需要在主网配置为真实多签地址。
 
 ### 5.4 防滥用
 - 免费 pin = 免费网盘；需要单次 push 体积上限、仓库总配额、超额按量付费（与经济模型联动）
@@ -104,7 +106,7 @@
 **✅ 已定案（2026-07）：技术多签 admin + 14 天升级时间锁**
 - 保留升级能力（migrate entry），admin 为技术多签；宣布升级后 14 天才可执行，期间社区可审查新代码、不满意的用户有充分时间迁出
 - 技术多签与 §5.3 内容委员会**分设两套**：内容委员会管内容，技术多签管升级，权力分开
-- 实施：testnet 阶段可先用单签 admin 快速迭代，主网部署时切换多签 + 时间锁。**✅ migrate 入口已实施（合约 v0.2.0，2026-07）**：cw2 版本门控，testnet 已按单签 admin 部署；多签 + 14 天时间锁机制主网前实施
+- 实施：testnet 阶段可先用单签 admin 快速迭代，主网部署时切换多签 + 时间锁。**✅ migrate 入口与合约内时间锁已实施（合约 v0.5.0，2026-08）**：admin 先提交精确 Wasm SHA-256 的 `schedule_upgrade`，14 天后 `migrate` 必须提交相同哈希；主网仍需把 admin 实际配置为多签并留下公告/执行交易证据。
 
 ## 8. 账号安全与所有权恢复（2026-07 新增）
 
@@ -116,13 +118,15 @@
 - 企业用户：文档引导用 Cosmos 原生多签地址当 owner（零开发成本，现在即可用）
 - 合约级多 owner（地址列表 + 阈值）：不做，避免权限模型复杂化
 
+**✅ 已实施（合约 v0.5.0，2026-08）**：TransferOwnership 改为 7 天 timelock + 新 owner 主动接受；SetGuardians/ProposeRecovery/ApproveRecovery/CancelRecovery/AcceptRecovery 已有集成测试。
+
 ## 9. Gas 与开发者体验（2026-07 新增）
 
 - 每次 push 需持有 INJ 付 gas，对 Web2 开发者门槛极高
 
 **✅ 已定案（2026-07）：fee grant 代付**
 - 新用户前 N 次 push 由平台通过 Cosmos 原生 fee grant 代付（金库出资），降低首次体验门槛
-- 待细化：N 的具体值、防女巫机制（防批量小号刷代付额度，可与仓库质量/行为验证挂钩）
+- **✅ 策略已细化（2026-08）**：N=3 次成功 `update_ref`，总额度 0.03 INJ、7 天 TTL、30 天地址/身份冷却、每日最多 100 个 grant；要求钱包签名 nonce、唯一身份 hash、地址/身份一对一绑定和 denylist 检查。`scripts/feegrant-policy-gate.sh` 负责资格、状态、Push 计数和撤销记录；自动发放服务与真实免 gas Push 仍待部署验收。
 
 ## 10. Commit 作者身份绑定（2026-07 新增）
 
@@ -177,3 +181,5 @@
 - **校验和上链为必选**：每次发版将二进制 SHA-256 上链，与版本变动强绑定；用户 pull 到的产物必须能对照链上 hash 验证——项目本身靠 Web3 推动，分发信任必须同样链上化，不能例外
 - **Reproducible build 为尽力目标**：能实现则最好，在项目仓库中标注构建环境与复现步骤，让开发者可自行验证
 - 实施影响：合约需新增发版登记能力（版本号 → 平台产物 hash 映射），`igit` 增加自验命令（下载后比对链上 hash）
+
+**✅ 已实施（合约 v0.5.0，2026-08）**：`RegisterRelease`/`ReleaseArtifacts` 提供不可变版本+平台 SHA-256 记录，CLI 提供 `igit release register` 与 `igit release verify`，发布目录可由 `scripts/register-release.sh` 登记。

@@ -1,0 +1,119 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: build and publish release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: validate release tag
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "release tag must be a semantic version such as v0.4.0: $RELEASE_VERSION" >&2
+            exit 1
+          fi
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.22"
+          cache: false
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.81.0
+          targets: wasm32-unknown-unknown
+
+      - name: test Go CLI
+        working-directory: cli
+        run: |
+          go vet ./...
+          go test ./...
+
+      - name: verify version linker injection
+        working-directory: cli
+        env:
+          IGIT_EXPECTED_VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          go test -count=1 -run '^TestVersionLinkerInjection$' \
+            -ldflags "-X github.com/Hny0305Lin/next-injective-git/cli/cmd/igit.version=${IGIT_EXPECTED_VERSION}" ./cmd/igit
+
+      - name: test Rust contract
+        working-directory: contracts/repo-registry
+        run: |
+          set -euo pipefail
+          rustc --version | grep -Eq '^rustc 1\.81\.'
+          cargo test --locked
+
+      - name: build release assets
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+          mkdir -p release
+
+          targets=(linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64)
+          for target in "${targets[@]}"; do
+            os=${target%/*}; arch=${target#*/}
+            ext=""; [ "$os" = "windows" ] && ext=".exe"
+            (cd cli && CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
+              go build -trimpath -ldflags "-s -w -X main.version=${RELEASE_VERSION}" \
+              -o "../release/igit-${os}-${arch}${ext}" ./cmd/igit)
+            (cd cli && CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
+              go build -trimpath -ldflags "-s -w" \
+              -o "../release/git-remote-igit-${os}-${arch}${ext}" ./cmd/git-remote-igit)
+          done
+
+          # Run from the contract directory so its .cargo/config.toml keeps
+          # the CosmWasm host imports undefined during wasm linking.
+          (cd contracts/repo-registry && \
+            cargo build --release --target wasm32-unknown-unknown --lib --locked)
+          cp contracts/repo-registry/target/wasm32-unknown-unknown/release/repo_registry.wasm \
+            release/repo-registry.wasm
+
+          test -s release/repo-registry.wasm
+          wasm_magic="$(od -An -tx1 -N4 release/repo-registry.wasm | tr -d '[:space:]')"
+          test "$wasm_magic" = "0061736d"
+
+          (cd release && sha256sum -- \
+            igit-linux-amd64 \
+            igit-linux-arm64 \
+            igit-darwin-amd64 \
+            igit-darwin-arm64 \
+            igit-windows-amd64.exe \
+            git-remote-igit-linux-amd64 \
+            git-remote-igit-linux-arm64 \
+            git-remote-igit-darwin-amd64 \
+            git-remote-igit-darwin-arm64 \
+            git-remote-igit-windows-amd64.exe \
+            repo-registry.wasm > checksums.txt)
+
+      - name: verify release assets
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: bash scripts/verify-release-assets.sh release "$RELEASE_VERSION"
+
+      - name: publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_VERSION" \
+            --verify-tag \
+            --title "$RELEASE_VERSION" \
+            --generate-notes \
+            release/*

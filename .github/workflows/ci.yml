@@ -1,19 +1,20 @@
 name: ci
 
 on:
-  # Only the buildable source trees gate CI: pushes/PRs that touch just
-  # web/, docs/, scripts/ etc. skip the pipeline entirely. The workflow
-  # file itself is included so changes to CI can still be validated.
+  # Buildable source trees and repository acceptance fixtures gate CI. Changes
+  # limited to web/ or docs/ do not start this workflow.
   push:
     branches: [main, master]
     paths:
       - "cli/**"
       - "contracts/**"
+      - "scripts/**"
       - ".github/workflows/ci.yml"
   pull_request:
     paths:
       - "cli/**"
       - "contracts/**"
+      - "scripts/**"
       - ".github/workflows/ci.yml"
 
 jobs:
@@ -44,13 +45,14 @@ jobs:
       - name: build wasm artifact
         run: cargo build --release --target wasm32-unknown-unknown --lib --locked
 
-      - name: forbid post-1.81 wasm opcodes
+      - name: verify Rust toolchain and wasm artifact
         run: |
-          # bulk-memory (0xFC prefixed) opcodes would slip through cargo but
-          # fail on-chain; cheap sanity check on the artifact size + magic.
+          set -euo pipefail
+          rustc --version | grep -Eq '^rustc 1\.81\.'
           f=target/wasm32-unknown-unknown/release/repo_registry.wasm
           test -s "$f"
-          head -c4 "$f" | od -An -tx1 | grep -q "00 61 73 6d"
+          magic="$(od -An -tx1 -N4 "$f" | tr -d '[:space:]')"
+          test "$magic" = "0061736d"
 
       - uses: actions/upload-artifact@v6
         with:
@@ -98,3 +100,38 @@ jobs:
           name: igit-toolchain
           path: cli/dist/
           if-no-files-found: error
+
+  acceptance-fixtures:
+    name: acceptance fixtures (bash + go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.22"
+          cache: false
+
+      - name: feegrant policy gate regression tests
+        run: bash scripts/feegrant-policy-gate-test.sh
+
+      - name: feegrant issuer wrapper regression tests
+        run: bash scripts/feegrant-issue-test.sh
+
+      - name: feegrant push recording regression tests
+        run: bash scripts/feegrant-record-push-test.sh
+
+      - name: gateway fallback acceptance fixture
+        run: bash scripts/gateway-fallback-acceptance.sh
+
+      - name: replication reaper regression fixture
+        run: bash scripts/replication-reaper-test.sh
+
+      - name: replication config cutover guard fixture
+        run: bash scripts/replication-config-check-test.sh
+
+      - name: contract upgrade scheduling fixture
+        run: bash scripts/schedule-upgrade-test.sh
+
+      - name: mainnet governance preflight fixture
+        run: bash scripts/mainnet-governance-check-test.sh

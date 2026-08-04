@@ -229,7 +229,17 @@ injectived tx wasm instantiate <CODE_ID> '{"admin":"'$ADMIN'"}' \
 cd contracts/repo-registry && cargo +1.81.0 test --locked
 
 # CLI
-cd cli && go test ./... && go vet ./...
+(cd cli && go test ./... && go vet ./...)
+
+# Acceptance fixtures (from the repository root)
+bash scripts/feegrant-policy-gate-test.sh
+bash scripts/feegrant-issue-test.sh
+bash scripts/feegrant-record-push-test.sh
+bash scripts/gateway-fallback-acceptance.sh
+bash scripts/replication-reaper-test.sh
+bash scripts/replication-config-check-test.sh
+bash scripts/schedule-upgrade-test.sh
+bash scripts/mainnet-governance-check-test.sh
 
 # Web UI
 cd web && npm ci && npm run build
@@ -250,6 +260,18 @@ igit config set upload.us_peer '<US-Kubo-p2p-multiaddr>'
 ```
 
 `igit` 只访问本机 loopback 上的 Kubo RPC；HK/US Kubo 管理 API 从不暴露给普通用户。Push 会以运营方签发的 identity token 换取与 CID、仓库、ref、pack SHA-256 和有效期绑定的一次性 ticket，该 ticket 不能提交链上交易。没有本地 Kubo 或上传授权时，Clone / Fetch 仍然可用。
+
+## Release artifacts
+
+The tag-based build and its current verification scope are documented in
+[docs/release.md](docs/release.md). Checksums are published to GitHub and can
+be registered immutably in `repo-registry` with
+`scripts/register-release.sh`; clients can verify a local artifact with
+`igit release verify <version> <platform> <file>`.
+
+Contract upgrades are announced with `igit upgrade schedule <wasm-sha256>`
+and can be inspected with `igit upgrade show`. The contract enforces a 14-day
+delay and requires the same hash in the later migration transaction.
 
 ## License
 

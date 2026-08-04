@@ -2,6 +2,9 @@
 
 本文描述 iGit 的目标架构，和 [`infrastructure.md`](./infrastructure.md) 中已经部署的 as-built 状态分开维护。只有完成实际部署、验证和监控切换后，才应更新 as-built 文档。
 
+当前迁移状态：US 受控复制数据面已 staged 部署并通过授权/Pin/hash/JTI 验收；
+主网合约、正式身份签发、TTL reaper 和 post-`update_ref` GC 仍是发布前待办。
+
 ## 目标拓扑
 
 ```mermaid
@@ -44,6 +47,7 @@ flowchart LR
 - `/v1/replications` 不是 Kubo API：要求短期授权，绑定 CID/仓库/ref/pack SHA-256/过期时间，限制单用户/单仓库速率和大小，记录审计日志。
 - 身份 token 由受信任的认证服务签发（`kind=identity`、`sub`、`exp`）；US 服务只用它签发一次性 `kind=replication` ticket。认证服务与 US 服务必须安全共享验证密钥，且绝不能把该密钥、Kubo RPC 地址或 SSH 密钥下发到客户端。
 - `scripts/replication-install.sh` 安装服务及每小时 TTL reaper；`scripts/replication.env.example` 是不含真实密钥的配置模板。
+- `scripts/replication-config-check.sh` 在安装和 systemd 启动前 fail-closed 校验配置：启用 reaper 必须使用 `injective-1`、HTTPS 主网 LCD、真实 `inj1...` 合约地址和非占位的至少 32 字符 HMAC；`--no-reaper` 仅允许 staged 数据面。
 - `scripts/replication-monitor.sh` 输出 Prometheus textfile 指标，覆盖上传失败率、待 TTL 回收 Pin、24 小时回收数和 US Kubo 容量；归档监控继续覆盖 Fil.one CAR 数量和 SHA-256 校验失败。
 
 ## 迁移顺序

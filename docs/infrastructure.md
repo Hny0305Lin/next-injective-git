@@ -68,6 +68,15 @@
 - **仅密钥登录**：`scripts/gateway-ssh-harden.sh` 写 `/etc/ssh/sshd_config.d/99-igit-hardening.conf`（`PasswordAuthentication no`、`PermitRootLogin prohibit-password`）。登录密钥 `~/.ssh/igit_hk`（WSL 侧，唯一入口；应急走 VPS 控制台）。
 - **4001（TCP+UDP/QUIC）已开放**：服务器无 ufw/iptables/nft 规则、云侧不限端口。大陆 `ipfs swarm connect` 到 HK 实测成功（TCP+QUIC），为下文 CLI 加速打好基础。
 
+### 2.8 US 受控复制数据面（staged）
+- `igit-replicationd` 已部署到 `162.35.187.224`，systemd 服务监听 loopback
+  `127.0.0.1:8088`；nginx 仅发布两个受控 HTTPS POST 路由。
+- 2026-08-03 已完成真实授权、Pin、SHA-256 校验和同 JTI 重放验收；证据见
+  [acceptance-evidence.md](acceptance-evidence.md)。
+- Prometheus textfile monitor 已启用。
+- TTL reaper timer **保持禁用**，直到主网 `repo-registry` 合约地址和正式身份
+  签发服务配置完成；不能使用 testnet 地址替代生产配置。
+
 ## 3. 脚本清单（均已入库、无密钥，root 在服务器执行）
 
 | 脚本 | 作用 |

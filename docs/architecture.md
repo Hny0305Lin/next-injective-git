@@ -55,7 +55,7 @@ git clone inj://<owner>/<repo>
 - **乐观并发（`expected_sha`）**：客户端声明它所认为的远端 tip；不匹配则拒绝，防止两个 maintainer 并发 push 互相覆盖。这是"链上 fast-forward 检查"的轻量替代——合约无法遍历 Git DAG 验证祖先关系，由客户端 Git 自身完成 FF 校验，链上只做防竞争。
 - **权限收敛在合约**：只有 owner/maintainer 的 `update_ref` 交易能通过，签名即身份，无需额外账号体系。
 - **内容治理占位（open-questions §5.3）**：`moderation_status`（Active/Delisted/Frozen）由内容委员会（未设时回退到 admin）通过 `set_moderation_status` 变更，屏蔽理由文档 hash 随交易事件上链；Frozen 状态下 `update_ref`/`delete_ref` 全部拒绝。
-- **可升级（open-questions §7）**：合约带 `migrate` 入口（cw2 版本门控），testnet 用单签 admin 部署，主网切技术多签 + 14 天时间锁。
+- **可升级（open-questions §7）**：合约带 `migrate` 入口（cw2 版本门控），并要求 admin 先公告精确 Wasm SHA-256；`upgrade_security` proposal 经过 14 天时间锁后，`migrate` 才接受相同哈希。testnet 可用单签 admin，主网应把 admin 配置为技术多签。
 
 ## 4. CLI 设计（cli/）
 

@@ -43,11 +43,13 @@
 - 网关只开 **只读 path gateway**（`/ipfs/<cid>`），禁 API 端口外露（5001 仅内网）
 - pin 策略：**监听合约事件自动 pin**——indexer 雏形：轮询 LCD 拉 `update_ref` 事件 → 提取 `pack_uris` → `ipfs pin add`（一个 50 行脚本即可起步，后续并入 §11 indexer）
 
-### CLI 侧配套改动（待实施）
+### CLI 侧配套改动
 
-1. `config.json` 新增 `peers` 字段（multiaddr 列表），helper 启动时 `swarm connect` 直连自家节点，绕开 DHT 慢寻址
-2. `Defaults()` 的 `ipfs_gateway` 从 `https://ipfs.io` 改为自家网关
-3. push 成功后（可选）调用自家节点 pinning API 主动触发 pin，不等事件轮询
+1. ✅ `config.json` 已支持 `peers`/网关配置，helper 启动时 `swarm connect` 直连自家节点，绕开 DHT 慢寻址
+2. ✅ `Defaults()` 的 `ipfs_gateway` 已改为 `https://igit-hk.haohanyh.ovh`
+3. ✅ push 通过受控复制服务主动触发 US Pin，并在 Pin + SHA-256 确认后才提交链上 ref
+
+剩余工作是生产服务切换和大陆家宽验收，不再是 CLI 代码缺口。
 
 ## 3. Phase B：托管 pinning 兜底（与 A 并行）
 
@@ -82,7 +84,9 @@
 - [x] 购置 HK VPS（45.202.249.80，Debian 11，1C/1G/5G）；域名 + TLS 已完成（见下）
 - [x] 部署 Kubo + nginx 只读网关——`scripts/gateway-deploy.sh`（直跑二进制而非 Docker，省磁盘；`lowpower,server` profile + 512M swap + StorageMax 1GB + systemd MemoryMax 750M）。已验收：外网 `/ipfs/<cid>` 可取回 packfile，启动后内存用 250M/磁盘 1.6G
 - [x] 域名 + TLS——`scripts/gateway-tls.sh`（certbot --nginx，Let's Encrypt，certbot.timer 自动续期）。❗重要：原定 `ipfs-gateway-hk.haohanyh.com` 经实测 **`haohanyh.com` 全域被 GFW 按 SNI/Host 封锁**（大陆任意子域 HTTP/HTTPS 均被 RST，ICP 备案也无法绕过；诊断方法：`curl --resolve <域名>:443:<IP> https://<域名>/`）。已改用干净域名 **`igit-hk.haohanyh.ovh`**（不同注册域，已验证大陆 HTTPS 直达），Cloudflare 灰云/DNS-only 直指源站
-- [x] 事件轮询 pin 脚本（LCD → pack_uris → pin add）——`scripts/pin-indexer.sh`：轮询合约 `update_ref` 交易，从 tx 消息体提取 `pack_uris`（事件不含该字段），本地 pin + Filebase CAR 双写，状态记录于 `~/.igit/pinned.list`（待迁到 HK 节点以 systemd timer 自动 pin）
-- [x] CLI 默认网关切换：`~/.igit/config.json` 的 `ipfs_gateway` 改为 `https://igit-hk.haohanyh.ovh`（`peers`/swarm connect 优化待代码支持）
+- [x] 事件轮询 pin 脚本（LCD → pack_uris → pin add）——`scripts/pin-indexer.sh`：轮询合约 `update_ref` 交易，从 tx 消息体提取 `pack_uris`（事件不含该字段），本地 pin + Filebase CAR 双写，状态记录于 `~/.igit/pinned.list`
+- [x] CLI 默认网关与 peers：`~/.igit/config.json` 的 `ipfs_gateway` 改为 `https://igit-hk.haohanyh.ovh`，helper 启动时按 `peers` 配置执行 swarm connect
 - [x] 注册 Filebase，pin 脚本双写远程 pinning（凭据在 `~/.igit/filebase.env`，不入库）；4EVERLAND 待注册接入
-- [ ] 大陆网络实测：家宽 clone 一个无本地节点的仓库（验收标准：60s 内完成）
+- [ ] 大陆网络实测：OrangeHome 家宽侧 testnet clone 已完成（约 5.04s，见
+  [acceptance-evidence.md](acceptance-evidence.md)）；移动网络、重复采样和
+  生产主网仓库仍待完成，不能据此关闭 P0 验收。
