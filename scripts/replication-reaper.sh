@@ -5,9 +5,30 @@ set -euo pipefail
 
 LCD="${LCD:-https://testnet.sentry.lcd.injective.network:443}"
 CONTRACT="${CONTRACT:?set CONTRACT}"
+CHAIN_ID="${CHAIN_ID:?set CHAIN_ID}"
 STATE="${IGIT_REPLICATION_STATE:-/var/lib/igit-replication/issued.tsv}"
 REAPED_STATE="${IGIT_REPLICATION_REAPED_STATE:-${STATE}.reaped}"
 NOW="$(date +%s)"
+
+[[ "$CHAIN_ID" == injective-1 ]] || {
+  echo "replication reaper: CHAIN_ID must be injective-1" >&2
+  exit 1
+}
+[[ "$CONTRACT" =~ ^inj1[0-9a-z]{20,}$ && "$CONTRACT" != *replace_me* ]] || {
+  echo "replication reaper: CONTRACT is not a mainnet Injective address" >&2
+  exit 1
+}
+[[ "$LCD" == https://* ]] || {
+  echo "replication reaper: LCD must use HTTPS" >&2
+  exit 1
+}
+lower_lcd="${LCD,,}"
+case "$lower_lcd" in
+  *testnet*|*localhost*|*127.0.0.1*)
+    echo "replication reaper: LCD must point to mainnet" >&2
+    exit 1
+    ;;
+esac
 
 [ -f "$STATE" ] || exit 0
 touch "$REAPED_STATE"
@@ -17,7 +38,13 @@ trap 'rm -f "$referenced" "$pairs"' EXIT
 : > "$referenced"
 
 # A malformed record must never be treated as an unreferenced upload.
-awk -F '\t' 'NF >= 2 && $2 != "" && (NF < 7 || $5 == "" || $6 == "") { bad = 1 } END { exit bad }' "$STATE" || {
+awk -F '\t' '
+  NF == 0 { next }
+  NF == 8 && $1 != "" && $2 != "" && $3 ~ /^[0-9]+$/ && $4 != "" &&
+    $5 != "" && $6 != "" && $7 != "" && $8 ~ /^[0-9]+$/ { next }
+  { bad = 1 }
+  END { exit bad }
+' "$STATE" || {
   echo "replication reaper: malformed state record; refusing to GC" >&2
   exit 1
 }
