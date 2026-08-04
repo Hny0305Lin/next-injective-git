@@ -112,8 +112,13 @@ jobs:
           RELEASE_VERSION: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          release_flags=()
+          if [[ "$RELEASE_VERSION" == *-* ]]; then
+            release_flags+=(--draft --prerelease)
+          fi
           gh release create "$RELEASE_VERSION" \
             --verify-tag \
             --title "$RELEASE_VERSION" \
             --generate-notes \
+            "${release_flags[@]}" \
             release/*
