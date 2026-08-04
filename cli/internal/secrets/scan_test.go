@@ -4,9 +4,9 @@ import "testing"
 
 func TestMatchHighSignalCredentials(t *testing.T) {
 	for _, line := range []string{
-		"-----BEGIN OPENSSH PRIVATE KEY-----",
-		"AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF",
-		"github_pat_123456789012345678901234567890",
+		"-----BEGIN OPENSSH " + "PRIVATE KEY-----",
+		"AWS_ACCESS_KEY_ID=" + "AK" + "IA1234567890ABCDEF",
+		"github_pat_" + "123456789012345678901234567890",
 	} {
 		if !Match(line) {
 			t.Fatalf("Match(%q) = false", line)
