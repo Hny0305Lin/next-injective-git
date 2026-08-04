@@ -19,11 +19,11 @@ write_config() {
 }
 
 assert_ok() {
-  "$CHECK" "$@" >/dev/null
+  bash "$CHECK" "$@" >/dev/null
 }
 
 assert_fail() {
-  if "$CHECK" "$@" >/dev/null 2>&1; then
+  if bash "$CHECK" "$@" >/dev/null 2>&1; then
     echo "expected config check to fail: $*" >&2
     exit 1
   fi

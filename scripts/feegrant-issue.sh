@@ -62,7 +62,7 @@ expiration_iso="$(date -u -d "@$expires" '+%Y-%m-%dT%H:%M:%SZ')"
 # The issue lock serializes check -> broadcast -> record across all issuer
 # workers. Without it, two workers could both pass check before either grant is
 # recorded.
-"$GATE" check "$ADDRESS" "$IDENTITY_HASH" "$now" >/dev/null
+bash "$GATE" check "$ADDRESS" "$IDENTITY_HASH" "$now" >/dev/null
 
 if ! tx_json=$("$INJECTIVED_BIN" tx feegrant grant "$GRANTER" "$ADDRESS" \
     --spend-limit "$SPEND_LIMIT" \
@@ -94,5 +94,5 @@ tx_hash="$(printf '%s\n' "$tx_json" | jq -er '.txhash // empty' | tr '[:upper:]'
   exit 1
 }
 
-"$GATE" record-grant "$ADDRESS" "$IDENTITY_HASH" "$tx_hash" "$expires" "$now" >/dev/null
+bash "$GATE" record-grant "$ADDRESS" "$IDENTITY_HASH" "$tx_hash" "$expires" "$now" >/dev/null
 printf 'feegrant issued: address=%s expires_at=%s tx=%s\n' "$ADDRESS" "$expires" "$tx_hash"

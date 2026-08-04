@@ -33,7 +33,7 @@ exec 9>"$STATE.issue.lock"
 flock 9
 
 now="$(date +%s)"
-status_output="$("$GATE" status "$ADDRESS" "$now")"
+status_output="$(bash "$GATE" status "$ADDRESS" "$now")"
 if grep -Fq 'status=none' <<<"$status_output"; then
   echo "feegrant revoke: no recorded grant for $ADDRESS" >&2
   exit 1
@@ -70,5 +70,5 @@ tx_hash="$(printf '%s\n' "$tx_json" | jq -er '.txhash // empty' | tr '[:upper:]'
   exit 1
 }
 
-"$GATE" record-revoke "$ADDRESS" "$tx_hash" "$now" >/dev/null
+bash "$GATE" record-revoke "$ADDRESS" "$tx_hash" "$now" >/dev/null
 printf 'feegrant revoked: address=%s tx=%s\n' "$ADDRESS" "$tx_hash"

@@ -25,7 +25,7 @@ run_ok() {
     IGIT_FEEGRANT_TTL_SECONDS=100 \
     IGIT_FEEGRANT_COOLDOWN_SECONDS=1000 \
     IGIT_FEEGRANT_MAX_GRANTS_PER_DAY=100 \
-    "$GATE" "$@" 2>&1); then
+    bash "$GATE" "$@" 2>&1); then
     echo "feegrant policy gate test: expected success: $*" >&2
     echo "$output" >&2
     exit 1
@@ -40,7 +40,7 @@ run_fail() {
     IGIT_FEEGRANT_TTL_SECONDS=100 \
     IGIT_FEEGRANT_COOLDOWN_SECONDS=1000 \
     IGIT_FEEGRANT_MAX_GRANTS_PER_DAY=100 \
-    "$GATE" "$@" 2>&1); then
+    bash "$GATE" "$@" 2>&1); then
     echo "feegrant policy gate test: expected failure: $*" >&2
     echo "$output" >&2
     exit 1
@@ -80,7 +80,7 @@ if ! IGIT_FEEGRANT_STATE="$DAILY_STATE" \
   IGIT_FEEGRANT_TTL_SECONDS=100 \
   IGIT_FEEGRANT_COOLDOWN_SECONDS=1000 \
   IGIT_FEEGRANT_MAX_PUSHES=3 \
-  "$GATE" record-grant "$ADDR_A" "$ID_A" "$TX_A" "$((BASE + 100))" "$BASE" >/dev/null 2>&1; then
+  bash "$GATE" record-grant "$ADDR_A" "$ID_A" "$TX_A" "$((BASE + 100))" "$BASE" >/dev/null 2>&1; then
   echo "feegrant policy gate test: first daily grant failed" >&2
   exit 1
 fi
@@ -89,12 +89,12 @@ daily_output=$(IGIT_FEEGRANT_STATE="$DAILY_STATE" \
   IGIT_FEEGRANT_TTL_SECONDS=100 \
   IGIT_FEEGRANT_COOLDOWN_SECONDS=1000 \
   IGIT_FEEGRANT_MAX_PUSHES=3 \
-  "$GATE" check "$ADDR_B" "$ID_B" "$((BASE + 1))" 2>&1 || true)
+  bash "$GATE" check "$ADDR_B" "$ID_B" "$((BASE + 1))" 2>&1 || true)
 assert_contains "$daily_output" "daily treasury grant limit reached"
 
 # A corrupted state file must fail closed.
 printf 'not-a-valid-record\n' > "$TMP/corrupt.tsv"
-corrupt_output=$(IGIT_FEEGRANT_STATE="$TMP/corrupt.tsv" "$GATE" status "$ADDR_A" "$BASE" 2>&1 || true)
+corrupt_output=$(IGIT_FEEGRANT_STATE="$TMP/corrupt.tsv" bash "$GATE" status "$ADDR_A" "$BASE" 2>&1 || true)
 assert_contains "$corrupt_output" "malformed state file"
 
 echo "feegrant policy gate test: eligibility, push quota, identity cooldown, revoke, daily cap, and fail-closed state checks passed"

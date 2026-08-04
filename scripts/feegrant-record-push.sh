@@ -35,5 +35,5 @@ printf '%s\n' "$tx_json" | jq -e '
   exit 1
 }
 
-"$GATE" record-push "$ADDRESS" "${TX_HASH,,}" >/dev/null
+bash "$GATE" record-push "$ADDRESS" "${TX_HASH,,}" >/dev/null
 printf 'feegrant push recorded: address=%s tx=%s\n' "$ADDRESS" "${TX_HASH^^}"
