@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useWallet } from "../lib/WalletContext";
 import { WalletModal } from "../components/WalletModal";
@@ -15,17 +15,18 @@ import {
 
 const short = (s: string, n = 8) => (s.length > n * 2 ? `${s.slice(0, n)}…${s.slice(-4)}` : s);
 
+import { memo } from "react";
+
 // Colour per contract action for quick scanning.
-function ActionBadge({ action }: { action: string }) {
+const ActionBadge = memo(function ActionBadge({ action }: { action: string }) {
   return <span className={`action-badge a-${action || "unknown"}`}>{action || "?"}</span>;
-}
+});
 
 // A compact, contract-scoped block explorer: recent activity + tx lookup.
 export default function Explorer() {
-  const cfg = loadConfig();
-  const { address } = useWallet();
+  const cfg = useMemo(() => loadConfig(), []);
+  const { address, walletModalOpen, openWalletModal, closeWalletModal } = useWallet();
   const [scope, setScope] = useState<"mine" | "all">("mine");
-  const [modal, setModal] = useState(false);
   const [cc, setCc] = useState<ContractConfig | null>(null);
   const [rows, setRows] = useState<ContractTx[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,8 +39,7 @@ export default function Explorer() {
 
   useEffect(() => {
     contractConfig(cfg).then(setCc).catch(() => setCc(null));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [cfg]);
 
   useEffect(() => {
     if (needConnect) {
@@ -57,8 +57,7 @@ export default function Explorer() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scope, address]);
+  }, [scope, address, cfg]);
 
   const lookup = async (h: string) => {
     const q = h.trim();
@@ -77,7 +76,7 @@ export default function Explorer() {
   return (
     <div className="explorer">
       <div className="explorer-head">
-        <h1>Block Explorer</h1>
+        <h1 style={{ fontSize: "1.15rem", margin: 0 }}>Block Explorer</h1>
         <Link className="muted" to="/ipfs">IPFS explorer →</Link>
       </div>
       <p className="muted">
@@ -127,7 +126,7 @@ export default function Explorer() {
       {needConnect ? (
         <div className="sponsor-connect">
           <span className="muted">Connect your wallet to see only your on-chain activity.</span>
-          <button onClick={() => setModal(true)}>Connect Wallet</button>
+          <button onClick={openWalletModal}>Connect Wallet</button>
         </div>
       ) : loading ? (
         <div className="muted">loading…</div>
@@ -160,7 +159,7 @@ export default function Explorer() {
           </tbody>
         </table>
       )}
-      {modal && <WalletModal onClose={() => setModal(false)} />}
+      {walletModalOpen && <WalletModal onClose={closeWalletModal} />}
     </div>
   );
 }

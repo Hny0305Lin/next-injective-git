@@ -1,131 +1,185 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { contractConfig, formatInj, loadConfig, type ContractConfig } from "../lib/chain";
+import { useWallet } from "../lib/WalletContext";
+import {
+  contractActivity,
+  contractConfig,
+  listRepos,
+  loadConfig,
+  resolveOwner,
+  timeAgo,
+  type ContractConfig,
+  type RepoInfo,
+  type ContractTx,
+} from "../lib/chain";
 
-const TESTNET_WALLETS = [
-  { label: "MetaMask Wallet", inj: "inj1w5v3vhwpk7v8csaqxv5pzzfzvgaqn8qfuh5p5d", evm: "0x7519165DC1B7987C43A03328110922623A099C09" },
-  { label: "Keplr Wallet", inj: "inj1ylxm0a96uxsfk5j7xza7jyycs6zvz9k4r9vkuc", evm: "0x27CDB7F4BAE1A09B525E30BBE910988684C116D5" },
-  { label: "igit-dev", inj: "inj1sh4v00qgzjy25a73mqheew8q200punaglrzec5", evm: "0x85EAC7BC081488AA77D1D82F9CB8E053DE1E4FA8" },
-  { label: "collab-bob", inj: "inj1kwq44vsld7zk2l9d8vvgn7dkjh4jgvlffhqp3d", evm: "0xB3815AB21F6F85657CAD3B1889F9B695EB2433E9" },
-];
-
-const TESTNET_CONTRACTS = [
-  { label: "repo-registry (live)", inj: "inj1mg6x7ht3zyyszed9aq67q6kd0y5rtq7wf756jh" },
-  { label: "repo-registry (old)", inj: "inj17jshk9dwjhu42mx2ywhy0k2a9qy6v0d6qeua37" },
-];
-
-// External explorers for the testnet address table.
-// Cosmos side (inj1…) → official Injective explorer; EVM side (0x…) → Blockscout.
 const INJ_EXPLORER = "https://testnet.explorer.injective.network";
-const EVM_EXPLORER = "https://testnet-injective.cloud.blockscout.com";
+
+function shortAddr(s: string, n = 8) {
+  return s.length > n * 2 ? `${s.slice(0, n)}…${s.slice(-4)}` : s;
+}
 
 export default function Home() {
-  const cfg = loadConfig();
+  const cfg = useMemo(() => loadConfig(), []);
+  const { address } = useWallet();
   const [cc, setCc] = useState<ContractConfig | null>(null);
+  const [repos, setRepos] = useState<RepoInfo[] | null>(null);
+  const [activity, setActivity] = useState<ContractTx[]>([]);
+  const [repoFilter, setRepoFilter] = useState("");
   const [err, setErr] = useState("");
 
   useEffect(() => {
-    contractConfig(cfg)
-      .then(setCc)
-      .catch((e) => setErr(String(e)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    contractConfig(cfg).then(setCc).catch(() => setCc(null));
+  }, [cfg]);
+
+  useEffect(() => {
+    setErr("");
+    setRepos(null);
+    (async () => {
+      try {
+        if (address) {
+          const a = await resolveOwner(cfg, address);
+          setRepos(await listRepos(cfg, a));
+        } else {
+          setRepos([]);
+        }
+      } catch (e) {
+        setErr(String(e));
+      }
+    })();
+  }, [address, cfg]);
+
+  useEffect(() => {
+    contractActivity(cfg, 20).then(setActivity).catch(() => setActivity([]));
+  }, [cfg]);
+
+  const filtered = repoFilter.trim()
+    ? (repos ?? []).filter((r) =>
+        r.name.includes(repoFilter.trim()) ||
+        (r.description ?? "").toLowerCase().includes(repoFilter.trim().toLowerCase())
+      )
+    : repos ?? [];
 
   return (
     <div>
-      <div className="hero">
-        <h1>
-          Git, <span className="accent-grad">on-chain</span>.
-        </h1>
-        <p className="muted">
-          Repository metadata &amp; refs live on Injective; packfiles live on IPFS.
-          <br />
-          Search an owner above — an <code>inj1…</code> address, a username, or{" "}
-          <code>owner/repo</code>.
-        </p>
-        <div className="cmd">
-          {`igit init my-repo "hello chain"\nigit push inj main\nigit clone igit://alice/my-repo`}
-        </div>
-      </div>
+      {err && <div className="error" role="alert">{err}</div>}
 
-      {err && <div className="error">chain unreachable: {err}</div>}
-      {cc && (
-        <div className="stat-row">
-          <div className="card stat">
-            <div className="v">{cc.platform_fee_bps / 100}%</div>
-            <div className="k">platform fee (sponsorships)</div>
+      <div className="dashboard">
+        {/* Left: repositories */}
+        <div className="dashboard-main">
+          <div className="dash-section-title">
+            {address ? "Your repositories" : "Dashboard"}
           </div>
-          <div className="card stat">
-            <div className="v">
-              {formatInj(cc.username_deposit.amount, cc.username_deposit.denom)}
+
+          {address && (
+            <div className="dash-search">
+              <input
+                className="field"
+                value={repoFilter}
+                onChange={(e) => setRepoFilter(e.target.value)}
+                placeholder="find a repository…"
+              />
             </div>
-            <div className="k">username deposit (refundable)</div>
-          </div>
-        </div>
-      )}
+          )}
 
-      <div className="addr-section">
-        <h2>
-          igit <span className="badge">injective-888</span>
-        </h2>
-        <h3>Wallet</h3>
-        <div className="card addr-card">
-          <table className="plain addr-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Injective</th>
-                <th>EVM</th>
-                <th>Explorer</th>
-              </tr>
-            </thead>
-            <tbody>
-              {TESTNET_WALLETS.map((w) => (
-                <tr key={w.inj}>
-                  <td>{w.label}</td>
-                  <td className="mono">
-                    <Link to={`/${w.inj}`}>{w.inj}</Link>
-                  </td>
-                  <td className="mono muted">{w.evm}</td>
-                  <td className="addr-links">
-                    <a href={`${INJ_EXPLORER}/account/${w.inj}`} target="_blank" rel="noreferrer">
-                      Injective ↗
-                    </a>
-                    <a href={`${EVM_EXPLORER}/address/${w.evm}`} target="_blank" rel="noreferrer">
-                      Blockscout ↗
-                    </a>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {!repos && !err && (
+            <div className="spinner" aria-live="polite">loading repositories…</div>
+          )}
+
+          {repos && repos.length === 0 && !address && (
+            <div className="card" style={{ padding: "24px", textAlign: "center" }}>
+              <p className="muted" style={{ margin: "0 0 12px" }}>
+                Connect a wallet to see your repositories, or browse the chain.
+              </p>
+              <Link to="/explorer" className="btn">Explore repositories</Link>
+            </div>
+          )}
+
+          {repos && repos.length === 0 && address && (
+            <div className="card" style={{ padding: "24px", textAlign: "center" }}>
+              <p className="muted" style={{ margin: "0 0 12px" }}>
+                No repositories yet. Use the CLI to create one:
+              </p>
+              <code style={{ background: "var(--bg-inset)", padding: "8px 14px", borderRadius: "var(--radius)", fontSize: "0.82rem", display: "inline-block" }}>
+                igit init my-repo "hello chain"
+              </code>
+            </div>
+          )}
+
+          {filtered.map((r) => (
+            <div className="repo-list-item" key={r.name}>
+              <h3>
+                <Link to={`/${address ?? "demo"}/${r.name}`}>{r.name}</Link>
+                <span className={`badge ${r.moderation_status}`}>{r.moderation_status}</span>
+                {r.forked_from && <span className="badge">fork</span>}
+              </h3>
+              <div className="meta muted">
+                {r.description || <i>no description</i>} · default <code>{r.default_branch}</code> · updated {timeAgo(r.updated_at)}
+              </div>
+            </div>
+          ))}
         </div>
-        <h3>Contract</h3>
-        <div className="card addr-card">
-          <table className="plain addr-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Injective</th>
-                <th>Explorer</th>
-              </tr>
-            </thead>
-            <tbody>
-              {TESTNET_CONTRACTS.map((c) => (
-                <tr key={c.inj}>
-                  <td>{c.label}</td>
-                  <td className="mono">{c.inj}</td>
-                  <td className="addr-links">
-                    <a href={`${INJ_EXPLORER}/contract/${c.inj}`} target="_blank" rel="noreferrer">
-                      Contract ↗
-                    </a>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+
+        {/* Right: recent activity */}
+        <div className="dashboard-side">
+          <div className="dash-section-title">Recent on-chain activity</div>
+          <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+            {activity.length === 0 && (
+              <div className="muted" style={{ padding: "16px", fontSize: "0.84rem" }}>
+                no recent activity.
+              </div>
+            )}
+            {activity.map((tx) => (
+              <div key={tx.txhash} style={{
+                padding: "8px 14px",
+                borderBottom: "1px solid var(--border)",
+                fontSize: "0.82rem",
+              }}>
+                <span className={`action-badge a-${tx.action || "unknown"}`}>{tx.action || "?"}</span>
+                {" "}
+                <span className="muted">
+                  {shortAddr(tx.sender, 6)} · {timeAgo(Date.parse(tx.timestamp) / 1000)}
+                </span>
+                {tx.code !== 0 && <span className="fail-tag">failed</span>}
+              </div>
+            ))}
+            {activity.length > 0 && (
+              <div style={{ padding: "8px 14px" }}>
+                <Link to="/explorer" className="muted" style={{ fontSize: "0.8rem" }}>
+                  View all transactions →
+                </Link>
+              </div>
+            )}
+          </div>
+
+          {cc && (
+            <div style={{ marginTop: 16 }}>
+              <div className="dash-section-title">Network</div>
+              <div className="card" style={{ padding: "10px 14px", fontSize: "0.78rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span className="muted">network</span>
+                  <span><b>injective-888</b></span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span className="muted">contract</span>
+                  <code style={{ fontSize: "0.72rem" }}>{shortAddr(cc.admin, 8)}</code>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span className="muted">platform fee</span>
+                  <span>{(cc.platform_fee_bps / 100).toFixed(2)}%</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
+
+      <footer className="footer" style={{ marginTop: 24, borderTop: "1px solid var(--border)" }}>
+        Injective testnet · Contract: <code>{shortAddr(cfg.contract, 10)}</code> ·{" "}
+        <a href={`${INJ_EXPLORER}/contract/${cfg.contract}`} target="_blank" rel="noreferrer">
+          Explorer ↗
+        </a>
+      </footer>
     </div>
   );
 }

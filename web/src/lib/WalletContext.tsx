@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { connectWallet, getEvmProvider, SUPPORTED_WALLETS, type Wallet } from "../lib/wallet";
-import { injBalanceOf, loadConfig, formatError } from "../lib/chain";
+import { clearQueryCache, injBalanceOf, loadConfig, formatError } from "../lib/chain";
 
 // A connected wallet is either a Cosmos wallet (signs via CosmJS) or an EVM
 // wallet (MetaMask, signs via EIP-712). Both expose an inj1 address.
@@ -10,13 +10,16 @@ export type Connected =
 
 interface WalletState {
   connected: Connected | null;
-  address: string; // inj1 address of the connected wallet, "" if none
-  balance: string; // base units, "" while unknown
+  address: string;
+  balance: string;
   connecting: boolean;
   error: string;
   connect: (walletId: string) => Promise<void>;
   disconnect: () => void;
   refreshBalance: () => Promise<void>;
+  walletModalOpen: boolean;
+  openWalletModal: () => void;
+  closeWalletModal: () => void;
 }
 
 const Ctx = createContext<WalletState | null>(null);
@@ -27,6 +30,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [balance, setBalance] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState("");
+  const [walletModalOpen, setWalletModalOpen] = useState(false);
 
   const refreshBalance = useCallback(async () => {
     if (!connected) return;
@@ -37,9 +41,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   }, [connected]);
 
+  const openWalletModal = useCallback(() => setWalletModalOpen(true), []);
+  const closeWalletModal = useCallback(() => setWalletModalOpen(false), []);
+
   const connect = useCallback(async (walletId: string) => {
     setConnecting(true);
     setError("");
+    clearQueryCache();
     try {
       const def = SUPPORTED_WALLETS.find((x) => x.id === walletId);
       if (def?.kind === "evm") {
@@ -81,6 +89,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const disconnect = useCallback(() => {
     setConnected(null);
     setBalance("");
+    clearQueryCache();
     try {
       localStorage.removeItem(LS_PROVIDER);
     } catch {
@@ -124,6 +133,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         connect,
         disconnect,
         refreshBalance,
+        walletModalOpen,
+        openWalletModal,
+        closeWalletModal,
       }}
     >
       {children}
