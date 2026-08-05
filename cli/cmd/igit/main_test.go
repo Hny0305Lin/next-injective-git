@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/chain"
 )
 
 // TestVersionLinkerInjection covers both the development default and the
@@ -34,5 +36,20 @@ func TestSHA256File(t *testing.T) {
 	}
 	if got != want {
 		t.Fatalf("sha256 = %q, want %q", got, want)
+	}
+}
+
+func TestVisibleReposHidesModeratedRepositoriesByDefault(t *testing.T) {
+	repos := []chain.RepoInfo{
+		{Name: "active", ModerationStatus: "active"},
+		{Name: "legacy", ModerationStatus: "frozen"},
+		{Name: "removed", ModerationStatus: "delisted"},
+	}
+	visible := visibleRepos(repos, false)
+	if len(visible) != 1 || visible[0].Name != "active" {
+		t.Fatalf("visible repos = %#v", visible)
+	}
+	if all := visibleRepos(repos, true); len(all) != len(repos) {
+		t.Fatalf("--all returned %d repos, want %d", len(all), len(repos))
 	}
 }

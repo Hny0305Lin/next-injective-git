@@ -98,11 +98,17 @@ async function smartQuery<T>(cfg: AppConfig, query: unknown): Promise<T> {
   return json.data as T;
 }
 
-export async function listRepos(cfg: AppConfig, owner: string): Promise<RepoInfo[]> {
+export async function listRepos(
+  cfg: AppConfig,
+  owner: string,
+  includeInactive = false,
+): Promise<RepoInfo[]> {
   const out = await smartQuery<{ repos: RepoInfo[] }>(cfg, {
     list_repos: { owner, limit: 100 },
   });
-  return out.repos;
+  return includeInactive
+    ? out.repos
+    : out.repos.filter((repo) => repo.moderation_status === "active");
 }
 
 export async function repoInfo(cfg: AppConfig, owner: string, repo: string): Promise<RepoInfo> {

@@ -17,7 +17,7 @@ igit clone igit://alice/my-repo
 ```
 
 > **当前状态：Injective testnet（`injective-888`）**
-> 已部署合约：[`inj1mg6x7ht3zyyszed9aq67q6kd0y5rtq7wf756jh`](https://testnet.explorer.injective.network/contract/inj1mg6x7ht3zyyszed9aq67q6kd0y5rtq7wf756jh)。Clone / Fetch 已公开可用；Push 还需要本地 Kubo、`injectived` 和运营方签发的上传身份令牌。
+> 已部署合约：[`inj1mg6x7ht3zyyszed9aq67q6kd0y5rtq7wf756jh`](https://testnet.explorer.injective.network/contract/inj1mg6x7ht3zyyszed9aq67q6kd0y5rtq7wf756jh)。Clone / Fetch 已公开可用；Push 需要本地 Kubo 和 `injectived`，短期上传身份令牌由 `igit.xyz` 自动签发和刷新。
 
 ## 核心能力
 
@@ -148,12 +148,9 @@ igit key new dev
 igit key show                                  # 显示需要充值的 inj1... 地址
 ```
 
-Push 使用受控复制服务。当前上传身份令牌与 US Kubo Swarm 地址由项目运营方提供，尚未开放匿名或自助签发；未获得这两项配置时仍可正常 Clone / Fetch。
+Push 使用受控复制服务。CLI 会从 `https://www.igit.xyz/api/upload-authorization` 自动取得十分钟有效的 Ed25519 身份令牌，并在过期前刷新；US 持久节点和 HK 热层节点的 Swarm 地址已经内置，无需手工复制 Token 或 Peer。
 
 ```bash
-igit config set upload.authorization '<operator-issued-identity-token>'
-igit config set upload.us_peer '<US-Kubo-swarm-multiaddr>'
-
 # 终端 A：保持本地 Kubo 运行
 ipfs daemon
 ```
@@ -182,6 +179,7 @@ igit import github.com/user/repo my-name  # 自定义链上仓库名
 
 ```bash
 igit username register alice                    # 注册可读的 igit://alice/... 用户名
+igit repos --all                                # 审计时包含 frozen/delisted 仓库
 igit collab add hello inj1... maintainer         # 添加仓库维护者
 igit fork <owner> <repo> [new-name]              # Fork 到自己的命名空间
 igit sponsor <owner> <repo> 0.5 "great work"    # 赞助项目
@@ -254,12 +252,11 @@ CLI 默认健康探测香港 `https://igit-hk.haohanyh.ovh` 与美国 `https://i
 igit gateway status                 # 查看两地健康和延迟
 igit gateway select                 # 查看当前自动选路顺序
 
-# Push-only configuration. endpoint 已有默认值，通常无需修改。
-igit config set upload.authorization '<operator-issued-identity-token>'
-igit config set upload.us_peer '<US-Kubo-p2p-multiaddr>'
+# Push 配置均有内置默认值；只有私有部署才需要覆盖。
+igit config list
 ```
 
-`igit` 只访问本机 loopback 上的 Kubo RPC；HK/US Kubo 管理 API 从不暴露给普通用户。Push 会以运营方签发的 identity token 换取与 CID、仓库、ref、pack SHA-256 和有效期绑定的一次性 ticket，该 ticket 不能提交链上交易。没有本地 Kubo 或上传授权时，Clone / Fetch 仍然可用。
+`igit` 只访问本机 Kubo RPC；HK/US Kubo 管理 API 从不暴露给普通用户。Push 会自动取得短期 identity token，再换取与 CID、仓库、ref、pack SHA-256 和有效期绑定的一次性 ticket；该 ticket 不能提交链上交易。显式的 `upload.authorization`、`upload.us_peer` 与 `upload.hk_peer` 仍可用于私有或离线部署，并可用 `igit config unset <key>` 清除。没有本地 Kubo 时，Clone / Fetch 仍然可用。
 
 ## Release artifacts
 

@@ -33,7 +33,7 @@ Usage:
   igit push [remote] [refspec...]      push current repo on-chain (wraps git)
   igit pull [remote] [refspec...]      pull from chain (wraps git)
   igit clone-url <name>                print the igit:// URL of your repo
-  igit repos [owner]                   list repositories of an owner
+	igit repos [--all] [owner]           list active repositories of an owner
   igit refs <owner> <repo>             list on-chain refs of a repository
   igit collab add <repo> <address> [maintainer|reader]
                                        grant a collaborator role (owner only)
@@ -102,7 +102,7 @@ const usageChinese = `igit - Next Injective Git（Injective + IPFS）
   igit push [remote] [refspec...]      推送当前仓库到链上（封装 git）
   igit pull [remote] [refspec...]      从链上拉取（封装 git）
   igit clone-url <name>                输出仓库的 igit:// URL
-  igit repos [owner]                   列出所有者的仓库
+	igit repos [--all] [owner]           列出所有者的活跃仓库
   igit refs <owner> <repo>             列出仓库的链上 refs
   igit collab add <repo> <address> [maintainer|reader]
                                        授予协作者角色（仅所有者）
@@ -435,9 +435,18 @@ func cmdCloneURL(cfg config.Config, args []string) error {
 func cmdRepos(cfg config.Config, args []string) error {
 	cc := chain.New(cfg)
 	owner := ""
-	if len(args) > 0 {
-		owner = args[0]
-	} else {
+	includeInactive := false
+	for _, arg := range args {
+		switch {
+		case arg == "--all":
+			includeInactive = true
+		case strings.HasPrefix(arg, "-") || owner != "":
+			return i18n.Errorf("usage: igit repos [--all] [owner]", "用法：igit repos [--all] [所有者]")
+		default:
+			owner = arg
+		}
+	}
+	if owner == "" {
 		var err error
 		if owner, err = cc.OwnerAddress(); err != nil {
 			return i18n.Errorf("no owner given and cannot resolve local key: %w", "未提供所有者，且无法解析本地密钥：%w", err)
@@ -452,14 +461,32 @@ func cmdRepos(cfg config.Config, args []string) error {
 	if err := cc.SmartQuery(query, &out); err != nil {
 		return err
 	}
-	if len(out.Repos) == 0 {
-		fmt.Printf(i18n.Text("no repositories for %s\n", "%s 没有仓库\n"), owner)
+	repos := visibleRepos(out.Repos, includeInactive)
+	if len(repos) == 0 {
+		fmt.Printf(i18n.Text("no active repositories for %s\n", "%s 没有活跃仓库\n"), owner)
 		return nil
 	}
-	for _, r := range out.Repos {
-		fmt.Printf(i18n.Text("%-32s default:%-12s %s\n", "%-32s 默认分支：%-12s %s\n"), r.Name, r.DefaultBranch, r.Description)
+	for _, r := range repos {
+		status := ""
+		if includeInactive && !strings.EqualFold(r.ModerationStatus, "active") {
+			status = " [" + r.ModerationStatus + "]"
+		}
+		fmt.Printf(i18n.Text("%-32s default:%-12s %s%s\n", "%-32s 默认分支：%-12s %s%s\n"), r.Name, r.DefaultBranch, r.Description, status)
 	}
 	return nil
+}
+
+func visibleRepos(repos []chain.RepoInfo, includeInactive bool) []chain.RepoInfo {
+	if includeInactive {
+		return repos
+	}
+	visible := make([]chain.RepoInfo, 0, len(repos))
+	for _, repo := range repos {
+		if strings.EqualFold(repo.ModerationStatus, "active") || repo.ModerationStatus == "" {
+			visible = append(visible, repo)
+		}
+	}
+	return visible
 }
 
 func cmdRefs(cfg config.Config, args []string) error {
