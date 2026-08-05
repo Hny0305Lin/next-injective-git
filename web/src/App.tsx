@@ -47,7 +47,7 @@ export default function App() {
           <Link to="/ipfs">IPFS</Link>
           <Link to="/settings">Settings</Link>
           <a href="https://github.com/Hny0305Lin/next-injective-git" target="_blank" rel="noreferrer">
-            CLI
+            Repository
           </a>
           {address ? (
             <button
