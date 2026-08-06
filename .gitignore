@@ -47,3 +47,4 @@ web/tsconfig.tsbuildinfo
 web/.vercel-tmp/
 web/.vercel/
 .vercel/
+.claude/

@@ -1,14 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useWallet } from "../lib/WalletContext";
 import {
   contractActivity,
-  contractConfig,
-  listRepos,
   loadConfig,
   resolveOwner,
+  listRepos,
   timeAgo,
-  type ContractConfig,
   type RepoInfo,
   type ContractTx,
 } from "../lib/chain";
@@ -19,18 +17,34 @@ function shortAddr(s: string, n = 8) {
   return s.length > n * 2 ? `${s.slice(0, n)}…${s.slice(-4)}` : s;
 }
 
+const ACTIVITY_LIMIT = 100;
+
 export default function Home() {
   const cfg = useMemo(() => loadConfig(), []);
   const { address } = useWallet();
-  const [cc, setCc] = useState<ContractConfig | null>(null);
   const [repos, setRepos] = useState<RepoInfo[] | null>(null);
   const [activity, setActivity] = useState<ContractTx[]>([]);
+  const [activityLoaded, setActivityLoaded] = useState(false);
   const [repoFilter, setRepoFilter] = useState("");
   const [err, setErr] = useState("");
+  const sideRef = useRef<HTMLDivElement>(null);
 
+  // Lazy-load activity only when the sidebar scrolls into view
   useEffect(() => {
-    contractConfig(cfg).then(setCc).catch(() => setCc(null));
-  }, [cfg]);
+    const el = sideRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !activityLoaded) {
+          setActivityLoaded(true);
+          contractActivity(cfg, ACTIVITY_LIMIT).then(setActivity).catch(() => setActivity([]));
+        }
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [cfg, activityLoaded]);
 
   useEffect(() => {
     setErr("");
@@ -48,10 +62,6 @@ export default function Home() {
       }
     })();
   }, [address, cfg]);
-
-  useEffect(() => {
-    contractActivity(cfg, 20).then(setActivity).catch(() => setActivity([]));
-  }, [cfg]);
 
   const filtered = repoFilter.trim()
     ? (repos ?? []).filter((r) =>
@@ -120,55 +130,45 @@ export default function Home() {
           ))}
         </div>
 
-        {/* Right: recent activity */}
-        <div className="dashboard-side">
+        {/* Right: recent activity (lazy-loaded on scroll) */}
+        <div className="dashboard-side" ref={sideRef}>
           <div className="dash-section-title">Recent on-chain activity</div>
-          <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-            {activity.length === 0 && (
-              <div className="muted" style={{ padding: "16px", fontSize: "0.84rem" }}>
-                no recent activity.
-              </div>
-            )}
-            {activity.map((tx) => (
-              <div key={tx.txhash} style={{
-                padding: "8px 14px",
-                borderBottom: "1px solid var(--border)",
-                fontSize: "0.82rem",
-              }}>
-                <span className={`action-badge a-${tx.action || "unknown"}`}>{tx.action || "?"}</span>
-                {" "}
-                <span className="muted">
-                  {shortAddr(tx.sender, 6)} · {timeAgo(Date.parse(tx.timestamp) / 1000)}
-                </span>
-                {tx.code !== 0 && <span className="fail-tag">failed</span>}
-              </div>
-            ))}
-            {activity.length > 0 && (
-              <div style={{ padding: "8px 14px" }}>
-                <Link to="/explorer" className="muted" style={{ fontSize: "0.8rem" }}>
-                  View all transactions →
-                </Link>
-              </div>
-            )}
-          </div>
 
-          {cc && (
-            <div style={{ marginTop: 16 }}>
-              <div className="dash-section-title">Network</div>
-              <div className="card" style={{ padding: "10px 14px", fontSize: "0.78rem" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                  <span className="muted">network</span>
-                  <span><b>injective-888</b></span>
+          {!activityLoaded && (
+            <div className="card" style={{ padding: "16px", textAlign: "center" }}>
+              <div className="spinner" style={{ padding: 0 }}>loading activity…</div>
+            </div>
+          )}
+
+          {activityLoaded && activity.length === 0 && (
+            <div className="card" style={{ padding: "16px" }}>
+              <div className="muted" style={{ fontSize: "0.84rem" }}>no recent activity.</div>
+            </div>
+          )}
+
+          {activityLoaded && activity.length > 0 && (
+            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+              {activity.slice(0, ACTIVITY_LIMIT).map((tx) => (
+                <div key={tx.txhash} style={{
+                  padding: "8px 14px",
+                  borderBottom: "1px solid var(--border)",
+                  fontSize: "0.82rem",
+                }}>
+                  <span className={`action-badge a-${tx.action || "unknown"}`}>{tx.action || "?"}</span>
+                  {" "}
+                  <span className="muted">
+                    {shortAddr(tx.sender, 6)} · {timeAgo(Date.parse(tx.timestamp) / 1000)}
+                  </span>
+                  {tx.code !== 0 && <span className="fail-tag">failed</span>}
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                  <span className="muted">contract</span>
-                  <code style={{ fontSize: "0.72rem" }}>{shortAddr(cc.admin, 8)}</code>
+              ))}
+              {activity.length >= ACTIVITY_LIMIT && (
+                <div style={{ padding: "8px 14px" }}>
+                  <Link to="/explorer" className="muted" style={{ fontSize: "0.8rem" }}>
+                    View all transactions →
+                  </Link>
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span className="muted">platform fee</span>
-                  <span>{(cc.platform_fee_bps / 100).toFixed(2)}%</span>
-                </div>
-              </div>
+              )}
             </div>
           )}
         </div>
