@@ -158,6 +158,51 @@ code, pre, .mono {
   border-color: var(--accent-border);
   box-shadow: 0 0 0 3px rgba(77, 61, 255, 0.15);
 }
+.search-history {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 40;
+  overflow: hidden;
+}
+.search-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.search-history-clear {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  font-size: 0.72rem;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.search-history-clear:hover {
+  color: var(--fg);
+}
+.search-history-item {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  padding: 6px 10px;
+  text-align: left;
+  cursor: pointer;
+}
+.search-history-item:hover {
+  background: var(--bg-hover);
+}
 .topbar-end {
   display: flex;
   align-items: center;
@@ -478,6 +523,16 @@ input.field:focus {
   display: flex;
   gap: 6px;
   align-items: center;
+}
+.clone-protocol-select {
+  background: var(--bg-hover);
+  color: var(--fg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  font-family: var(--font-ui);
+  font-size: 0.78rem;
+  padding: 3px 6px;
+  cursor: pointer;
 }
 .clone-box code {
   background: var(--bg-inset);

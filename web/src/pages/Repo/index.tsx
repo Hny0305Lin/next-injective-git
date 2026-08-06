@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { FileCode2, GitCommit, GitBranch, Users } from "lucide-react";
+import { FileCode2, GitCommit, GitBranch, Users, Copy, Check } from "lucide-react";
 import { loadConfig } from "../../lib/chain";
 import {
   listRefs,
@@ -28,6 +28,8 @@ export default function Repo() {
   const [info, setInfo] = useState<RepoInfo | null>(null);
   const [refs, setRefs] = useState<RefInfo[]>([]);
   const [err, setErr] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [cloneProtocol, setCloneProtocol] = useState<"igit" | "https">("igit");
 
   useEffect(() => {
     setErr("");
@@ -56,7 +58,6 @@ export default function Repo() {
     ) || info.default_branch;
   const view = parseView(splat, fallbackRef);
   const base = `/${owner}/${repo}`;
-  const cloneURL = `igit://${owner}/${repo}`;
   const store = getRepoStore(`${addr}/${repo}`);
   const current = view.kind === "commit" ? undefined : findRef(refs, view.ref);
 
@@ -109,17 +110,34 @@ export default function Repo() {
         </div>
         <div className="repo-actions">
           <div className="clone-box">
-            <code>igit clone {cloneURL}</code>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <select
+                className="clone-protocol-select"
+                value={cloneProtocol}
+                onChange={(e) => setCloneProtocol(e.target.value as "igit" | "https")}
+                aria-label="clone protocol"
+              >
+                <option value="igit">igit://</option>
+                <option value="https">https://</option>
+              </select>
+              <code>
+                {cloneProtocol === "igit" ? `igit clone igit://${owner}/${repo}` : `${cloneProtocol}://${owner}/${repo}`}
+              </code>
+            </div>
             <button
               className="btn"
               style={{ padding: "3px 8px", fontSize: "0.78rem" }}
-              onClick={() => navigator.clipboard.writeText(`igit clone ${cloneURL}`)}
+              onClick={() => {
+                const url = cloneProtocol === "igit"
+                  ? `igit clone igit://${owner}/${repo}`
+                  : `${cloneProtocol}://${owner}/${repo}`;
+                navigator.clipboard.writeText(url);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+              }}
               title="copy clone URL"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "-2px" }}>
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-              </svg>
+              {copied ? <Check size={14} /> : <Copy size={14} />}
             </button>
           </div>
         </div>
