@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { loadConfig, saveConfig } from "../lib/chain";
+import { loadConfig, saveConfig, type AppConfig } from "../lib/chain";
 
 const INJ_EXPLORER = "https://testnet.explorer.injective.network";
 const EVM_EXPLORER = "https://testnet-injective.cloud.blockscout.com";
@@ -15,6 +15,16 @@ const TESTNET_WALLETS = [
 export default function Settings() {
   const [cfg, setCfg] = useState(loadConfig());
   const [saved, setSaved] = useState(false);
+
+  const restoreDefaults = () => {
+    const def: AppConfig = {
+      lcd: "https://k8s.testnet.lcd.injective.network",
+      contract: "inj1mg6x7ht3zyyszed9aq67q6kd0y5rtq7wf756jh",
+      ipfsGateway: "https://igit-hk.haohanyh.ovh",
+    };
+    setCfg(def);
+    setSaved(false);
+  };
 
   const set = (k: keyof typeof cfg) => (e: React.ChangeEvent<HTMLInputElement>) => {
     setCfg({ ...cfg, [k]: e.target.value });
@@ -48,6 +58,12 @@ export default function Settings() {
             style={{ padding: "7px 18px", fontSize: "0.88rem" }}
           >
             save
+          </button>
+          <button
+            onClick={restoreDefaults}
+            style={{ padding: "7px 14px", fontSize: "0.88rem", color: "var(--fg-muted)" }}
+          >
+            restore defaults
           </button>
           {saved && <span className="muted" style={{ fontSize: "0.88rem" }}>saved ✓</span>}
         </div>
