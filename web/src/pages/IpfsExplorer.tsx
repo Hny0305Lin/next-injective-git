@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { HardDrive } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useWallet } from "../lib/WalletContext";
 import { listRefs, listRepos, loadConfig, resolveOwner, type RepoInfo } from "../lib/chain";
@@ -12,11 +13,24 @@ interface RepoCid extends CidInfo {
   uri: string;
 }
 
+async function limitedParallel<T, R>(
+  items: T[],
+  fn: (t: T) => Promise<R>,
+  concurrency = 5,
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += concurrency) {
+    const batch = items.slice(i, i + concurrency);
+    results.push(...(await Promise.all(batch.map(fn))));
+  }
+  return results;
+}
+
 // IPFS block explorer: inspect any CID, or audit every packfile CID a repo
 // references on-chain (reachability + size + git object count). Doubles as the
 // pinning health check — red rows are CIDs no reachable node is serving.
 export default function IpfsExplorer() {
-  const cfg = loadConfig();
+  const cfg = useMemo(() => loadConfig(), []);
   const { address } = useWallet();
   const [cid, setCid] = useState("");
   const [one, setOne] = useState<CidInfo | null>(null);
@@ -35,8 +49,7 @@ export default function IpfsExplorer() {
       return;
     }
     listRepos(cfg, address).then(setMyRepos).catch(() => setMyRepos([]));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [address]);
+  }, [address, cfg]);
 
   const inspectOne = async () => {
     if (!cid.trim()) return;
@@ -68,8 +81,10 @@ export default function IpfsExplorer() {
           jobs.push({ ref: r.ref_name, uri });
         }
       }
-      const results = await Promise.all(
-        jobs.map(async (j) => ({ ...(await inspectCid(cfg, j.uri)), ref: j.ref, uri: j.uri })),
+      const results = await limitedParallel(
+        jobs,
+        async (j) => ({ ...(await inspectCid(cfg, j.uri)), ref: j.ref, uri: j.uri }),
+        5,
       );
       setRepoCids(results);
     } catch (e) {
@@ -120,7 +135,7 @@ export default function IpfsExplorer() {
                     void runAudit(address, r.name);
                   }}
                 >
-                  📦 {r.name}
+                  <HardDrive size={14} style={{ verticalAlign: "-2px" }} /> {r.name}
                 </button>
               ))}
             </div>

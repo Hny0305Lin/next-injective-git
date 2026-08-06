@@ -84,7 +84,27 @@ export interface CollaboratorInfo {
   role: "maintainer" | "reader";
 }
 
+// ---- query cache (dedup + TTL for smart queries) ----
+
+interface CacheEntry<T> {
+  data: T;
+  ts: number;
+}
+
+const queryCache = new Map<string, CacheEntry<unknown>>();
+const CACHE_TTL_MS = 30_000; // 30 seconds
+
+function cacheKey(cfg: AppConfig, query: unknown): string {
+  // Stable key: lcd + contract + serialized query
+  return `${cfg.lcd}\x00${cfg.contract}\x00${btoa(JSON.stringify(query))}`;
+}
+
 async function smartQuery<T>(cfg: AppConfig, query: unknown): Promise<T> {
+  const key = cacheKey(cfg, query);
+  const hit = queryCache.get(key);
+  if (hit && Date.now() - hit.ts < CACHE_TTL_MS) {
+    return hit.data as T;
+  }
   const encoded = btoa(JSON.stringify(query));
   const url = `${cfg.lcd.replace(/\/+$/, "")}/cosmwasm/wasm/v1/contract/${
     cfg.contract
@@ -95,7 +115,14 @@ async function smartQuery<T>(cfg: AppConfig, query: unknown): Promise<T> {
     throw new Error(`query failed (HTTP ${resp.status}): ${body.slice(0, 300)}`);
   }
   const json = await resp.json();
-  return json.data as T;
+  const data = json.data as T;
+  queryCache.set(key, { data, ts: Date.now() });
+  return data;
+}
+
+/** Clear all cached queries (call on wallet connect/disconnect if needed). */
+export function clearQueryCache(): void {
+  queryCache.clear();
 }
 
 export async function listRepos(

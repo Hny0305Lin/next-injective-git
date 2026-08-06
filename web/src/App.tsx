@@ -1,26 +1,30 @@
 import { Link, Route, Routes, useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import Home from "./pages/Home";
-import Owner from "./pages/Owner";
-import Repo from "./pages/Repo";
 import Settings from "./pages/Settings";
-import Explorer from "./pages/Explorer";
-import IpfsExplorer from "./pages/IpfsExplorer";
 import { useWallet } from "./lib/WalletContext";
 import { WalletModal } from "./components/WalletModal";
-import { formatInj } from "./lib/chain";
+import AccountMenu from "./components/AccountMenu";
+import Toast from "./components/Toast";
+
+const LazyOwner = lazy(() => import("./pages/Owner"));
+const LazyRepo = lazy(() => import("./pages/Repo/index"));
+const LazyExplorer = lazy(() => import("./pages/Explorer"));
+const LazyIpfsExplorer = lazy(() => import("./pages/IpfsExplorer"));
+
+function RouteSpinner() {
+  return <div className="spinner" aria-live="polite">loading…</div>;
+}
 
 export default function App() {
   const nav = useNavigate();
   const [q, setQ] = useState("");
-  const { address, balance, connected, disconnect } = useWallet();
-  const [walletModal, setWalletModal] = useState(false);
+  const { connected, walletModalOpen, openWalletModal, closeWalletModal } = useWallet();
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     const s = q.trim();
     if (!s) return;
-    // "owner/repo" jumps straight into the repo, otherwise owner page
     const parts = s.replace(/^(igit|inj):\/\//, "").split("/").filter(Boolean);
     if (parts.length >= 2) nav(`/${parts[0]}/${parts[1]}`);
     else nav(`/${parts[0]}`);
@@ -34,51 +38,40 @@ export default function App() {
           <span className="brand-mark">⎇</span> igit
           <span className="brand-sub">on Injective</span>
         </Link>
+        <nav className="topnav">
+          <Link to="/" className="topnav-link">Dashboard</Link>
+          <Link to="/explorer" className="topnav-link">Explore</Link>
+          <Link to="/ipfs" className="topnav-link">IPFS</Link>
+        </nav>
         <form className="search" onSubmit={submit}>
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="address, username or owner/repo…"
+            placeholder="search owner, repo, address…"
             spellCheck={false}
           />
         </form>
-        <nav className="topnav">
-          <Link to="/explorer">Explorer</Link>
-          <Link to="/ipfs">IPFS</Link>
-          <Link to="/settings">Settings</Link>
-          <a href="https://github.com/Hny0305Lin/next-injective-git" target="_blank" rel="noreferrer">
-            Repository
-          </a>
-          {address ? (
-            <button
-              className="wallet-btn connected"
-              title={`${connected?.label ?? ""} · ${address}\nclick to disconnect`}
-              onClick={disconnect}
-            >
-              {balance ? `${formatInj(balance, "inj")} · ` : ""}
-              {address.slice(0, 7)}…{address.slice(-4)}
-            </button>
-          ) : (
-            <button className="wallet-btn" onClick={() => setWalletModal(true)}>
-              Connect Wallet
-            </button>
+        <div className="topbar-end">
+          <Link to="/settings" className="topnav-link">Settings</Link>
+          {connected ? <AccountMenu /> : (
+            <button className="wallet-btn" onClick={openWalletModal}>Connect</button>
           )}
-        </nav>
+        </div>
       </header>
-      {walletModal && <WalletModal onClose={() => setWalletModal(false)} />}
+      {walletModalOpen && <WalletModal onClose={closeWalletModal} />}
+      <Toast />
       <main className="content">
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/settings" element={<Settings />} />
-          <Route path="/explorer" element={<Explorer />} />
-          <Route path="/ipfs" element={<IpfsExplorer />} />
-          <Route path="/:owner" element={<Owner />} />
-          <Route path="/:owner/:repo/*" element={<Repo />} />
+          <Route path="/explorer" element={<Suspense fallback={<RouteSpinner />}><LazyExplorer /></Suspense>} />
+          <Route path="/ipfs" element={<Suspense fallback={<RouteSpinner />}><LazyIpfsExplorer /></Suspense>} />
+          <Route path="/:owner" element={<Suspense fallback={<RouteSpinner />}><LazyOwner /></Suspense>} />
+          <Route path="/:owner/:repo/*" element={<Suspense fallback={<RouteSpinner />}><LazyRepo /></Suspense>} />
         </Routes>
       </main>
       <footer className="footer">
-        refs on <b>Injective</b> · packfiles on <b>IPFS</b> · no backend — this page talks to the
-        chain directly
+        refs on <b>Injective</b> · packfiles on <b>IPFS</b> · no backend — this page talks to the chain directly
       </footer>
     </div>
   );
