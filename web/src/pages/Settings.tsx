@@ -55,23 +55,23 @@ export default function Settings() {
 
       <div style={{ marginTop: 28 }}>
         <div className="dash-section-title" style={{ fontSize: "0.82rem" }}>Testnet wallets</div>
-        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-          <table className="plain" style={{ fontSize: "0.88rem" }}>
+        <div className="card" style={{ padding: "16px 20px" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.88rem" }}>
             <thead>
-              <tr>
-                <th style={{ width: 140 }}>Name</th>
-                <th>Injective</th>
-                <th>EVM</th>
+              <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                <th style={{ textAlign: "left", padding: "0 0 10px", fontSize: "0.78rem", fontWeight: 500, color: "var(--fg-muted)", textTransform: "uppercase", letterSpacing: "0.04em", width: 140 }}>Name</th>
+                <th style={{ textAlign: "left", padding: "0 0 10px", fontSize: "0.78rem", fontWeight: 500, color: "var(--fg-muted)", textTransform: "uppercase", letterSpacing: "0.04em" }}>Injective</th>
+                <th style={{ textAlign: "left", padding: "0 0 10px", fontSize: "0.78rem", fontWeight: 500, color: "var(--fg-muted)", textTransform: "uppercase", letterSpacing: "0.04em" }}>EVM</th>
               </tr>
             </thead>
             <tbody>
               {TESTNET_WALLETS.map((w) => (
-                <tr key={w.inj}>
-                  <td style={{ fontWeight: 500 }}>{w.label}</td>
-                  <td className="mono" style={{ fontSize: "0.82rem" }}>
-                    <Link to={`/${w.inj}`}>{w.inj.slice(0, 16)}…</Link>
+                <tr key={w.inj} style={{ borderBottom: "1px solid var(--border)" }}>
+                  <td style={{ padding: "10px 0", fontWeight: 500 }}>{w.label}</td>
+                  <td className="mono" style={{ padding: "10px 12px 10px 0", fontSize: "0.82rem" }}>
+                    <Link to={`/${w.inj}`}>{w.inj}</Link>
                   </td>
-                  <td className="mono muted" style={{ fontSize: "0.82rem" }}>{w.evm.slice(0, 16)}…</td>
+                  <td className="mono muted" style={{ padding: "10px 0", fontSize: "0.82rem" }}>{w.evm}</td>
                 </tr>
               ))}
             </tbody>
