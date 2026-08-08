@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { FileCode2, GitCommit, GitBranch, Users, Copy, Check } from "lucide-react";
 import { loadConfig } from "../../lib/chain";
+import { showToast } from "../../components/Toast";
 import {
   listRefs,
   repoInfo,
   resolveOwner,
   type RefInfo,
   type RepoInfo,
+  formatResourceError,
 } from "../../lib/chain";
 import { getRepoStore } from "../../lib/gitstore";
 import TreeView from "./TreeView";
@@ -42,7 +44,7 @@ export default function Repo() {
         setInfo(ri);
         setRefs(rf);
       } catch (e) {
-        setErr(String(e));
+        setErr(formatResourceError(e, "repository"));
       }
     })();
   }, [owner, repo, cfg]);
@@ -110,7 +112,7 @@ export default function Repo() {
         </div>
         <div className="repo-actions">
           <div className="clone-box">
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div className="clone-command">
               <select
                 className="clone-protocol-select"
                 value={cloneProtocol}
@@ -120,22 +122,28 @@ export default function Repo() {
                 <option value="igit">igit://</option>
                 <option value="https">https://</option>
               </select>
-              <code>
+              <code title={cloneProtocol === "igit" ? `igit clone igit://${owner}/${repo}` : `${cloneProtocol}://${owner}/${repo}`}>
                 {cloneProtocol === "igit" ? `igit clone igit://${owner}/${repo}` : `${cloneProtocol}://${owner}/${repo}`}
               </code>
             </div>
             <button
               className="btn"
               style={{ padding: "3px 8px", fontSize: "0.78rem" }}
-              onClick={() => {
+              onClick={async () => {
                 const url = cloneProtocol === "igit"
                   ? `igit clone igit://${owner}/${repo}`
                   : `${cloneProtocol}://${owner}/${repo}`;
-                navigator.clipboard.writeText(url);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 1500);
+                try {
+                  await navigator.clipboard.writeText(url);
+                  setCopied(true);
+                  showToast("Clone URL copied");
+                  setTimeout(() => setCopied(false), 1500);
+                } catch {
+                  showToast("Could not copy clone URL");
+                }
               }}
               title="copy clone URL"
+              aria-label={copied ? "clone URL copied" : "copy clone URL"}
             >
               {copied ? <Check size={14} /> : <Copy size={14} />}
             </button>

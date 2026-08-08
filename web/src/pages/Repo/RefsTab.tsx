@@ -18,19 +18,21 @@ const RefTable = memo(function RefTable({ refs, base, kind }: { refs: RefInfo[];
         const label = shortRef(r.ref_name);
         const dateStr = r.updated_at ? new Date(r.updated_at).toLocaleString() : "";
         return (
-          <Link className="row" key={r.ref_name} to={`${base}/tree/${encodeURIComponent(label)}`}>
+          <div className="row" key={r.ref_name}>
             <span className="icon">
               {kind === "branch" ? <GitBranch size={14} /> : <Tag size={14} />}
             </span>
-            <span className="name mono">{label}</span>
+            <span className="name mono">
+              <Link to={`${base}/tree/${encodeURIComponent(label)}`}>{label}</Link>
+            </span>
             <span className="muted-cell mono">
-              <Link to={`${base}/commit/${r.commit_sha}`} onClick={(e) => e.stopPropagation()}>
+              <Link to={`${base}/commit/${r.commit_sha}`}>
                 {r.commit_sha.slice(0, 10)}
               </Link>
             </span>
             <span className="muted-cell">{r.pack_uris.length}</span>
             <span className="muted-cell">{dateStr}</span>
-          </Link>
+          </div>
         );
       })}
     </div>

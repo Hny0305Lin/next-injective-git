@@ -214,6 +214,29 @@ export function formatError(e: unknown): string {
   return String(e);
 }
 
+/** Convert low-level LCD/contract failures into concise page-level feedback. */
+export function formatResourceError(e: unknown, resource: "owner" | "repository"): string {
+  const message = formatError(e);
+  const lower = message.toLowerCase();
+  const label = resource === "owner" ? "owner" : "repository";
+
+  if (lower.includes("failed to fetch") || lower.includes("networkerror") || lower.includes("network error")) {
+    return "Network unavailable. Check your connection and try again.";
+  }
+  if (
+    lower.includes("not found") ||
+    lower.includes("unknown username") ||
+    lower.includes("no such") ||
+    /http\s*(?:400|404)\b/.test(lower)
+  ) {
+    return `Could not find this ${label}. Check the ${resource === "owner" ? "address or username" : "owner and repository name"}.`;
+  }
+  if (/http\s*\d{3}\b/.test(lower)) {
+    return `Unable to load this ${label} right now. Please try again.`;
+  }
+  return `Unable to load this ${label}. Please try again.`;
+}
+
 /** INJ balance (base units) of any address via the LCD bank module. */
 export async function injBalanceOf(cfg: AppConfig, address: string): Promise<string> {
   const url = `${cfg.lcd.replace(/\/+$/, "")}/cosmos/bank/v1beta1/balances/${address}`;

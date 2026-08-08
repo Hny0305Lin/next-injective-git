@@ -647,6 +647,16 @@ input.field:focus {
   display: flex;
   gap: 8px;
   align-items: center;
+  min-width: 0;
+  max-width: 100%;
+}
+.clone-command {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
 }
 .clone-box code {
   background: var(--bg-inset);
@@ -655,6 +665,11 @@ input.field:focus {
   border-radius: var(--radius);
   font-size: 0.8rem;
   color: #b6aeff;
+  min-width: 0;
+  max-width: 100%;
+  flex: 1;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 /* ---- account menu ---- */
@@ -1219,6 +1234,11 @@ input.field:focus {
   font-size: 0.78rem;
   font-weight: 500;
 }
+.settings-wallets-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
 
 /* ---- code view ---- */
 .code-grid {
@@ -1332,6 +1352,9 @@ input.field:focus {
     flex-direction: column;
     align-items: flex-start;
     gap: 4px;
+  }
+  .clone-command {
+    width: 100%;
   }
   .filelist .muted-cell {
     max-width: 120px;

@@ -49,8 +49,7 @@ export default function App() {
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
 
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitSearch = () => {
     const s = q.trim();
     if (!s) return;
     addToHistory(s);
@@ -59,6 +58,11 @@ export default function App() {
     else nav(`/${parts[0]}`);
     setQ("");
     setShowHistory(false);
+  };
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    submitSearch();
   };
 
   const clearHistory = () => {
@@ -84,6 +88,12 @@ export default function App() {
               value={q}
               onChange={(e) => setQ(e.target.value)}
               onFocus={() => setShowHistory(true)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  submitSearch();
+                }
+              }}
               placeholder="search owner, repo, address…"
               spellCheck={false}
             />

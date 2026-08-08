@@ -10,6 +10,7 @@ import {
   timeAgo,
   type BadgeInfo,
   type RepoInfo,
+  formatResourceError,
 } from "../lib/chain";
 
 export default function Owner() {
@@ -34,7 +35,7 @@ export default function Owner() {
         setAlias(owner.startsWith("inj1") ? await addressUsername(cfg, a) : owner);
         setBadges(await badgesByRecipient(cfg, a).catch(() => []));
       } catch (e) {
-        setErr(String(e));
+        setErr(formatResourceError(e, "owner"));
       }
     })();
   }, [owner, cfg]);

@@ -72,7 +72,8 @@ export default function Settings() {
       <div style={{ marginTop: 28 }}>
         <div className="dash-section-title" style={{ fontSize: "0.82rem" }}>Testnet wallets</div>
         <div className="card" style={{ padding: "16px 20px" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.88rem" }}>
+          <div className="settings-wallets-scroll">
+            <table style={{ width: "100%", minWidth: 640, borderCollapse: "collapse", fontSize: "0.88rem" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border)" }}>
                 <th style={{ textAlign: "left", padding: "0 0 10px", fontSize: "0.78rem", fontWeight: 500, color: "var(--fg-muted)", textTransform: "uppercase", letterSpacing: "0.04em", width: 140 }}>Name</th>
@@ -91,7 +92,8 @@ export default function Settings() {
                 </tr>
               ))}
             </tbody>
-          </table>
+            </table>
+          </div>
         </div>
         <p className="muted" style={{ fontSize: "0.82rem", marginTop: 10 }}>
           Links:{" "}
