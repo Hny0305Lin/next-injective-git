@@ -1,5 +1,10 @@
 # Next Injective Git（`igit`）
 
+> [!IMPORTANT]
+> **维护状态：Injective CosmWasm 合约分支已停止维护**
+>
+> `main-cosmwasm` 仅用于保留历史代码和最后一个版本 [`v0.5.1-rc.1`](https://github.com/Hny0305Lin/next-injective-git/releases/tag/v0.5.1-rc.1)，不再接收新的功能或维护更新。项目后续合约开发已转向 Injective EVM，请使用 [`main`](https://github.com/Hny0305Lin/next-injective-git/tree/main) 分支。
+
 [![芯异构（浩瀚银河福州）/next-injective-git](https://gitee.com/haohanyh_0591/next-injective-git/widgets/widget_card.svg?colors=4183c4,ffffff,ffffff,48adf0,ed136a,080808)](https://gitee.com/haohanyh_0591/next-injective-git)
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](#license)
