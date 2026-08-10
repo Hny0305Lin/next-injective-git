@@ -71,8 +71,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: "1.22"
-          # zero-dependency module: no go.sum to key a cache on
-          cache: false
+          cache-dependency-path: cli/go.sum
 
       - name: vet
         run: go vet ./...
@@ -106,6 +105,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+
+      - name: validate bootstrap shell script
+        run: bash -n scripts/bootstrap-push.sh
+
+      - name: validate bootstrap PowerShell script
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path scripts/bootstrap-push.ps1),
+            [ref]$tokens,
+            [ref]$errors
+          ) > $null
+          if ($errors.Count) {
+            $errors | Format-List | Out-String | Write-Error
+          }
 
       - uses: actions/setup-go@v6
         with:

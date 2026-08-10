@@ -113,22 +113,57 @@ flowchart LR
 
 ### 依赖
 
-- Git（`igit` 委托 Git 生成和导入 packfile）
-- Go 1.22+（从源码安装 CLI）
+- Clone / Fetch 只需要 Git、`igit` 和 `git-remote-igit`
+- 从源码安装 CLI 时需要 Go 1.22+；发布版二进制不需要 Go
 - Node.js + npm（仅开发 Web UI）
-- Push 额外需要 [Kubo](https://docs.ipfs.tech/install/command-line/) 和 [injectived](https://docs.injective.network/)；Clone / Fetch 不需要二者
+- Push 额外需要 [Kubo](https://docs.ipfs.tech/install/command-line/) 和 [injectived](https://docs.injective.network/)；`igit setup push` 会安装经过 SHA-256 校验的锁定版本
 - 编译合约需要 **Rust 1.81.0** 和 `wasm32-unknown-unknown` target；Injective VM 会拒绝新工具链生成的 reference-types / bulk-memory 指令
-- Windows 没有原生 `injectived`，需要 Push 或部署合约时请在 WSL2 中运行整套工具链
+- Windows 没有原生 `injectived`；Push 使用 WSL2 全家桶，不混用 Windows Git、WSL signer 和两套文件路径
 
 ### 1. 安装 CLI
+
+Windows + WSL2（推荐）可从源码 checkout 一次完成 CLI、Kubo、`injectived` 和 testnet key 的安装：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap-push.ps1 -Yes -CreateKey dev
+```
+
+首次注册 WSL 时脚本会创建普通 Linux 用户；默认名称来自 Windows 用户名，也可用 `-LinuxUser alice` 指定。
+
+已有 WSL 发行版时，正式发布的 Windows `igit.exe` 也支持：
+
+```powershell
+.\igit-windows-amd64.exe setup push --wsl Ubuntu-24.04 --yes --create-key dev
+```
+
+它会在 WSL2 中安装同版本 Linux CLI，并先用 release `checksums.txt` 校验 `igit` 和 remote helper。Linux 源码 checkout 可运行：
+
+```bash
+bash scripts/bootstrap-push.sh --yes --create-key dev
+```
+
+只开发或使用 Clone / Fetch 时仍可轻量安装：
 
 ```bash
 cd cli
 go install ./cmd/igit ./cmd/git-remote-igit
 igit version
+igit doctor --clone
 ```
 
 `igit` 和 `git-remote-igit` 都必须在 `PATH` 中。若安装后找不到命令，请将 `go env GOPATH` 下的 `bin` 目录加入 `PATH`。
+
+已有 CLI 的 Linux 用户可直接准备 Push 环境：
+
+```bash
+igit setup push                 # 交互确认，不覆盖可工作的现有工具
+igit setup push --yes           # 非交互安装
+igit setup push --no-kubo       # Kubo 由用户自行管理
+igit setup upgrade --yes        # 强制刷新 igit 管理的锁定依赖
+igit setup status               # 等价于完整 Push doctor
+```
+
+依赖版本、下载地址和 SHA-256 固定在 `cli/internal/bootstrap/deps.json`；托管文件位于 `~/.igit/deps` 和 `~/.igit/bin`。完整行为与排错见 [Push 环境安装](docs/push-setup.md)。
 
 ### 2. Clone 公开演示仓库
 
@@ -141,7 +176,7 @@ igit clone igit://hny0305lin/demo-showcase
 
 ### 3. 创建并 Push 仓库
 
-创建 testnet key，并到 [Injective testnet faucet](https://testnet.faucet.injective.network/) 领取测试 INJ 作为 gas：
+若 setup 时没有使用 `--create-key`，先创建 testnet key。然后到 [Injective testnet faucet](https://testnet.faucet.injective.network/) 领取测试 INJ 作为 gas：
 
 ```bash
 igit key new dev
@@ -151,12 +186,10 @@ igit key show                                  # 显示需要充值的 inj1... �
 Push 使用受控复制服务。CLI 会从 `https://www.igit.xyz/api/upload-authorization` 自动取得十分钟有效的 Ed25519 身份令牌，并在过期前刷新；US 持久节点和 HK 热层节点的 Swarm 地址已经内置，无需手工复制 Token 或 Peer。
 
 ```bash
-# 终端 A：保持本地 Kubo 运行
-ipfs daemon
-```
+# setup 会初始化并在后台启动 Kubo；先确认所有硬性检查通过
+igit doctor --push
 
-```bash
-# 终端 B：创建链上仓库并推送现有本地仓库
+# 创建链上仓库并推送现有本地仓库
 igit init hello "my first on-chain repo"
 REMOTE=$(igit clone-url hello)
 

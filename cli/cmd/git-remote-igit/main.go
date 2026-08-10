@@ -11,6 +11,7 @@ import (
 
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/chain"
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/config"
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/environment"
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/gitio"
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/i18n"
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/ipfs"
@@ -78,5 +79,10 @@ func run() error {
 		gitRepo,
 		os.Stdin, os.Stdout, os.Stderr,
 	)
+	helper.SetPushPreflight(func(needsKubo bool) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		defer cancel()
+		return environment.PushPreflight(ctx, cfg, needsKubo)
+	})
 	return helper.Run()
 }

@@ -1,0 +1,49 @@
+{
+  "kubo": {
+    "version": "0.42.0",
+    "artifacts": {
+      "linux-amd64": {
+        "urls": ["https://gateway.pinata.cloud/ipfs/bafybeidj4doei6ccdjcxckb5iv3pmtskk5q4rgxx6wn76ih5hzhzk3try4", "https://igit-us.haohanyh.ovh/ipfs/bafybeidj4doei6ccdjcxckb5iv3pmtskk5q4rgxx6wn76ih5hzhzk3try4", "https://dist.ipfs.tech/kubo/v0.42.0/kubo_v0.42.0_linux-amd64.tar.gz", "https://github.com/ipfs/kubo/releases/download/v0.42.0/kubo_v0.42.0_linux-amd64.tar.gz"],
+        "sha256": "284145534168b51fe980f73c90f0ce84b55ca293034836b2ba8ea8f93435116e",
+        "archive": "tar.gz",
+        "files": { "kubo/ipfs": "ipfs" }
+      },
+      "linux-arm64": {
+        "urls": ["https://gateway.pinata.cloud/ipfs/bafybeiabuv2cxua6urf653chliu7j4x6lisa5xe5w5zscbpqzwc237h7ce", "https://igit-us.haohanyh.ovh/ipfs/bafybeiabuv2cxua6urf653chliu7j4x6lisa5xe5w5zscbpqzwc237h7ce", "https://dist.ipfs.tech/kubo/v0.42.0/kubo_v0.42.0_linux-arm64.tar.gz", "https://github.com/ipfs/kubo/releases/download/v0.42.0/kubo_v0.42.0_linux-arm64.tar.gz"],
+        "sha256": "edc6f485ab623f9327bf2ad7aa7a29d84c87c72f1e2584376a77240134a96e69",
+        "archive": "tar.gz",
+        "files": { "kubo/ipfs": "ipfs" }
+      },
+      "darwin-amd64": {
+        "urls": ["https://gateway.pinata.cloud/ipfs/bafybeia4x3w444mekjbaoezsqmrbi55riwxirjqqgv46mgob4v6u5olmgu", "https://igit-us.haohanyh.ovh/ipfs/bafybeia4x3w444mekjbaoezsqmrbi55riwxirjqqgv46mgob4v6u5olmgu", "https://dist.ipfs.tech/kubo/v0.42.0/kubo_v0.42.0_darwin-amd64.tar.gz", "https://github.com/ipfs/kubo/releases/download/v0.42.0/kubo_v0.42.0_darwin-amd64.tar.gz"],
+        "sha256": "5428553058f8097682fb21c6545916ff97752342471f7e09c43ad8ffe24b67f8",
+        "archive": "tar.gz",
+        "files": { "kubo/ipfs": "ipfs" }
+      },
+      "darwin-arm64": {
+        "urls": ["https://gateway.pinata.cloud/ipfs/bafybeibqocwwxdw5djgqxa3qr33qgtvtpr7yvewqkeqlvuh7eiuuor5j4a", "https://igit-us.haohanyh.ovh/ipfs/bafybeibqocwwxdw5djgqxa3qr33qgtvtpr7yvewqkeqlvuh7eiuuor5j4a", "https://dist.ipfs.tech/kubo/v0.42.0/kubo_v0.42.0_darwin-arm64.tar.gz", "https://github.com/ipfs/kubo/releases/download/v0.42.0/kubo_v0.42.0_darwin-arm64.tar.gz"],
+        "sha256": "677d86730d9200fa10150b11942bbb4c293f5055dafc999dd392f08cbf196d48",
+        "archive": "tar.gz",
+        "files": { "kubo/ipfs": "ipfs" }
+      }
+    }
+  },
+  "injectived": {
+    "version": "1.17.2",
+    "artifacts": {
+      "linux-amd64": {
+        "urls": [
+          "https://registry.npmjs.org/injective-core-linux-x64/-/injective-core-linux-x64-1.17.2.tgz",
+          "https://registry.npmmirror.com/injective-core-linux-x64/-/injective-core-linux-x64-1.17.2.tgz"
+        ],
+        "sha256": "36d33db09f641024a6087b640b6f51d823175fb027844993645e03066bb1c19d",
+        "archive": "tar.gz+tar.zst",
+        "payload": "package/bin/injectived.tar.zst",
+        "files": {
+          "injectived-linux-x64": "injectived",
+          "libwasmvm.x86_64.so": "libwasmvm.x86_64.so"
+        }
+      }
+    }
+  }
+}

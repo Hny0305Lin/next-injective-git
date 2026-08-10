@@ -76,6 +76,9 @@ Usage:
   igit key new <name>                  create a key in the injectived keyring
   igit gateway status                  probe HK/US read-only gateway health
   igit gateway select                  print the automatically selected order
+	igit doctor [--clone|--push] [--json] diagnose tools, config and services
+	igit setup push [options]             prepare the complete push environment
+	igit setup status [--json]            show push environment status
   igit config list                     show current configuration
   igit config set <key> <value>        set a configuration value
   igit config unset <key>              clear a configuration override
@@ -83,7 +86,7 @@ Usage:
 
 Config keys:
   contract_address chain_id lcd_endpoint node key_name keyring_backend
-  injectived_bin gas_prices ipfs_api ipfs_gateway
+  injectived_bin gas_prices ipfs_bin ipfs_api ipfs_gateway
   upload.endpoint upload.authorization_endpoint upload.authorization
   upload.us_peer upload.hk_peer
 
@@ -142,13 +145,17 @@ const usageChinese = `igit - Next Injective Git（Injective + IPFS）
   igit key new <name>                  在 injectived keyring 中创建密钥
   igit gateway status                  探测 HK/US 只读网关健康状态
   igit gateway select                  输出自动选择的顺序
+  igit doctor [--clone|--push] [--json] 诊断工具、配置和服务
+  igit setup push [选项]               准备完整 Push 环境
+  igit setup status [--json]           显示 Push 环境状态
   igit config list                     显示当前配置
   igit config set <key> <value>        设置配置项
+  igit config unset <key>              清除配置覆盖
   igit version                         输出版本
 
 配置项：
   contract_address chain_id lcd_endpoint node key_name keyring_backend
-  injectived_bin gas_prices ipfs_api ipfs_gateway
+  injectived_bin gas_prices ipfs_bin ipfs_api ipfs_gateway
   upload.endpoint upload.authorization_endpoint upload.authorization
   upload.us_peer upload.hk_peer
 
@@ -223,6 +230,10 @@ func run(args []string) error {
 		return cmdKey(cfg, args[1:])
 	case "gateway":
 		return cmdGateway(cfg, args[1:])
+	case "doctor":
+		return cmdDoctor(cfg, args[1:])
+	case "setup":
+		return cmdSetup(cfg, args[1:])
 	case "config":
 		return cmdConfig(cfg, args[1:])
 	case "version":
@@ -1358,6 +1369,8 @@ func setConfigField(cfg *config.Config, key, value string) error {
 		cfg.GasPrices = value
 	case "ipfs_api":
 		cfg.IPFSAPI = value
+	case "ipfs_bin":
+		cfg.IPFSBin = value
 	case "ipfs_gateway":
 		cfg.IPFSGateway = value
 	case "upload.endpoint":

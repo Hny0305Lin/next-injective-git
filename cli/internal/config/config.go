@@ -37,6 +37,9 @@ type Config struct {
 	// pushing a temporary pack. It is never a clone/fetch dependency.
 	// The json name is kept for backwards compatible config files.
 	IPFSAPI string `json:"ipfs_api"`
+	// IPFSBin is the Kubo CLI used by setup and diagnostics. Push data still
+	// travels through IPFSAPI, so the remote helper never shells out to it.
+	IPFSBin string `json:"ipfs_bin"`
 	// IPFSGateway is used as a fallback for downloads, e.g. "https://ipfs.io".
 	// Deprecated: use Gateways for an ordered, health-checked set. This field is
 	// retained so existing config files keep working and can still add one custom
@@ -81,8 +84,9 @@ type Upload struct {
 }
 
 const (
-	DefaultUSUploadPeer = "/ip4/162.35.187.224/tcp/4001/p2p/12D3KooWBGyxqNM3q6nHvacFfqnwoXP2uXxP36uSPab2p16ywfFS"
-	DefaultHKUploadPeer = "/dns4/igit-hk.haohanyh.ovh/tcp/4001/p2p/12D3KooWRfRoRqEyC4Qsb4ow2yfGsSAAymTFSxj6vr2SYQnxk55W"
+	DefaultContractAddress = "inj1mg6x7ht3zyyszed9aq67q6kd0y5rtq7wf756jh"
+	DefaultUSUploadPeer    = "/ip4/162.35.187.224/tcp/4001/p2p/12D3KooWBGyxqNM3q6nHvacFfqnwoXP2uXxP36uSPab2p16ywfFS"
+	DefaultHKUploadPeer    = "/dns4/igit-hk.haohanyh.ovh/tcp/4001/p2p/12D3KooWRfRoRqEyC4Qsb4ow2yfGsSAAymTFSxj6vr2SYQnxk55W"
 )
 
 // Tunnel is retained only so older internal profiles can still be parsed by
@@ -108,6 +112,7 @@ func Defaults() Config {
 		InjectivedBin:  "injectived",
 		GasPrices:      "500000000inj",
 		IPFSAPI:        "http://127.0.0.1:5001",
+		IPFSBin:        "ipfs",
 		IPFSGateway:    "https://igit-hk.haohanyh.ovh",
 		Gateways: []Gateway{
 			{Name: "hk", URL: "https://igit-hk.haohanyh.ovh"},

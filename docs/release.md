@@ -44,6 +44,12 @@ The chain record, not the GitHub asset metadata, is the authoritative checksum
 source. The contract address and admin key used for registration must be
 configured separately and must never be committed to the repository.
 
+The tagged Windows `igit` binary also uses `checksums.txt` when bootstrapping
+its matching Linux `igit` and `git-remote-igit` assets into WSL2. Push runtime
+dependencies are separately pinned in the binary's embedded
+`cli/internal/bootstrap/deps.json`; setup verifies those upstream artifacts
+before extraction.
+
 ## Upgrade governance
 
 The contract admin should be a production multisig. Before a version upgrade,

@@ -25,6 +25,7 @@ type Helper struct {
 	replication replication.Authorizer
 	uploadPeers []string
 	git         gitRepo
+	preflight   func(needsKubo bool) error
 
 	in  *bufio.Scanner
 	out io.Writer
@@ -32,6 +33,12 @@ type Helper struct {
 
 	// remoteRefs caches the on-chain refs fetched during `list`.
 	remoteRefs map[string]chain.RefInfo
+}
+
+// SetPushPreflight installs a callback that runs once per push batch before
+// any ref is resolved or packed.
+func (h *Helper) SetPushPreflight(preflight func(needsKubo bool) error) {
+	h.preflight = preflight
 }
 
 type chainClient interface {
@@ -221,6 +228,22 @@ func (h *Helper) cmdPushBatch(first string) error {
 		}
 		if strings.HasPrefix(line, "push ") {
 			specs = append(specs, parsePushSpec(line))
+		}
+	}
+	if h.preflight != nil {
+		needsKubo := false
+		for _, spec := range specs {
+			if spec.src != "" {
+				needsKubo = true
+				break
+			}
+		}
+		if err := h.preflight(needsKubo); err != nil {
+			for _, spec := range specs {
+				h.printf("error %s %s\n", spec.dst, sanitizeErr(err))
+			}
+			h.printf("\n")
+			return nil
 		}
 	}
 

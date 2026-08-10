@@ -191,3 +191,33 @@ Probe date: 2026-08-04 (repository-local fixture).
   production run still requires the deployed mainnet contract, real 3/5 and
   technical multisig addresses, configured username policy, and recorded
   governance transactions.
+
+## Push bootstrap and clean WSL acceptance
+
+Probe date: 2026-08-09 (Windows 11, WSL 2.7.11, Ubuntu 24.04).
+
+- The only existing WSL distribution was shut down and unregistered after a
+  credential-only backup was hashed and access-restricted outside WSL. The
+  distribution list then reported that no Linux distributions were installed.
+- `scripts/bootstrap-push.ps1 -Distro Ubuntu-24.04 -LinuxUser beginner -Yes
+  -CreateKey dev` registered the locally installed Ubuntu AppX rootfs, created
+  a non-root default user, installed Git and Go 1.22 without recommended build
+  packages, built both igit binaries, and persisted both managed bin paths.
+- The setup downloaded the official `injective-core-linux-x64@1.17.2` package
+  and Kubo `0.42.0`, reported download progress, and accepted them only after
+  matching the SHA-256 values embedded in `deps.json`. The nested Zstandard
+  payload and `libwasmvm` wrapper ran without npm, Node.js, or a system zstd.
+- A fresh testnet key was created. `igit setup status --json` returned success
+  with Git, remote helper, contract, LCD, gateway, signer, RPC, Kubo CLI/API,
+  and upload authorization all `OK`; the only non-OK result was the expected
+  `WARN` for an unfunded new key.
+- Kubo was enabled as `igit-kubo.service`. After a complete `wsl --shutdown`
+  and restart, the default user remained non-root, the service was `active`,
+  all hard doctor checks still passed, and the managed `igit`, `injectived`,
+  and `ipfs` commands were available in a login shell.
+- A clean `igit clone igit://hny0305lin/demo-showcase` completed through the
+  health-selected HTTPS gateway. The checkout was clean on `main` at commit
+  `1d299f0c944e5611d382ce86fced6a7d7516b407`.
+- A live on-chain Push was intentionally not claimed: the newly created key
+  has zero testnet INJ. Faucet funding remains the explicit final prerequisite
+  before creating a repository or broadcasting `update_ref`.
