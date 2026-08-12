@@ -199,7 +199,12 @@ func (s *service) replicate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "US pin failed", http.StatusBadGateway)
 		return
 	}
-	hash, err := s.kuboSHA256(req.CID)
+	hash, size, err := s.kuboVerify(req.CID, req.Size)
+	if err == nil && size != req.Size {
+		// The declared size is what the rate limiter and the upload quota were
+		// charged for, so content that does not match it must never stay pinned.
+		err = fmt.Errorf("pinned content is %d bytes, authorization declared %d", size, req.Size)
+	}
 	if err != nil || !hmac.Equal([]byte(hash), []byte(req.PackSHA256)) {
 		_ = s.kuboPost("/api/v0/pin/rm?arg="+url.QueryEscape(req.CID), nil, nil)
 		if err == nil {
@@ -379,24 +384,31 @@ func (s *service) kuboPost(path string, body io.Reader, out io.Writer) error {
 	return nil
 }
 
-func (s *service) kuboSHA256(cid string) (string, error) {
+// kuboVerify streams the pinned content back from Kubo and returns its SHA-256
+// together with the exact number of bytes read. Reading one byte past the
+// declared size lets the caller reject oversized content instead of hashing a
+// prefix of it: the client picks both the bytes and the declared digest, so a
+// prefix-only check would let an arbitrarily large object be pinned under a
+// small authorization.
+func (s *service) kuboVerify(cid string, want int64) (string, int64, error) {
 	req, err := http.NewRequest(http.MethodPost, s.kuboAPI+"/api/v0/cat?arg="+url.QueryEscape(cid), nil)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	resp, err := s.http.Do(req)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("Kubo cat HTTP %d", resp.StatusCode)
+		return "", 0, fmt.Errorf("Kubo cat HTTP %d", resp.StatusCode)
 	}
 	h := sha256.New()
-	if _, err = io.Copy(h, io.LimitReader(resp.Body, s.maxBytes+1)); err != nil {
-		return "", err
+	n, err := io.Copy(h, io.LimitReader(resp.Body, want+1))
+	if err != nil {
+		return "", 0, err
 	}
-	return fmt.Sprintf("%x", h.Sum(nil)), nil
+	return fmt.Sprintf("%x", h.Sum(nil)), n, nil
 }
 
 func (s *service) loadState() error {
