@@ -3,6 +3,7 @@ import { useWallet } from "../../lib/WalletContext";
 import { WalletModal } from "../../components/WalletModal";
 import {
   formatError,
+  sponsorWithEconomicModule,
   type AppConfig,
 } from "../../lib/chain";
 import { getEvmProvider, sponsorWithKeplr } from "../../lib/wallet";
@@ -11,10 +12,14 @@ export default function SponsorForm({
   cfg,
   addr,
   repo,
+  repoId,
+  backend,
 }: {
   cfg: AppConfig;
   addr: string;
   repo: string;
+  repoId: string | null;
+  backend: "evm" | "cosmwasm";
 }) {
   const { connected, walletModalOpen, openWalletModal, closeWalletModal, refreshBalance } = useWallet();
   const [amount, setAmount] = useState("0.1");
@@ -34,7 +39,15 @@ export default function SponsorForm({
       setTxhash("");
       try {
         let hash: string;
-        if (connected.kind === "cosmos") {
+        if (backend === "evm") {
+          if (!repoId) throw new Error("EVM repository has no stable repository ID");
+          if (connected.kind !== "evm") {
+            throw new Error("Connect an EVM wallet to sponsor this V2 repository");
+          }
+          const provider = getEvmProvider(connected.id);
+          if (!provider) throw new Error(`${connected.label} not available`);
+          hash = await sponsorWithEconomicModule(provider, cfg, repoId, amount, message);
+        } else if (connected.kind === "cosmos") {
           hash = await sponsorWithKeplr(connected.cosmos, cfg, addr, repo, amount, message.trim());
         } else {
           const provider = getEvmProvider(connected.id);
@@ -52,7 +65,7 @@ export default function SponsorForm({
         setBusy(false);
       }
     },
-    [connected, cfg, addr, repo, amount, message],
+    [connected, cfg, addr, repo, repoId, backend, amount, message, refreshBalance],
   );
 
   return (

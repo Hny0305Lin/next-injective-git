@@ -1,0 +1,8 @@
+{
+  "name": "igit-evm-v2-contracts",
+  "private": true,
+  "version": "0.0.0",
+  "devDependencies": {
+    "solc": "0.8.24"
+  }
+}

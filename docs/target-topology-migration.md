@@ -1,9 +1,27 @@
-# 目标拓扑与迁移方案
+# IPFS 数据面拓扑与迁移方案
 
-本文描述 iGit 的目标架构，和 [`infrastructure.md`](./infrastructure.md) 中已经部署的 as-built 状态分开维护。只有完成实际部署、验证和监控切换后，才应更新 as-built 文档。
+本文保留现有 IPFS/Kubo 受控复制数据面的拓扑和运维步骤，和
+[`infrastructure.md`](./infrastructure.md) 中已经部署的 as-built 状态分开维护。
+链上从 CosmWasm V1 到 EVM V2 的产品迁移规范见
+[`evm-v2-migration.md`](./evm-v2-migration.md)。两份文档有意分开：链上
+backend 切换不会自动证明 Kubo 生命周期可用。CLI 已加入 Windows/Linux
+Kubo-only installer，隔离 Windows daemon smoke 已通过；仍需在清洁机器验证
+完整 Push 和失败恢复。
 
 当前迁移状态：US 受控复制数据面已 staged 部署并通过授权/Pin/hash/JTI 验收；
-主网合约、正式身份签发、TTL reaper 和 post-`update_ref` GC 仍是发布前待办。
+主网数据面、正式身份签发、TTL reaper 和 post-`update_ref` GC 仍是发布前待办；
+EVM V2 合约核心和 CLI backend 抽象处于 alpha 开发阶段，尚未替代 testnet
+上的 CosmWasm V1 写路径。
+
+## 与链上迁移的边界
+
+| 数据面职责 | 迁移期间的规定 |
+|---|---|
+| Git packfile 生成 | remote helper 继续委托本地 Git，V1/V2 均使用相同 pack 规则 |
+| 临时 CID 与 Pin | 由独立 IPFS/Kubo backend 负责，不与 Cosmos/EVM signer 绑定 |
+| ref 写入确认 | 只有选中的 registry backend 返回 receipt/交易成功后才完成 push |
+| Clone/Fetch | 先按 V2/V1 读取顺序解析 ref，再通过只读 HTTPS 网关取 CID |
+| 双写 | 禁止同一仓库同时向两个合约写入 |
 
 ## 目标拓扑
 

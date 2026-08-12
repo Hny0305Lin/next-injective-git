@@ -5,3 +5,6 @@
 Cargo.lock text eol=lf
 *.rs text eol=lf
 *.go text eol=lf
+
+# Documentation is UTF-8 and uses LF on every platform.
+*.md text eol=lf

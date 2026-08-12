@@ -2,9 +2,10 @@ use cosmwasm_std::{coins, Addr};
 use cw_multi_test::{App, ContractWrapper, Executor};
 
 use repo_registry::msg::{
-    BadgesResponse, ExecuteMsg, InstantiateMsg, ListRefsResponse, ListReposResponse, MigrateMsg,
-    ModerationReportResponse, QueryMsg, ReleaseArtifactsResponse, ReleaseArtifactInput, RepoInfoResponse,
-    ResolveRefResponse, SplitRecipient, SponsorTotalsResponse,
+    BadgesResponse, ExecuteMsg, InstantiateMsg, ListCollaboratorsResponse, ListRefsResponse,
+    ListReposResponse, MigrateMsg, ModerationReportResponse, OwnershipSecurityResponse, QueryMsg,
+    ReleaseArtifactInput, ReleaseArtifactsResponse, RepoInfoResponse, ResolveRefResponse,
+    RevenueSplitsResponse, SplitRecipient, SponsorTotalsResponse,
 };
 use repo_registry::state::{ModerationStatus, Role};
 use repo_registry::ContractError;
@@ -96,6 +97,19 @@ fn update_ref_msg(
     }
 }
 
+fn repo_info(env: &TestEnv, owner: &Addr, repo: &str) -> RepoInfoResponse {
+    env.app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::RepoInfo {
+                owner: owner.to_string(),
+                repo: repo.to_string(),
+            },
+        )
+        .unwrap()
+}
+
 #[test]
 fn create_repo_and_query_info() {
     let mut env = setup();
@@ -135,6 +149,344 @@ fn create_repo_and_query_info() {
         err.downcast::<ContractError>().unwrap(),
         ContractError::RepoExists { .. }
     ));
+}
+
+#[test]
+fn update_repo_info_patches_fields_clears_values_and_preserves_repo_state() {
+    let mut env = setup();
+    let (alice, bob) = (env.alice.clone(), env.bob.clone());
+    create_repo(&mut env, &alice, "hello");
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &update_ref_msg(
+                &alice,
+                "hello",
+                "refs/heads/main",
+                SHA_A,
+                vec!["cid1"],
+                None,
+                false,
+            ),
+            &[],
+        )
+        .unwrap();
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::SetCollaborator {
+                repo: "hello".to_string(),
+                collaborator: bob.to_string(),
+                role: Some(Role::Maintainer),
+            },
+            &[],
+        )
+        .unwrap();
+
+    let before = repo_info(&env, &alice, "hello");
+    let refs_before: ListRefsResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::ListRefs {
+                owner: alice.to_string(),
+                repo: "hello".to_string(),
+                start_after: None,
+                limit: None,
+            },
+        )
+        .unwrap();
+    let collaborators_before: ListCollaboratorsResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::ListCollaborators {
+                owner: alice.to_string(),
+                repo: "hello".to_string(),
+                start_after: None,
+                limit: None,
+            },
+        )
+        .unwrap();
+
+    env.app
+        .update_block(|block| block.time = block.time.plus_seconds(10));
+    let response = env
+        .app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::UpdateRepoInfo {
+                repo: "hello".to_string(),
+                description: Some("updated description".to_string()),
+                default_branch: None,
+            },
+            &[],
+        )
+        .unwrap();
+
+    let wasm_event = response
+        .events
+        .iter()
+        .find(|event| event.ty == "wasm")
+        .expect("metadata update must emit wasm attributes");
+    for (key, value) in [
+        ("action", "update_repo_info"),
+        ("owner", alice.as_str()),
+        ("repo", "hello"),
+    ] {
+        assert!(
+            wasm_event
+                .attributes
+                .iter()
+                .any(|attribute| attribute.key == key && attribute.value == value),
+            "missing {key}={value} in {wasm_event:?}"
+        );
+    }
+
+    let after_description = repo_info(&env, &alice, "hello");
+    assert_eq!(after_description.description, "updated description");
+    assert_eq!(after_description.default_branch, before.default_branch);
+    assert_eq!(after_description.owner, before.owner);
+    assert_eq!(after_description.name, before.name);
+    assert_eq!(after_description.created_at, before.created_at);
+    assert_eq!(
+        after_description.moderation_status,
+        before.moderation_status
+    );
+    assert_eq!(after_description.forked_from, before.forked_from);
+
+    env.app
+        .update_block(|block| block.time = block.time.plus_seconds(10));
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::UpdateRepoInfo {
+                repo: "hello".to_string(),
+                description: None,
+                default_branch: Some("develop".to_string()),
+            },
+            &[],
+        )
+        .unwrap();
+    let after_branch = repo_info(&env, &alice, "hello");
+    assert_eq!(after_branch.description, "updated description");
+    assert_eq!(after_branch.default_branch, "develop");
+
+    env.app
+        .update_block(|block| block.time = block.time.plus_seconds(10));
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::UpdateRepoInfo {
+                repo: "hello".to_string(),
+                description: Some(String::new()),
+                default_branch: Some(String::new()),
+            },
+            &[],
+        )
+        .unwrap();
+    let after_clear = repo_info(&env, &alice, "hello");
+    assert_eq!(after_clear.description, "");
+    assert_eq!(after_clear.default_branch, "");
+
+    let refs_after: ListRefsResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::ListRefs {
+                owner: alice.to_string(),
+                repo: "hello".to_string(),
+                start_after: None,
+                limit: None,
+            },
+        )
+        .unwrap();
+    let collaborators_after: ListCollaboratorsResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::ListCollaborators {
+                owner: alice.to_string(),
+                repo: "hello".to_string(),
+                start_after: None,
+                limit: None,
+            },
+        )
+        .unwrap();
+    assert_eq!(refs_after, refs_before);
+    assert_eq!(collaborators_after, collaborators_before);
+}
+
+#[test]
+fn update_repo_info_none_fields_still_advances_updated_at() {
+    let mut env = setup();
+    let alice = env.alice.clone();
+    create_repo(&mut env, &alice, "hello");
+    let before = repo_info(&env, &alice, "hello");
+
+    env.app
+        .update_block(|block| block.time = block.time.plus_seconds(17));
+    let expected_updated_at = env.app.block_info().time.seconds();
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::UpdateRepoInfo {
+                repo: "hello".to_string(),
+                description: None,
+                default_branch: None,
+            },
+            &[],
+        )
+        .unwrap();
+
+    let mut expected = before.clone();
+    expected.updated_at = expected_updated_at;
+    assert_eq!(repo_info(&env, &alice, "hello"), expected);
+    assert!(expected_updated_at > before.updated_at);
+}
+
+#[test]
+fn update_repo_info_is_owner_only() {
+    let mut env = setup();
+    let (alice, bob, carol) = (env.alice.clone(), env.bob.clone(), env.carol.clone());
+    let stranger = env.app.api().addr_make("stranger");
+    create_repo(&mut env, &alice, "hello");
+    for (collaborator, role) in [(&bob, Role::Maintainer), (&carol, Role::Reader)] {
+        env.app
+            .execute_contract(
+                alice.clone(),
+                env.contract.clone(),
+                &ExecuteMsg::SetCollaborator {
+                    repo: "hello".to_string(),
+                    collaborator: collaborator.to_string(),
+                    role: Some(role),
+                },
+                &[],
+            )
+            .unwrap();
+    }
+
+    for sender in [&bob, &carol, &stranger] {
+        let err = env
+            .app
+            .execute_contract(
+                sender.clone(),
+                env.contract.clone(),
+                &ExecuteMsg::UpdateRepoInfo {
+                    repo: "hello".to_string(),
+                    description: Some("tampered".to_string()),
+                    default_branch: None,
+                },
+                &[],
+            )
+            .unwrap_err();
+        match err.downcast::<ContractError>().unwrap() {
+            ContractError::RepoNotFound { owner, name } => {
+                assert_eq!(owner, sender.to_string());
+                assert_eq!(name, "hello");
+            }
+            other => panic!("unexpected metadata authorization error: {other:?}"),
+        }
+    }
+    assert_eq!(repo_info(&env, &alice, "hello").description, "test repo");
+
+    // UpdateRepoInfo always targets the sender's namespace. A maintainer with
+    // an independently owned same-name repo updates that repo, not the target.
+    create_repo(&mut env, &bob, "hello");
+    env.app
+        .execute_contract(
+            bob.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::UpdateRepoInfo {
+                repo: "hello".to_string(),
+                description: Some("bob's repo".to_string()),
+                default_branch: None,
+            },
+            &[],
+        )
+        .unwrap();
+    assert_eq!(repo_info(&env, &alice, "hello").description, "test repo");
+    assert_eq!(repo_info(&env, &bob, "hello").description, "bob's repo");
+}
+
+#[test]
+fn update_repo_info_is_allowed_while_delisted_or_frozen() {
+    let mut env = setup();
+    let (moderator, owner) = (env.alice.clone(), env.bob.clone());
+    create_repo(&mut env, &owner, "moderated");
+
+    env.app
+        .execute_contract(
+            moderator.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::SetModerationStatus {
+                owner: owner.to_string(),
+                repo: "moderated".to_string(),
+                status: ModerationStatus::Delisted,
+                reason_hash: None,
+            },
+            &[],
+        )
+        .unwrap();
+    env.app
+        .update_block(|block| block.time = block.time.plus_seconds(5));
+    env.app
+        .execute_contract(
+            owner.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::UpdateRepoInfo {
+                repo: "moderated".to_string(),
+                description: Some("delisted metadata".to_string()),
+                default_branch: None,
+            },
+            &[],
+        )
+        .unwrap();
+    let delisted = repo_info(&env, &owner, "moderated");
+    assert_eq!(delisted.description, "delisted metadata");
+    assert_eq!(delisted.moderation_status, ModerationStatus::Delisted);
+
+    env.app
+        .execute_contract(
+            moderator,
+            env.contract.clone(),
+            &ExecuteMsg::SetModerationStatus {
+                owner: owner.to_string(),
+                repo: "moderated".to_string(),
+                status: ModerationStatus::Frozen,
+                reason_hash: None,
+            },
+            &[],
+        )
+        .unwrap();
+    env.app
+        .update_block(|block| block.time = block.time.plus_seconds(5));
+    env.app
+        .execute_contract(
+            owner.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::UpdateRepoInfo {
+                repo: "moderated".to_string(),
+                description: None,
+                default_branch: Some("frozen-branch".to_string()),
+            },
+            &[],
+        )
+        .unwrap();
+    let frozen = repo_info(&env, &owner, "moderated");
+    assert_eq!(frozen.description, "delisted metadata");
+    assert_eq!(frozen.default_branch, "frozen-branch");
+    assert_eq!(frozen.moderation_status, ModerationStatus::Frozen);
 }
 
 #[test]
@@ -607,6 +959,567 @@ fn transfer_ownership_moves_refs() {
         err.downcast::<ContractError>().unwrap(),
         ContractError::Unauthorized {}
     ));
+}
+
+#[test]
+fn transfer_ownership_cancel_collisions_and_recovery_are_mutually_exclusive() {
+    let mut env = setup();
+    let (alice, bob, carol) = (env.alice.clone(), env.bob.clone(), env.carol.clone());
+    create_repo(&mut env, &alice, "hello");
+
+    let same_owner = env
+        .app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::TransferOwnership {
+                repo: "hello".to_string(),
+                new_owner: alice.to_string(),
+            },
+            &[],
+        )
+        .unwrap_err();
+    assert!(matches!(
+        same_owner.downcast::<ContractError>().unwrap(),
+        ContractError::InvalidGuardians { .. }
+    ));
+
+    create_repo(&mut env, &bob, "hello");
+    let collision = env
+        .app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::TransferOwnership {
+                repo: "hello".to_string(),
+                new_owner: bob.to_string(),
+            },
+            &[],
+        )
+        .unwrap_err();
+    assert!(matches!(
+        collision.downcast::<ContractError>().unwrap(),
+        ContractError::RepoExists { .. }
+    ));
+
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::SetGuardians {
+                repo: "hello".to_string(),
+                guardians: vec![bob.to_string()],
+                threshold: 1,
+            },
+            &[],
+        )
+        .unwrap();
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::TransferOwnership {
+                repo: "hello".to_string(),
+                new_owner: carol.to_string(),
+            },
+            &[],
+        )
+        .unwrap();
+
+    let security: OwnershipSecurityResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::OwnershipSecurity {
+                owner: alice.to_string(),
+                repo: "hello".to_string(),
+            },
+        )
+        .unwrap();
+    let pending = security.transfer.expect("pending transfer");
+    assert_eq!(pending.new_owner, carol.to_string());
+    assert_eq!(
+        pending.execute_after - pending.proposed_at,
+        7 * 24 * 60 * 60
+    );
+
+    let duplicate = env
+        .app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::TransferOwnership {
+                repo: "hello".to_string(),
+                new_owner: carol.to_string(),
+            },
+            &[],
+        )
+        .unwrap_err();
+    assert!(matches!(
+        duplicate.downcast::<ContractError>().unwrap(),
+        ContractError::OwnershipTransferPending {}
+    ));
+
+    let unauthorized_accept = env
+        .app
+        .execute_contract(
+            bob.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::AcceptOwnership {
+                owner: alice.to_string(),
+                repo: "hello".to_string(),
+            },
+            &[],
+        )
+        .unwrap_err();
+    assert!(matches!(
+        unauthorized_accept.downcast::<ContractError>().unwrap(),
+        ContractError::Unauthorized {}
+    ));
+
+    let recovery_during_transfer = env
+        .app
+        .execute_contract(
+            bob.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::ProposeRecovery {
+                owner: alice.to_string(),
+                repo: "hello".to_string(),
+                new_owner: carol.to_string(),
+            },
+            &[],
+        )
+        .unwrap_err();
+    assert!(matches!(
+        recovery_during_transfer
+            .downcast::<ContractError>()
+            .unwrap(),
+        ContractError::OwnershipTransferPending {}
+    ));
+
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::CancelOwnershipTransfer {
+                repo: "hello".to_string(),
+            },
+            &[],
+        )
+        .unwrap();
+    let after_cancel: OwnershipSecurityResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::OwnershipSecurity {
+                owner: alice.to_string(),
+                repo: "hello".to_string(),
+            },
+        )
+        .unwrap();
+    assert!(after_cancel.transfer.is_none());
+
+    let accept_cancelled = env
+        .app
+        .execute_contract(
+            carol.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::AcceptOwnership {
+                owner: alice.to_string(),
+                repo: "hello".to_string(),
+            },
+            &[],
+        )
+        .unwrap_err();
+    assert!(matches!(
+        accept_cancelled.downcast::<ContractError>().unwrap(),
+        ContractError::NoOwnershipTransfer {}
+    ));
+
+    env.app
+        .execute_contract(
+            bob.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::ProposeRecovery {
+                owner: alice.to_string(),
+                repo: "hello".to_string(),
+                new_owner: carol.to_string(),
+            },
+            &[],
+        )
+        .unwrap();
+    let transfer_during_recovery = env
+        .app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::TransferOwnership {
+                repo: "hello".to_string(),
+                new_owner: carol.to_string(),
+            },
+            &[],
+        )
+        .unwrap_err();
+    assert!(matches!(
+        transfer_during_recovery
+            .downcast::<ContractError>()
+            .unwrap(),
+        ContractError::RecoveryPending {}
+    ));
+}
+
+#[test]
+fn transfer_ownership_preserves_and_resets_v1_extension_state() {
+    let (mut env, _treasury) = setup_funded();
+    let (alice, bob, carol) = (env.alice.clone(), env.bob.clone(), env.carol.clone());
+    create_repo(&mut env, &alice, "stateful");
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::UpdateRepoInfo {
+                repo: "stateful".to_string(),
+                description: Some("state survives transfer".to_string()),
+                default_branch: Some("release".to_string()),
+            },
+            &[],
+        )
+        .unwrap();
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &update_ref_msg(
+                &alice,
+                "stateful",
+                "refs/heads/release",
+                SHA_A,
+                vec!["cid1", "cid2"],
+                None,
+                false,
+            ),
+            &[],
+        )
+        .unwrap();
+    for (collaborator, role) in [(&carol, Role::Maintainer), (&bob, Role::Reader)] {
+        env.app
+            .execute_contract(
+                alice.clone(),
+                env.contract.clone(),
+                &ExecuteMsg::SetCollaborator {
+                    repo: "stateful".to_string(),
+                    collaborator: collaborator.to_string(),
+                    role: Some(role),
+                },
+                &[],
+            )
+            .unwrap();
+    }
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::SetRevenueSplits {
+                repo: "stateful".to_string(),
+                splits: vec![SplitRecipient {
+                    address: carol.to_string(),
+                    bps: 1000,
+                }],
+            },
+            &[],
+        )
+        .unwrap();
+    env.app
+        .execute_contract(
+            bob.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::Sponsor {
+                owner: alice.to_string(),
+                repo: "stateful".to_string(),
+                message: Some("before transfer".to_string()),
+            },
+            &coins(INJ, "inj"),
+        )
+        .unwrap();
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::SetGuardians {
+                repo: "stateful".to_string(),
+                guardians: vec![carol.to_string()],
+                threshold: 1,
+            },
+            &[],
+        )
+        .unwrap();
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::AwardBadge {
+                repo: "stateful".to_string(),
+                recipient: carol.to_string(),
+                reason: "before transfer".to_string(),
+            },
+            &[],
+        )
+        .unwrap();
+    env.app
+        .execute_contract(
+            carol.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::SubmitModerationReport {
+                owner: alice.to_string(),
+                repo: "stateful".to_string(),
+                reason_hash: "report-before-transfer".to_string(),
+            },
+            &[],
+        )
+        .unwrap();
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::SetModerationStatus {
+                owner: alice.to_string(),
+                repo: "stateful".to_string(),
+                status: ModerationStatus::Delisted,
+                reason_hash: Some("delisted-before-transfer".to_string()),
+            },
+            &[],
+        )
+        .unwrap();
+
+    let before_repo = repo_info(&env, &alice, "stateful");
+    let before_refs: ListRefsResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::ListRefs {
+                owner: alice.to_string(),
+                repo: "stateful".to_string(),
+                start_after: None,
+                limit: None,
+            },
+        )
+        .unwrap();
+
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::TransferOwnership {
+                repo: "stateful".to_string(),
+                new_owner: bob.to_string(),
+            },
+            &[],
+        )
+        .unwrap();
+    env.app
+        .update_block(|block| block.time = block.time.plus_seconds(7 * 24 * 60 * 60));
+    env.app
+        .execute_contract(
+            bob.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::AcceptOwnership {
+                owner: alice.to_string(),
+                repo: "stateful".to_string(),
+            },
+            &[],
+        )
+        .unwrap();
+
+    let moved = repo_info(&env, &bob, "stateful");
+    assert_eq!(moved.owner, bob.to_string());
+    assert_eq!(moved.description, before_repo.description);
+    assert_eq!(moved.default_branch, before_repo.default_branch);
+    assert_eq!(moved.created_at, before_repo.created_at);
+    assert_eq!(moved.updated_at, before_repo.updated_at);
+    assert_eq!(moved.moderation_status, ModerationStatus::Delisted);
+    assert_eq!(moved.forked_from, before_repo.forked_from);
+    assert!(env
+        .app
+        .wrap()
+        .query_wasm_smart::<RepoInfoResponse>(
+            &env.contract,
+            &QueryMsg::RepoInfo {
+                owner: alice.to_string(),
+                repo: "stateful".to_string(),
+            },
+        )
+        .is_err());
+
+    let moved_refs: ListRefsResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::ListRefs {
+                owner: bob.to_string(),
+                repo: "stateful".to_string(),
+                start_after: None,
+                limit: None,
+            },
+        )
+        .unwrap();
+    assert_eq!(moved_refs.refs, before_refs.refs);
+
+    let collaborators: ListCollaboratorsResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::ListCollaborators {
+                owner: bob.to_string(),
+                repo: "stateful".to_string(),
+                start_after: None,
+                limit: None,
+            },
+        )
+        .unwrap();
+    assert_eq!(collaborators.collaborators.len(), 1);
+    assert_eq!(collaborators.collaborators[0].address, carol.to_string());
+    assert_eq!(collaborators.collaborators[0].role, Role::Maintainer);
+
+    let splits: RevenueSplitsResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::RevenueSplits {
+                owner: bob.to_string(),
+                repo: "stateful".to_string(),
+            },
+        )
+        .unwrap();
+    assert!(splits.splits.is_empty());
+
+    let totals: SponsorTotalsResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::SponsorTotals {
+                owner: bob.to_string(),
+                repo: "stateful".to_string(),
+            },
+        )
+        .unwrap();
+    assert_eq!(totals.totals.len(), 1);
+    assert_eq!(totals.totals[0].amount.u128(), INJ);
+
+    let security: OwnershipSecurityResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::OwnershipSecurity {
+                owner: bob.to_string(),
+                repo: "stateful".to_string(),
+            },
+        )
+        .unwrap();
+    assert!(security.guardians.is_empty());
+    assert_eq!(security.guardian_threshold, 0);
+    assert!(security.transfer.is_none());
+    assert!(security.recovery.is_none());
+
+    let old_badges: BadgesResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::BadgesByRepo {
+                owner: alice.to_string(),
+                repo: "stateful".to_string(),
+                start_after: None,
+                limit: None,
+            },
+        )
+        .unwrap();
+    let moved_badges: BadgesResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::BadgesByRepo {
+                owner: bob.to_string(),
+                repo: "stateful".to_string(),
+                start_after: None,
+                limit: None,
+            },
+        )
+        .unwrap();
+    assert_eq!(old_badges.badges.len(), 1);
+    assert_eq!(old_badges.badges[0].repo_owner, alice);
+    assert!(moved_badges.badges.is_empty());
+
+    let report: ModerationReportResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(&env.contract, &QueryMsg::ModerationReport { report_id: 1 })
+        .unwrap();
+    assert_eq!(report.owner, alice.to_string());
+    assert_eq!(report.repo, "stateful");
+}
+
+#[test]
+fn transfer_ownership_is_allowed_while_frozen_or_delisted() {
+    let mut env = setup();
+    let (alice, bob) = (env.alice.clone(), env.bob.clone());
+    for (repo, status) in [
+        ("frozen-transfer", ModerationStatus::Frozen),
+        ("delisted-transfer", ModerationStatus::Delisted),
+    ] {
+        create_repo(&mut env, &alice, repo);
+        env.app
+            .execute_contract(
+                alice.clone(),
+                env.contract.clone(),
+                &ExecuteMsg::SetModerationStatus {
+                    owner: alice.to_string(),
+                    repo: repo.to_string(),
+                    status,
+                    reason_hash: None,
+                },
+                &[],
+            )
+            .unwrap();
+        env.app
+            .execute_contract(
+                alice.clone(),
+                env.contract.clone(),
+                &ExecuteMsg::TransferOwnership {
+                    repo: repo.to_string(),
+                    new_owner: bob.to_string(),
+                },
+                &[],
+            )
+            .unwrap();
+    }
+    env.app
+        .update_block(|block| block.time = block.time.plus_seconds(7 * 24 * 60 * 60));
+    for (repo, status) in [
+        ("frozen-transfer", ModerationStatus::Frozen),
+        ("delisted-transfer", ModerationStatus::Delisted),
+    ] {
+        env.app
+            .execute_contract(
+                bob.clone(),
+                env.contract.clone(),
+                &ExecuteMsg::AcceptOwnership {
+                    owner: alice.to_string(),
+                    repo: repo.to_string(),
+                },
+                &[],
+            )
+            .unwrap();
+        assert_eq!(repo_info(&env, &bob, repo).moderation_status, status);
+    }
 }
 
 #[test]
@@ -1231,6 +2144,378 @@ fn fork_copies_refs_and_records_source() {
     ));
 }
 
+#[test]
+fn fork_copies_only_v1_metadata_and_ref_snapshot() {
+    let (mut env, _treasury) = setup_funded();
+    let (alice, bob, carol) = (env.alice.clone(), env.bob.clone(), env.carol.clone());
+    create_repo(&mut env, &alice, "source");
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::UpdateRepoInfo {
+                repo: "source".to_string(),
+                description: Some("fork snapshot".to_string()),
+                default_branch: Some("release".to_string()),
+            },
+            &[],
+        )
+        .unwrap();
+    for (ref_name, sha, cid) in [
+        ("refs/heads/release", SHA_A, "release-cid"),
+        ("refs/tags/v1", SHA_B, "tag-cid"),
+    ] {
+        env.app
+            .execute_contract(
+                alice.clone(),
+                env.contract.clone(),
+                &update_ref_msg(&alice, "source", ref_name, sha, vec![cid], None, false),
+                &[],
+            )
+            .unwrap();
+    }
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::SetCollaborator {
+                repo: "source".to_string(),
+                collaborator: carol.to_string(),
+                role: Some(Role::Maintainer),
+            },
+            &[],
+        )
+        .unwrap();
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::SetRevenueSplits {
+                repo: "source".to_string(),
+                splits: vec![SplitRecipient {
+                    address: carol.to_string(),
+                    bps: 1000,
+                }],
+            },
+            &[],
+        )
+        .unwrap();
+    env.app
+        .execute_contract(
+            bob.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::Sponsor {
+                owner: alice.to_string(),
+                repo: "source".to_string(),
+                message: None,
+            },
+            &coins(INJ, "inj"),
+        )
+        .unwrap();
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::SetGuardians {
+                repo: "source".to_string(),
+                guardians: vec![carol.to_string()],
+                threshold: 1,
+            },
+            &[],
+        )
+        .unwrap();
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::AwardBadge {
+                repo: "source".to_string(),
+                recipient: carol.to_string(),
+                reason: "source-only badge".to_string(),
+            },
+            &[],
+        )
+        .unwrap();
+    env.app
+        .execute_contract(
+            carol.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::SubmitModerationReport {
+                owner: alice.to_string(),
+                repo: "source".to_string(),
+                reason_hash: "source-only-report".to_string(),
+            },
+            &[],
+        )
+        .unwrap();
+
+    env.app
+        .update_block(|block| block.time = block.time.plus_seconds(60));
+    let forked_at = env.app.block_info().time.seconds();
+    let response = env
+        .app
+        .execute_contract(
+            bob.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::ForkRepo {
+                owner: alice.to_string(),
+                repo: "source".to_string(),
+                name: Some("copy".to_string()),
+            },
+            &[],
+        )
+        .unwrap();
+    let wasm_event = response
+        .events
+        .iter()
+        .find(|event| event.ty == "wasm")
+        .expect("fork must emit wasm attributes");
+    for (key, value) in [
+        ("action", "fork_repo"),
+        ("source_owner", alice.as_str()),
+        ("source_repo", "source"),
+        ("owner", bob.as_str()),
+        ("repo", "copy"),
+        ("refs", "2"),
+    ] {
+        assert!(
+            wasm_event
+                .attributes
+                .iter()
+                .any(|attribute| attribute.key == key && attribute.value == value),
+            "missing {key}={value} in {wasm_event:?}"
+        );
+    }
+
+    let fork = repo_info(&env, &bob, "copy");
+    assert_eq!(fork.description, "fork snapshot");
+    assert_eq!(fork.default_branch, "release");
+    assert_eq!(fork.created_at, forked_at);
+    assert_eq!(fork.updated_at, forked_at);
+    assert_eq!(fork.moderation_status, ModerationStatus::Active);
+    assert_eq!(fork.forked_from, Some(format!("{alice}/source")));
+
+    let fork_refs: ListRefsResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::ListRefs {
+                owner: bob.to_string(),
+                repo: "copy".to_string(),
+                start_after: None,
+                limit: Some(100),
+            },
+        )
+        .unwrap();
+    assert_eq!(fork_refs.refs.len(), 2);
+    for entry in &fork_refs.refs {
+        assert_eq!(entry.updated_at, forked_at);
+        assert_eq!(entry.updated_by, bob.to_string());
+    }
+    let release = fork_refs
+        .refs
+        .iter()
+        .find(|entry| entry.ref_name == "refs/heads/release")
+        .expect("release ref");
+    assert_eq!(release.commit_sha, SHA_A);
+    assert_eq!(release.pack_uris, vec!["ipfs://release-cid"]);
+
+    let collaborators: ListCollaboratorsResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::ListCollaborators {
+                owner: bob.to_string(),
+                repo: "copy".to_string(),
+                start_after: None,
+                limit: None,
+            },
+        )
+        .unwrap();
+    assert!(collaborators.collaborators.is_empty());
+    let splits: RevenueSplitsResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::RevenueSplits {
+                owner: bob.to_string(),
+                repo: "copy".to_string(),
+            },
+        )
+        .unwrap();
+    assert!(splits.splits.is_empty());
+    let totals: SponsorTotalsResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::SponsorTotals {
+                owner: bob.to_string(),
+                repo: "copy".to_string(),
+            },
+        )
+        .unwrap();
+    assert!(totals.totals.is_empty());
+    let security: OwnershipSecurityResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::OwnershipSecurity {
+                owner: bob.to_string(),
+                repo: "copy".to_string(),
+            },
+        )
+        .unwrap();
+    assert!(security.guardians.is_empty());
+    assert_eq!(security.guardian_threshold, 0);
+    let badges: BadgesResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::BadgesByRepo {
+                owner: bob.to_string(),
+                repo: "copy".to_string(),
+                start_after: None,
+                limit: None,
+            },
+        )
+        .unwrap();
+    assert!(badges.badges.is_empty());
+
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::SetModerationStatus {
+                owner: alice.to_string(),
+                repo: "source".to_string(),
+                status: ModerationStatus::Delisted,
+                reason_hash: None,
+            },
+            &[],
+        )
+        .unwrap();
+    let delisted = env
+        .app
+        .execute_contract(
+            carol,
+            env.contract.clone(),
+            &ExecuteMsg::ForkRepo {
+                owner: alice.to_string(),
+                repo: "source".to_string(),
+                name: Some("delisted-copy".to_string()),
+            },
+            &[],
+        )
+        .unwrap_err();
+    assert!(matches!(
+        delisted.downcast::<ContractError>().unwrap(),
+        ContractError::RepoFrozen { .. }
+    ));
+}
+
+#[test]
+fn fork_copies_refs_beyond_the_default_query_page() {
+    let mut env = setup();
+    let (alice, bob) = (env.alice.clone(), env.bob.clone());
+    create_repo(&mut env, &alice, "many-refs");
+    for index in 0..35 {
+        env.app
+            .execute_contract(
+                alice.clone(),
+                env.contract.clone(),
+                &ExecuteMsg::UpdateRef {
+                    owner: alice.to_string(),
+                    repo: "many-refs".to_string(),
+                    ref_name: format!("refs/heads/branch-{index:03}"),
+                    commit_sha: SHA_A.to_string(),
+                    pack_uris: vec![format!("ipfs://cid-{index:03}")],
+                    expected_sha: None,
+                    force: false,
+                },
+                &[],
+            )
+            .unwrap();
+    }
+
+    let response = env
+        .app
+        .execute_contract(
+            bob.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::ForkRepo {
+                owner: alice.to_string(),
+                repo: "many-refs".to_string(),
+                name: None,
+            },
+            &[],
+        )
+        .unwrap();
+    let wasm_event = response
+        .events
+        .iter()
+        .find(|event| event.ty == "wasm")
+        .expect("fork must emit wasm attributes");
+    assert!(wasm_event
+        .attributes
+        .iter()
+        .any(|attribute| attribute.key == "refs" && attribute.value == "35"));
+
+    let first_page: ListRefsResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::ListRefs {
+                owner: bob.to_string(),
+                repo: "many-refs".to_string(),
+                start_after: None,
+                limit: None,
+            },
+        )
+        .unwrap();
+    assert_eq!(first_page.refs.len(), 30);
+    let second_page: ListRefsResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::ListRefs {
+                owner: bob.to_string(),
+                repo: "many-refs".to_string(),
+                start_after: Some(
+                    first_page
+                        .refs
+                        .last()
+                        .expect("first page ref")
+                        .ref_name
+                        .clone(),
+                ),
+                limit: None,
+            },
+        )
+        .unwrap();
+    assert_eq!(second_page.refs.len(), 5);
+    let last: ResolveRefResponse = env
+        .app
+        .wrap()
+        .query_wasm_smart(
+            &env.contract,
+            &QueryMsg::ResolveRef {
+                owner: bob.to_string(),
+                repo: "many-refs".to_string(),
+                ref_name: "refs/heads/branch-034".to_string(),
+            },
+        )
+        .unwrap();
+    assert_eq!(last.pack_uris, vec!["ipfs://cid-034"]);
+}
+
 // ---- v3: sponsorship, revenue splits, usernames ----
 
 #[test]
@@ -1353,6 +2638,45 @@ fn award_badge_and_trophy_wall() {
                 repo: "hello".to_string(),
                 recipient: bob.to_string(),
                 reason: "frozen".to_string(),
+            },
+            &[],
+        )
+        .unwrap_err();
+    assert!(matches!(
+        err.downcast::<ContractError>().unwrap(),
+        ContractError::RepoFrozen { .. }
+    ));
+}
+
+#[test]
+fn award_badge_rejects_delisted_repo_like_frozen_repo() {
+    let mut env = setup();
+    let (alice, bob) = (env.alice.clone(), env.bob.clone());
+    create_repo(&mut env, &alice, "delisted-badge");
+
+    env.app
+        .execute_contract(
+            alice.clone(),
+            env.contract.clone(),
+            &ExecuteMsg::SetModerationStatus {
+                owner: alice.to_string(),
+                repo: "delisted-badge".to_string(),
+                status: ModerationStatus::Delisted,
+                reason_hash: Some("characterize-delisted-badge".to_string()),
+            },
+            &[],
+        )
+        .unwrap();
+
+    let err = env
+        .app
+        .execute_contract(
+            alice,
+            env.contract.clone(),
+            &ExecuteMsg::AwardBadge {
+                repo: "delisted-badge".to_string(),
+                recipient: bob.to_string(),
+                reason: "delisted parity".to_string(),
             },
             &[],
         )

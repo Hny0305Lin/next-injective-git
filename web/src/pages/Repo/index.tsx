@@ -1,16 +1,29 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { FileCode2, GitCommit, GitBranch, Users, Copy, Check } from "lucide-react";
+import { FileCode2, GitCommit, GitBranch, Users, Copy, Check, Pencil, Save, X, ArrowRightLeft } from "lucide-react";
 import { loadConfig } from "../../lib/chain";
 import { showToast } from "../../components/Toast";
 import {
+  formatError,
   listRefs,
-  repoInfo,
+  resolveRepo,
   resolveOwner,
   type RefInfo,
   type RepoInfo,
+  type ResolvedRepo,
   formatResourceError,
+  updateRepoInfoWithEvm,
+  pendingOwnershipTransferWithEvm,
+  beginOwnershipTransferWithEvm,
+  cancelOwnershipTransferWithEvm,
+  rejectOwnershipTransferWithEvm,
+  expireOwnershipTransferWithEvm,
+  acceptOwnershipWithEvm,
+  ownershipTransferCapabilities,
+  type PendingOwnershipTransfer,
 } from "../../lib/chain";
+import { useWallet } from "../../lib/WalletContext";
+import { getEvmProvider } from "../../lib/wallet";
 import { getRepoStore } from "../../lib/gitstore";
 import TreeView from "./TreeView";
 import BlobView from "./BlobView";
@@ -26,22 +39,38 @@ export default function Repo() {
   const repo = params.repo ?? "";
   const splat = params["*"] ?? "";
   const cfg = useMemo(() => loadConfig(), []);
+  const { connected } = useWallet();
   const [addr, setAddr] = useState("");
   const [info, setInfo] = useState<RepoInfo | null>(null);
+  const [resolvedRepo, setResolvedRepo] = useState<ResolvedRepo | null>(null);
   const [refs, setRefs] = useState<RefInfo[]>([]);
   const [err, setErr] = useState("");
   const [copied, setCopied] = useState(false);
   const [cloneProtocol, setCloneProtocol] = useState<"igit" | "https">("igit");
+  const [editingMetadata, setEditingMetadata] = useState(false);
+  const [draftDescription, setDraftDescription] = useState("");
+  const [draftBranch, setDraftBranch] = useState("");
+  const [savingMetadata, setSavingMetadata] = useState(false);
+  const [metadataError, setMetadataError] = useState("");
+  const [pendingTransfer, setPendingTransfer] = useState<PendingOwnershipTransfer | null>(null);
+  const [transferLoaded, setTransferLoaded] = useState(false);
+  const [transferTarget, setTransferTarget] = useState("");
+  const [transferBusy, setTransferBusy] = useState(false);
+  const [transferError, setTransferError] = useState("");
 
   useEffect(() => {
     setErr("");
     setInfo(null);
+    setResolvedRepo(null);
     (async () => {
       try {
         const a = await resolveOwner(cfg, owner);
         setAddr(a);
-        const [ri, rf] = await Promise.all([repoInfo(cfg, a, repo), listRefs(cfg, a, repo)]);
-        setInfo(ri);
+        const identity = await resolveRepo(cfg, a, repo);
+        const rf = await listRefs(cfg, a, repo);
+        setResolvedRepo(identity);
+        setAddr(identity.canonical.owner);
+        setInfo(identity.info);
         setRefs(rf);
       } catch (e) {
         setErr(formatResourceError(e, "repository"));
@@ -49,8 +78,47 @@ export default function Repo() {
     })();
   }, [owner, repo, cfg]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setTransferLoaded(false);
+    setTransferError("");
+    if (!resolvedRepo?.repoId || resolvedRepo.backend !== "evm" || !cfg.evmContract) {
+      setPendingTransfer(null);
+      return () => { cancelled = true; };
+    }
+    void pendingOwnershipTransferWithEvm(cfg, resolvedRepo.repoId)
+      .then((pending) => {
+        if (!cancelled) {
+          setPendingTransfer(pending);
+          setTransferLoaded(true);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setPendingTransfer(null);
+          setTransferLoaded(true);
+          setTransferError(formatError(error));
+        }
+      });
+    return () => { cancelled = true; };
+  }, [cfg, resolvedRepo?.repoId, resolvedRepo?.backend]);
+
+  useEffect(() => {
+    if (!editingMetadata) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !savingMetadata) setEditingMetadata(false);
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [editingMetadata, savingMetadata]);
+
   if (err) return <div className="error" role="alert">{err}</div>;
-  if (!info) return <div className="spinner" aria-live="polite">querying chain…</div>;
+  if (!info || !resolvedRepo) return <div className="spinner" aria-live="polite">querying chain…</div>;
 
   const fallbackRef =
     shortRef(
@@ -60,7 +128,8 @@ export default function Repo() {
     ) || info.default_branch;
   const view = parseView(splat, fallbackRef);
   const base = `/${owner}/${repo}`;
-  const store = getRepoStore(`${addr}/${repo}`);
+  const canonicalBase = `/${resolvedRepo?.canonical.owner ?? addr}/${resolvedRepo?.canonical.name ?? repo}`;
+  const store = getRepoStore(resolvedRepo?.repoId ?? `${resolvedRepo?.canonical.owner ?? addr}/${repo}`);
   const current = view.kind === "commit" ? undefined : findRef(refs, view.ref);
 
   const tab =
@@ -74,9 +143,132 @@ export default function Repo() {
   const branchesCount = refs.filter((r) => r.ref_name.startsWith("refs/heads/")).length;
   const tagsCount = refs.filter((r) => r.ref_name.startsWith("refs/tags/")).length;
   const packfilesCount = current?.pack_uris?.length ?? 0;
+  const canEditMetadata =
+    resolvedRepo?.isCanonical === true &&
+    connected?.kind === "evm" &&
+    connected.address === addr &&
+    /^0x[0-9a-fA-F]{40}$/.test(cfg.evmContract);
+  const canManageOwnership =
+    resolvedRepo.backend === "evm" &&
+    resolvedRepo.isCanonical &&
+    connected?.kind === "evm" &&
+    /^0x[0-9a-fA-F]{40}$/.test(cfg.evmContract) &&
+    Boolean(resolvedRepo.repoId);
+  const isCurrentOwner = canManageOwnership && connected?.address === resolvedRepo.canonical.owner;
+  const badgeProvider =
+    isCurrentOwner && /^0x[0-9a-fA-F]{40}$/.test(cfg.evmBadgeModule) && connected?.kind === "evm"
+      ? getEvmProvider(connected.id)
+      : undefined;
+  const economicProvider =
+    isCurrentOwner && /^0x[0-9a-fA-F]{40}$/.test(cfg.evmEconomicModule) && connected?.kind === "evm"
+      ? getEvmProvider(connected.id)
+      : undefined;
+  const transferCapabilities = ownershipTransferCapabilities(
+    pendingTransfer,
+    canManageOwnership ? connected?.address ?? "" : "",
+    resolvedRepo.canonical.owner,
+  );
+
+  const runOwnershipAction = async (
+    action: (provider: NonNullable<ReturnType<typeof getEvmProvider>>, repoId: string) => Promise<string>,
+  ) => {
+    if (!canManageOwnership || !connected || connected.kind !== "evm" || !resolvedRepo.repoId) return;
+    const provider = getEvmProvider(connected.id);
+    if (!provider) {
+      setTransferError(`${connected.label} is no longer available`);
+      return;
+    }
+    setTransferBusy(true);
+    setTransferError("");
+    try {
+      await action(provider, resolvedRepo.repoId);
+      const refreshed = await pendingOwnershipTransferWithEvm(cfg, resolvedRepo.repoId);
+      setPendingTransfer(refreshed);
+      setTransferLoaded(true);
+      const refreshedRepo = await resolveRepo(
+        cfg,
+        resolvedRepo.requested.owner,
+        resolvedRepo.requested.name,
+      );
+      setResolvedRepo(refreshedRepo);
+      setAddr(refreshedRepo.canonical.owner);
+      setInfo(refreshedRepo.info);
+      showToast("Ownership transfer updated");
+    } catch (error) {
+      setTransferError(formatError(error));
+    } finally {
+      setTransferBusy(false);
+    }
+  };
+
+  const beginTransfer = async () => {
+    if (!canManageOwnership || !isCurrentOwner || !connected || connected.kind !== "evm" || !resolvedRepo.repoId) return;
+    const provider = getEvmProvider(connected.id);
+    if (!provider) {
+      setTransferError(`${connected.label} is no longer available`);
+      return;
+    }
+    setTransferBusy(true);
+    setTransferError("");
+    try {
+      await beginOwnershipTransferWithEvm(provider, cfg, resolvedRepo.repoId, transferTarget.trim());
+      setPendingTransfer(await pendingOwnershipTransferWithEvm(cfg, resolvedRepo.repoId));
+      setTransferLoaded(true);
+      setTransferTarget("");
+      showToast("Ownership transfer started");
+    } catch (error) {
+      setTransferError(formatError(error));
+    } finally {
+      setTransferBusy(false);
+    }
+  };
+
+  const openMetadataEditor = () => {
+    setDraftDescription(info.description);
+    setDraftBranch(info.default_branch);
+    setMetadataError("");
+    setEditingMetadata(true);
+  };
+
+  const saveMetadata = async () => {
+    if (!canEditMetadata || !connected || connected.kind !== "evm") return;
+    const descriptionChanged = draftDescription !== info.description;
+    const branchChanged = draftBranch !== info.default_branch;
+    if (!descriptionChanged && !branchChanged) {
+      setEditingMetadata(false);
+      return;
+    }
+    const provider = getEvmProvider(connected.id);
+    if (!provider) {
+      setMetadataError(`${connected.label} is no longer available`);
+      return;
+    }
+    setSavingMetadata(true);
+    setMetadataError("");
+    try {
+      await updateRepoInfoWithEvm(provider, cfg, repo, {
+        ...(descriptionChanged ? { description: draftDescription } : {}),
+        ...(branchChanged ? { defaultBranch: draftBranch } : {}),
+      });
+      const refreshed = await resolveRepo(cfg, addr, repo);
+      setResolvedRepo(refreshed);
+      setInfo(refreshed.info);
+      setEditingMetadata(false);
+      showToast("Repository updated");
+    } catch (error) {
+      setMetadataError(formatError(error));
+    } finally {
+      setSavingMetadata(false);
+    }
+  };
 
   return (
     <div>
+      {resolvedRepo && !resolvedRepo.isCanonical && (
+        <div className="repo-moved-notice" role="status">
+          This repository has moved. <Link to={canonicalBase}>Open the current location</Link>.
+        </div>
+      )}
       <div className="repo-head">
         <div className="repo-head-top">
           <span className="repo-icon">
@@ -86,8 +278,8 @@ export default function Repo() {
             </svg>
           </span>
           <h2>
-            <Link to={`/${owner}`} className="owner-link">
-              {owner.startsWith("inj1") ? `${owner.slice(0, 12)}…` : owner}
+            <Link to={`/${resolvedRepo.canonical.owner}`} className="owner-link">
+              {resolvedRepo.canonical.owner.startsWith("inj1") ? `${resolvedRepo.canonical.owner.slice(0, 12)}…` : resolvedRepo.canonical.owner}
             </Link>
             {" / "}
             <b>{repo}</b>
@@ -122,8 +314,8 @@ export default function Repo() {
                 <option value="igit">igit://</option>
                 <option value="https">https://</option>
               </select>
-              <code title={cloneProtocol === "igit" ? `igit clone igit://${owner}/${repo}` : `${cloneProtocol}://${owner}/${repo}`}>
-                {cloneProtocol === "igit" ? `igit clone igit://${owner}/${repo}` : `${cloneProtocol}://${owner}/${repo}`}
+              <code title={cloneProtocol === "igit" ? `igit clone igit://${resolvedRepo.canonical.owner}/${resolvedRepo.canonical.name}` : `${cloneProtocol}://${resolvedRepo.canonical.owner}/${resolvedRepo.canonical.name}`}>
+                {cloneProtocol === "igit" ? `igit clone igit://${resolvedRepo.canonical.owner}/${resolvedRepo.canonical.name}` : `${cloneProtocol}://${resolvedRepo.canonical.owner}/${resolvedRepo.canonical.name}`}
               </code>
             </div>
             <button
@@ -131,8 +323,8 @@ export default function Repo() {
               style={{ padding: "3px 8px", fontSize: "0.78rem" }}
               onClick={async () => {
                 const url = cloneProtocol === "igit"
-                  ? `igit clone igit://${owner}/${repo}`
-                  : `${cloneProtocol}://${owner}/${repo}`;
+                  ? `igit clone igit://${resolvedRepo.canonical.owner}/${resolvedRepo.canonical.name}`
+                  : `${cloneProtocol}://${resolvedRepo.canonical.owner}/${resolvedRepo.canonical.name}`;
                 try {
                   await navigator.clipboard.writeText(url);
                   setCopied(true);
@@ -148,8 +340,102 @@ export default function Repo() {
               {copied ? <Check size={14} /> : <Copy size={14} />}
             </button>
           </div>
+          {canEditMetadata && (
+            <button
+              className="repo-edit-trigger"
+              type="button"
+              onClick={openMetadataEditor}
+              title="edit repository metadata"
+              aria-label="edit repository metadata"
+            >
+              <Pencil size={15} />
+            </button>
+          )}
         </div>
       </div>
+
+      {canManageOwnership && (isCurrentOwner || pendingTransfer != null) && (
+        <section className="repo-transfer-panel" aria-labelledby="repo-transfer-title">
+          <div className="repo-transfer-heading">
+            <ArrowRightLeft size={16} aria-hidden="true" />
+            <b id="repo-transfer-title">Ownership transfer</b>
+          </div>
+          {!transferLoaded ? (
+            <div className="muted" aria-live="polite">Loading transfer status...</div>
+          ) : !pendingTransfer && isCurrentOwner ? (
+            <form
+              className="repo-transfer-start"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void beginTransfer();
+              }}
+            >
+              <input
+                className="field mono"
+                value={transferTarget}
+                onChange={(event) => setTransferTarget(event.target.value)}
+                placeholder="inj1... or 0x... target address"
+                aria-label="new repository owner"
+                disabled={transferBusy}
+                required
+              />
+              <button type="submit" disabled={transferBusy || transferTarget.trim().length === 0}>
+                Start transfer
+              </button>
+            </form>
+          ) : pendingTransfer ? (
+            <div className="repo-transfer-pending">
+              <div>
+                <span className="muted">Proposed owner</span>{" "}
+                <code>{pendingTransfer.newOwner}</code>
+              </div>
+              <div className="repo-transfer-deadlines muted">
+                Accept after {new Date(pendingTransfer.executeAfter * 1000).toLocaleString()}; expires {new Date(pendingTransfer.expiresAt * 1000).toLocaleString()}.
+              </div>
+              <div className="repo-transfer-actions">
+                {transferCapabilities.canCancel && (
+                  <button
+                    type="button"
+                    disabled={transferBusy}
+                    onClick={() => void runOwnershipAction((provider, repoId) => cancelOwnershipTransferWithEvm(provider, cfg, repoId))}
+                  >
+                    Cancel
+                  </button>
+                )}
+                {transferCapabilities.canReject && (
+                  <>
+                    <button
+                      type="button"
+                      disabled={transferBusy}
+                      onClick={() => void runOwnershipAction((provider, repoId) => rejectOwnershipTransferWithEvm(provider, cfg, repoId))}
+                    >
+                      Reject
+                    </button>
+                    <button
+                      className="repo-transfer-primary"
+                      type="button"
+                      disabled={transferBusy}
+                      onClick={() => void runOwnershipAction((provider, repoId) => acceptOwnershipWithEvm(provider, cfg, repoId))}
+                    >
+                      Accept
+                    </button>
+                  </>
+                )}
+                {transferCapabilities.canExpire && (
+                  <button
+                    type="button"
+                    disabled={transferBusy}
+                    onClick={() => void runOwnershipAction((provider, repoId) => expireOwnershipTransferWithEvm(provider, cfg, repoId))}
+                  >
+                    Clear expired transfer
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : null}
+          {transferError && <div className="error" role="alert">{transferError}</div>}
+        </section>
+      )}
 
       <div className="tabs" role="tablist">
         <Link className={tab === "code" ? "on" : ""} to={base} role="tab">
@@ -183,9 +469,93 @@ export default function Repo() {
       ) : view.kind === "refs" ? (
         <RefsTab refs={refs} base={base} />
       ) : view.kind === "sponsors" ? (
-        <SponsorsTab cfg={cfg} addr={addr} repo={repo} owner={owner} />
+        <SponsorsTab
+          cfg={cfg}
+          addr={resolvedRepo.canonical.owner}
+          repo={resolvedRepo.canonical.name}
+          owner={resolvedRepo.canonical.owner}
+          repoId={resolvedRepo.repoId}
+          backend={resolvedRepo.backend}
+          badgeProvider={badgeProvider}
+          economicProvider={economicProvider}
+        />
       ) : (
         <div className="error" role="alert">ref not found: {view.ref}</div>
+      )}
+
+      {editingMetadata && canEditMetadata && (
+        <div
+          className="modal-overlay"
+          onClick={() => {
+            if (!savingMetadata) setEditingMetadata(false);
+          }}
+        >
+          <div
+            className="modal repo-metadata-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="repo-metadata-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-head">
+              <b id="repo-metadata-title">Repository settings</b>
+              <button
+                className="modal-x"
+                type="button"
+                onClick={() => setEditingMetadata(false)}
+                disabled={savingMetadata}
+                title="close"
+                aria-label="close repository settings"
+              >
+                <X size={17} />
+              </button>
+            </div>
+            <form
+              className="repo-metadata-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void saveMetadata();
+              }}
+            >
+              <label className="repo-metadata-field">
+                <span>Description</span>
+                <textarea
+                  className="field"
+                  value={draftDescription}
+                  maxLength={1024}
+                  rows={4}
+                  autoFocus
+                  disabled={savingMetadata}
+                  onChange={(event) => setDraftDescription(event.target.value)}
+                />
+              </label>
+              <label className="repo-metadata-field">
+                <span>Default branch</span>
+                <input
+                  className="field mono"
+                  value={draftBranch}
+                  maxLength={64}
+                  disabled={savingMetadata}
+                  onChange={(event) => setDraftBranch(event.target.value)}
+                />
+              </label>
+              {metadataError && <div className="error" role="alert">{metadataError}</div>}
+              <div className="repo-metadata-actions">
+                <button
+                  type="button"
+                  onClick={() => setEditingMetadata(false)}
+                  disabled={savingMetadata}
+                >
+                  Cancel
+                </button>
+                <button className="repo-metadata-save" type="submit" disabled={savingMetadata}>
+                  <Save size={15} />
+                  {savingMetadata ? "Saving" : "Save"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

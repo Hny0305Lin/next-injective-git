@@ -57,6 +57,7 @@ type Result struct {
 	Installed     []string
 	Reused        []string
 	KuboStarted   bool
+	KuboPID       int
 }
 
 func LoadManifest() (Manifest, error) {
@@ -72,34 +73,52 @@ func LoadManifest() (Manifest, error) {
 
 func ValidateManifest(manifest Manifest) error {
 	for _, name := range []string{"kubo", "injectived"} {
-		dep, ok := manifest[name]
-		if !ok || strings.TrimSpace(dep.Version) == "" {
-			return fmt.Errorf("dependency manifest is missing %s version", name)
+		if err := validateDependency(name, manifest[name]); err != nil {
+			return err
 		}
-		if len(dep.Artifacts) == 0 {
-			return fmt.Errorf("dependency manifest is missing %s artifacts", name)
+	}
+	return nil
+}
+
+func loadDependency(name string) (Dependency, error) {
+	var manifest Manifest
+	if err := json.Unmarshal(manifestJSON, &manifest); err != nil {
+		return Dependency{}, fmt.Errorf("parse embedded dependency manifest: %w", err)
+	}
+	dep := manifest[name]
+	if err := validateDependency(name, dep); err != nil {
+		return Dependency{}, err
+	}
+	return dep, nil
+}
+
+func validateDependency(name string, dep Dependency) error {
+	if strings.TrimSpace(dep.Version) == "" {
+		return fmt.Errorf("dependency manifest is missing %s version", name)
+	}
+	if len(dep.Artifacts) == 0 {
+		return fmt.Errorf("dependency manifest is missing %s artifacts", name)
+	}
+	for platform, artifact := range dep.Artifacts {
+		if len(artifact.URLs) == 0 {
+			return fmt.Errorf("%s %s artifact has no download URLs", name, platform)
 		}
-		for platform, artifact := range dep.Artifacts {
-			if len(artifact.URLs) == 0 {
-				return fmt.Errorf("%s %s artifact has no download URLs", name, platform)
+		for _, artifactURL := range artifact.URLs {
+			if !strings.HasPrefix(artifactURL, "https://") {
+				return fmt.Errorf("%s %s artifact URL must use HTTPS", name, platform)
 			}
-			for _, artifactURL := range artifact.URLs {
-				if !strings.HasPrefix(artifactURL, "https://") {
-					return fmt.Errorf("%s %s artifact URL must use HTTPS", name, platform)
-				}
-			}
-			if decoded, err := hex.DecodeString(artifact.SHA256); err != nil || len(decoded) != sha256.Size {
-				return fmt.Errorf("%s %s artifact has invalid SHA-256", name, platform)
-			}
-			if artifact.Archive != "zip" && artifact.Archive != "tar.gz" && artifact.Archive != "tar.gz+tar.zst" {
-				return fmt.Errorf("%s %s artifact has unsupported archive %q", name, platform, artifact.Archive)
-			}
-			if artifact.Archive == "tar.gz+tar.zst" && strings.TrimSpace(artifact.Payload) == "" {
-				return fmt.Errorf("%s %s nested artifact has no payload", name, platform)
-			}
-			if len(artifact.Files) == 0 {
-				return fmt.Errorf("%s %s artifact has no files", name, platform)
-			}
+		}
+		if decoded, err := hex.DecodeString(artifact.SHA256); err != nil || len(decoded) != sha256.Size {
+			return fmt.Errorf("%s %s artifact has invalid SHA-256", name, platform)
+		}
+		if artifact.Archive != "zip" && artifact.Archive != "tar.gz" && artifact.Archive != "tar.gz+tar.zst" {
+			return fmt.Errorf("%s %s artifact has unsupported archive %q", name, platform, artifact.Archive)
+		}
+		if artifact.Archive == "tar.gz+tar.zst" && strings.TrimSpace(artifact.Payload) == "" {
+			return fmt.Errorf("%s %s nested artifact has no payload", name, platform)
+		}
+		if len(artifact.Files) == 0 {
+			return fmt.Errorf("%s %s artifact has no files", name, platform)
 		}
 	}
 	return nil
@@ -140,26 +159,67 @@ func Prepare(ctx context.Context, cfg config.Config, opts Options) (config.Confi
 	}
 
 	if !opts.SkipKubo {
-		ipfs, installed, err := ensureDependency(ctx, root, "kubo", cfg.IPFSBin, []string{"version", "--number"}, manifest["kubo"], opts)
-		if err != nil {
+		if err := prepareKubo(ctx, root, &cfg, &result, manifest["kubo"], opts); err != nil {
 			return cfg, result, err
 		}
-		cfg.IPFSBin = ipfs
-		result.IPFSBin = ipfs
-		if installed {
-			result.Installed = append(result.Installed, "Kubo "+manifest["kubo"].Version)
-		} else {
-			result.Reused = append(result.Reused, "Kubo")
-		}
-		if err := StartKubo(ctx, cfg, opts.Progress); err != nil {
-			return cfg, result, err
-		}
-		result.KuboStarted = true
 	}
 	if cfg.ContractAddress == "" {
 		cfg.ContractAddress = config.DefaultContractAddress
 	}
 	return cfg, result, nil
+}
+
+// PrepareKubo installs or reuses Kubo and starts its daemon without loading,
+// checking, or installing injectived. It leaves all chain-specific config
+// fields unchanged.
+func PrepareKubo(ctx context.Context, cfg config.Config, opts Options) (config.Config, Result, error) {
+	if opts.SkipKubo {
+		return cfg, Result{}, nil
+	}
+	dep, err := loadDependency("kubo")
+	if err != nil {
+		return cfg, Result{}, err
+	}
+	if opts.Progress == nil {
+		opts.Progress = io.Discard
+	}
+	if opts.HTTPClient == nil {
+		opts.HTTPClient = &http.Client{Timeout: 30 * time.Minute}
+	}
+	root, err := config.Dir()
+	if err != nil {
+		return cfg, Result{}, err
+	}
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return cfg, Result{}, err
+	}
+
+	result := Result{}
+	if err := prepareKubo(ctx, root, &cfg, &result, dep, opts); err != nil {
+		return cfg, result, err
+	}
+	return cfg, result, nil
+}
+
+func prepareKubo(ctx context.Context, root string, cfg *config.Config, result *Result, dep Dependency, opts Options) error {
+	ipfs, installed, err := ensureDependency(ctx, root, "kubo", cfg.IPFSBin, []string{"version", "--number"}, dep, opts)
+	if err != nil {
+		return err
+	}
+	cfg.IPFSBin = ipfs
+	result.IPFSBin = ipfs
+	if installed {
+		result.Installed = append(result.Installed, "Kubo "+dep.Version)
+	} else {
+		result.Reused = append(result.Reused, "Kubo")
+	}
+	pid, err := startKubo(ctx, *cfg, opts.Progress)
+	result.KuboPID = pid
+	if err != nil {
+		return err
+	}
+	result.KuboStarted = true
+	return nil
 }
 
 func ensureDependency(ctx context.Context, root, name, configured string, versionArgs []string, dep Dependency, opts Options) (string, bool, error) {
@@ -180,13 +240,24 @@ func ensureDependency(ctx context.Context, root, name, configured string, versio
 	if name == "kubo" {
 		binaryName = "ipfs"
 	}
-	rawBinary := filepath.Join(installDir, binaryName)
+	rawBinaryName := binaryName
+	if runtime.GOOS == "windows" {
+		rawBinaryName += ".exe"
+	}
+	rawBinary := filepath.Join(installDir, rawBinaryName)
 	wrapper := filepath.Join(root, "bin", binaryName)
 	if runtime.GOOS == "windows" {
 		wrapper += ".cmd"
 	}
+	managedBinary := wrapper
+	if runtime.GOOS == "windows" {
+		// Store and execute the real .exe. Launching the .cmd wrapper would leave
+		// an extra detached cmd.exe parent around the daemon and complicate clean
+		// shutdown/upgrades; the wrapper remains available for interactive PATH use.
+		managedBinary = rawBinary
+	}
 	if !opts.Force {
-		if binary, ok := workingBinary(ctx, wrapper, versionArgs); ok {
+		if binary, ok := workingBinary(ctx, managedBinary, versionArgs); ok {
 			fmt.Fprintf(opts.Progress, "Using igit-managed %s %s\n", name, dep.Version)
 			return binary, false, nil
 		}
@@ -215,7 +286,7 @@ func ensureDependency(ctx context.Context, root, name, configured string, versio
 	if err := writeWrapper(wrapper, rawBinary, installDir, name == "injectived"); err != nil {
 		return "", false, err
 	}
-	if binary, ok := workingBinary(ctx, wrapper, versionArgs); ok {
+	if binary, ok := workingBinary(ctx, managedBinary, versionArgs); ok {
 		fmt.Fprintf(opts.Progress, "Installed %s %s: %s\n", name, dep.Version, binary)
 		return binary, true, nil
 	}
@@ -569,6 +640,11 @@ func activateManagedInstall(root, staging, target string) error {
 }
 
 func StartKubo(ctx context.Context, cfg config.Config, progress io.Writer) error {
+	_, err := startKubo(ctx, cfg, progress)
+	return err
+}
+
+func startKubo(ctx context.Context, cfg config.Config, progress io.Writer) (int, error) {
 	bin := strings.TrimSpace(cfg.IPFSBin)
 	if bin == "" {
 		bin = "ipfs"
@@ -579,11 +655,11 @@ func StartKubo(ctx context.Context, cfg config.Config, progress io.Writer) error
 		} else {
 			fmt.Fprintln(progress, "Kubo daemon is already reachable")
 		}
-		return nil
+		return 0, nil
 	}
 	initialized, err := kuboRepoInitialized()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if !initialized {
 		fmt.Fprintln(progress, "Initializing the local Kubo repository")
@@ -591,21 +667,21 @@ func StartKubo(ctx context.Context, cfg config.Config, progress io.Writer) error
 		err = exec.CommandContext(initCtx, bin, "init", "--profile=server").Run()
 		initCancel()
 		if err != nil {
-			return fmt.Errorf("initialize Kubo: %w", err)
+			return 0, fmt.Errorf("initialize Kubo: %w", err)
 		}
 	}
 	if installed, _ := ensureKuboUserService(ctx, bin, true, progress); installed {
 		fmt.Fprintln(progress, "Starting Kubo through the user systemd service")
-		return waitForKubo(ctx, cfg.IPFSAPI, "the user systemd service")
+		return 0, waitForKubo(ctx, cfg.IPFSAPI, "the user systemd service")
 	}
 	root, err := config.Dir()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	logPath := filepath.Join(root, "kubo.log")
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	cmd := exec.Command(bin, "daemon", "--enable-gc")
 	cmd.Stdout = logFile
@@ -613,12 +689,13 @@ func StartKubo(ctx context.Context, cfg config.Config, progress io.Writer) error
 	configureDetached(cmd)
 	if err := cmd.Start(); err != nil {
 		logFile.Close()
-		return fmt.Errorf("start Kubo daemon: %w", err)
+		return 0, fmt.Errorf("start Kubo daemon: %w", err)
 	}
+	pid := cmd.Process.Pid
 	_ = cmd.Process.Release()
 	_ = logFile.Close()
 	fmt.Fprintf(progress, "Starting Kubo daemon (log: %s)\n", logPath)
-	return waitForKubo(ctx, cfg.IPFSAPI, logPath)
+	return pid, waitForKubo(ctx, cfg.IPFSAPI, logPath)
 }
 
 func kuboRepoInitialized() (bool, error) {

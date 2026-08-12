@@ -15,16 +15,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: validate release tag
-        env:
-          RELEASE_VERSION: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          if [[ ! "$RELEASE_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "release tag must be a semantic version such as v0.4.0: $RELEASE_VERSION" >&2
-            exit 1
-          fi
-
       - uses: actions/setup-go@v6
         with:
           go-version: "1.22"
@@ -35,11 +25,56 @@ jobs:
           toolchain: 1.81.0
           targets: wasm32-unknown-unknown
 
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09
+        with:
+          version: v1.7.1
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            contracts/evm-v2/package-lock.json
+
+      - name: validate release tag
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          node --test scripts/semver-check.test.mjs
+          node scripts/semver-check.mjs "$RELEASE_VERSION"
+
+      - name: install Web dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: install locked Solidity compiler
+        run: npm ci --prefix contracts/evm-v2
+
       - name: test Go CLI
         working-directory: cli
         run: |
           go vet ./...
           go test ./...
+
+      - name: verify migration source readiness
+        run: bash scripts/migration-readiness.sh --required
+
+      - name: test migration cutover gate fail-closed behavior
+        env:
+          EXPECTED_CUTOVER_COMMIT: ${{ github.sha }}
+        run: bash scripts/migration-cutover-readiness-test.sh
+
+      - name: verify migration and signer race safety
+        run: bash scripts/race-check.sh --required
+
+      - name: enforce V1-only published profile until reviewed V2 cutover
+        working-directory: cli
+        run: go run ./cmd/igit-release-profile-check
+
+      - name: enforce V1-only Web profiles until reviewed V2 cutover
+        working-directory: web
+        run: npm run check:release-profile
 
       - name: verify version linker injection
         working-directory: cli
@@ -47,6 +82,13 @@ jobs:
           IGIT_EXPECTED_VERSION: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          test_name=TestVersionLinkerInjection
+          listed="$(go test -list "^${test_name}$" ./cmd/igit)"
+          matches="$(printf '%s\n' "$listed" | awk -v name="$test_name" '$0 == name { count++ } END { print count + 0 }')"
+          if [ "$matches" -ne 1 ]; then
+            echo "expected exactly one $test_name test, found $matches" >&2
+            exit 1
+          fi
           go test -count=1 -run '^TestVersionLinkerInjection$' \
             -ldflags "-X github.com/Hny0305Lin/next-injective-git/cli/cmd/igit.version=${IGIT_EXPECTED_VERSION}" ./cmd/igit
 
@@ -56,6 +98,14 @@ jobs:
           set -euo pipefail
           rustc --version | grep -Eq '^rustc 1\.81\.'
           cargo test --locked
+
+      - name: test EVM V2 alpha contract
+        run: |
+          bash scripts/evm-v2-check-test.sh
+          bash scripts/evm-v2-check.sh --required
+
+      - name: test V1 snapshot exporter
+        run: bash scripts/v1-export-snapshot-test.sh
 
       - name: build release assets
         env:

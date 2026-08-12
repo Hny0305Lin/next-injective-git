@@ -85,7 +85,7 @@ pub struct Repo {
     pub default_branch: String,
     /// Block timestamp (seconds) at creation.
     pub created_at: u64,
-    /// Block timestamp (seconds) of last ref update.
+    /// Block timestamp (seconds) of the latest ref, metadata, or moderation update.
     pub updated_at: u64,
     /// Moderation state; only the committee can change it.
     pub moderation_status: ModerationStatus,

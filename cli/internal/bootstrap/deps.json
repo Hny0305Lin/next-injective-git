@@ -25,6 +25,12 @@
         "sha256": "677d86730d9200fa10150b11942bbb4c293f5055dafc999dd392f08cbf196d48",
         "archive": "tar.gz",
         "files": { "kubo/ipfs": "ipfs" }
+      },
+      "windows-amd64": {
+        "urls": ["https://dist.ipfs.tech/kubo/v0.42.0/kubo_v0.42.0_windows-amd64.zip", "https://github.com/ipfs/kubo/releases/download/v0.42.0/kubo_v0.42.0_windows-amd64.zip"],
+        "sha256": "f24e4d24445c8abf7bd26bd034cb9f14dac77e30452731a617d2e8e2f2ceb150",
+        "archive": "zip",
+        "files": { "kubo/ipfs.exe": "ipfs.exe" }
       }
     }
   },

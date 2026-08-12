@@ -26,6 +26,13 @@ func main() {
 	}
 }
 
+// validateContractSelection keeps the remote-helper preflight decision
+// backend-specific. It is intentionally side-effect free so the same rule can
+// be covered without starting a Git remote-helper conversation.
+func validateContractSelection(cfg config.Config) error {
+	return cfg.ValidateContract()
+}
+
 func run() error {
 	if len(os.Args) < 3 {
 		return i18n.Errorf("usage: git-remote-igit <remote-name> <url>", "用法：git-remote-igit <remote-name> <url>")
@@ -38,10 +45,13 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	if cfg.ContractAddress == "" {
-		return i18n.Errorf("contract_address not configured (run `igit config set contract_address <addr>`)", "未配置 contract_address（运行 `igit config set contract_address <addr>`）")
+	if err := validateContractSelection(cfg); err != nil {
+		return err
 	}
-	cc := chain.New(cfg)
+	cc, err := chain.NewRegistryBackend(cfg)
+	if err != nil {
+		return err
+	}
 	// URLs may carry a registered username instead of a bech32 address (§4)
 	if !repoURL.OwnerIsAddress() {
 		owner, err := cc.ResolveUsername(repoURL.Owner)

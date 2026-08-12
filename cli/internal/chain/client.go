@@ -53,6 +53,10 @@ type listRefsResponse struct {
 	Refs []RefInfo `json:"refs"`
 }
 
+type listReposResponse struct {
+	Repos []RepoInfo `json:"repos"`
+}
+
 type resolveRefResponse struct {
 	RefName   string   `json:"ref_name"`
 	CommitSha string   `json:"commit_sha"`
@@ -117,6 +121,7 @@ type OwnershipTransferInfo struct {
 	NewOwner     string `json:"new_owner"`
 	ProposedAt   uint64 `json:"proposed_at"`
 	ExecuteAfter uint64 `json:"execute_after"`
+	ExpiresAt    uint64 `json:"expires_at,omitempty"`
 }
 
 type RecoveryProposalInfo struct {
@@ -251,6 +256,36 @@ func (c *Client) RepoInfo(owner, repo string) (*RepoInfo, error) {
 		return nil, err
 	}
 	return &out, nil
+}
+
+// ListRepos returns every repository currently indexed under owner. V1 pages
+// by repository name, so a full page advances from the last returned name.
+func (c *Client) ListRepos(owner string) ([]RepoInfo, error) {
+	const pageSize = 100
+	var all []RepoInfo
+	var startAfter *string
+	for {
+		query := map[string]any{
+			"list_repos": map[string]any{
+				"owner":       owner,
+				"start_after": startAfter,
+				"limit":       pageSize,
+			},
+		}
+		var page listReposResponse
+		if err := c.SmartQuery(query, &page); err != nil {
+			return nil, err
+		}
+		all = append(all, page.Repos...)
+		if len(page.Repos) < pageSize {
+			return all, nil
+		}
+		last := page.Repos[len(page.Repos)-1].Name
+		if last == "" || (startAfter != nil && last == *startAfter) {
+			return nil, fmt.Errorf("V1 repository page cursor did not advance from %q", last)
+		}
+		startAfter = &last
+	}
 }
 
 // ListCollaborators returns all collaborators of owner/repo (handles pagination).
@@ -650,10 +685,12 @@ func (c *Client) ReleaseArtifacts(version string) ([]ReleaseArtifact, error) {
 // Badge mirrors the contract's Badge struct.
 type Badge struct {
 	ID        uint64 `json:"id"`
+	RepoID    string `json:"repo_id,omitempty"`
 	RepoOwner string `json:"repo_owner"`
 	RepoName  string `json:"repo_name"`
 	Recipient string `json:"recipient"`
 	Reason    string `json:"reason"`
+	AwardedBy string `json:"awarded_by,omitempty"`
 	AwardedAt uint64 `json:"awarded_at"`
 }
 
@@ -664,6 +701,17 @@ func (c *Client) BadgesByRecipient(recipient string) ([]Badge, error) {
 	}
 	err := c.SmartQuery(map[string]any{
 		"badges_by_recipient": map[string]any{"recipient": recipient, "limit": 100},
+	}, &out)
+	return out.Badges, err
+}
+
+// BadgesByRepo lists contribution badges awarded by one V1 repository.
+func (c *Client) BadgesByRepo(owner, repo string) ([]Badge, error) {
+	var out struct {
+		Badges []Badge `json:"badges"`
+	}
+	err := c.SmartQuery(map[string]any{
+		"badges_by_repo": map[string]any{"owner": owner, "repo": repo, "limit": 100},
 	}, &out)
 	return out.Badges, err
 }
@@ -711,6 +759,17 @@ func (c *Client) RevenueSplits(owner, repo string) ([]SplitEntry, error) {
 		"revenue_splits": map[string]any{"owner": owner, "repo": repo},
 	}, &out)
 	return out.Splits, err
+}
+
+// SponsorTotals returns the legacy per-denom sponsorship totals for a repo.
+func (c *Client) SponsorTotals(owner, repo string) ([]Coin, error) {
+	var out struct {
+		Totals []Coin `json:"totals"`
+	}
+	err := c.SmartQuery(map[string]any{
+		"sponsor_totals": map[string]any{"owner": owner, "repo": repo},
+	}, &out)
+	return out.Totals, err
 }
 
 // OwnerAddress returns the bech32 address of the configured key.

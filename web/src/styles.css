@@ -388,6 +388,17 @@ input.field:focus {
 }
 
 /* ---- repo page ---- */
+.repo-moved-notice {
+  border-left: 3px solid var(--accent);
+  color: var(--fg-muted);
+  font-size: 0.84rem;
+  margin: 0 0 14px;
+  padding: 8px 12px;
+}
+.repo-moved-notice a {
+  color: var(--accent);
+  font-weight: 600;
+}
 .repo-head {
   margin-bottom: 16px;
 }
@@ -435,6 +446,121 @@ input.field:focus {
   display: flex;
   gap: 8px;
   margin-top: 10px;
+}
+.repo-transfer-panel {
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  margin: -2px 0 14px;
+  padding: 10px 0 12px;
+  color: var(--fg-muted);
+  font-size: 0.82rem;
+}
+.repo-transfer-heading,
+.repo-transfer-actions,
+.repo-transfer-start {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.repo-transfer-heading {
+  color: var(--fg);
+  margin-bottom: 8px;
+}
+.repo-transfer-start {
+  align-items: stretch;
+}
+.repo-transfer-start .field {
+  min-width: 0;
+  flex: 1;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-inset);
+  color: var(--fg);
+}
+.repo-transfer-start .field:focus {
+  outline: none;
+  border-color: var(--accent-border);
+}
+.repo-transfer-pending {
+  display: grid;
+  gap: 8px;
+}
+.repo-transfer-deadlines {
+  font-size: 0.76rem;
+}
+.repo-transfer-actions {
+  flex-wrap: wrap;
+}
+.repo-transfer-primary {
+  background: var(--accent);
+  border-color: transparent;
+  color: #fff;
+}
+.repo-transfer-primary:hover {
+  background: var(--accent-hover);
+}
+.repo-transfer-panel .error {
+  margin-top: 8px;
+}
+.repo-edit-trigger {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 30px;
+}
+.repo-metadata-modal {
+  width: 520px;
+}
+.repo-metadata-form {
+  display: grid;
+  gap: 14px;
+  padding: 14px 16px 16px;
+}
+.repo-metadata-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.repo-metadata-field textarea.field {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+.repo-metadata-field textarea.field:focus {
+  outline: none;
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px rgba(77, 61, 255, 0.15);
+}
+.repo-metadata-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.repo-metadata-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--accent);
+  border-color: transparent;
+  color: #fff;
+}
+.repo-metadata-save:hover {
+  background: var(--accent-hover);
+  border-color: transparent;
 }
 .repo-stats {
   display: flex;
@@ -1043,6 +1169,56 @@ input.field:focus {
   font-size: 0.84rem;
 }
 
+.split-editor {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.split-editor-head,
+.split-editor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.split-editor-head {
+  font-size: 0.84rem;
+}
+.split-editor-rows {
+  display: grid;
+  gap: 8px;
+}
+.split-editor-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 124px 34px;
+  gap: 8px;
+  align-items: center;
+}
+.split-percent-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 16px;
+  gap: 5px;
+  align-items: center;
+}
+.split-percent-input .field {
+  min-width: 0;
+  text-align: right;
+}
+.icon-action {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.icon-action.danger {
+  color: var(--danger);
+}
+
 /* ---- explorers (block + IPFS) ---- */
 .explorer {
   max-width: 900px;
@@ -1347,6 +1523,9 @@ input.field:focus {
   .sponsor-fields .field.amount {
     width: 100%;
     text-align: left;
+  }
+  .split-editor-row {
+    grid-template-columns: minmax(0, 1fr) 108px 34px;
   }
   .clone-box {
     flex-direction: column;

@@ -1,21 +1,29 @@
 name: ci
 
 on:
-  # Buildable source trees and repository acceptance fixtures gate CI. Changes
-  # limited to web/ or docs/ do not start this workflow.
+  # Buildable source trees, migration docs, web assets, and repository
+  # acceptance fixtures gate CI.
   push:
     branches: [main, master]
     paths:
+      - "README.md"
       - "cli/**"
       - "contracts/**"
+      - "docs/**"
       - "scripts/**"
+      - "web/**"
       - ".github/workflows/ci.yml"
+      - ".github/workflows/release.yml"
   pull_request:
     paths:
+      - "README.md"
       - "cli/**"
       - "contracts/**"
+      - "docs/**"
       - "scripts/**"
+      - "web/**"
       - ".github/workflows/ci.yml"
+      - ".github/workflows/release.yml"
 
 jobs:
   contract:
@@ -79,6 +87,23 @@ jobs:
       - name: test
         run: go test ./...
 
+      - name: published profile release guard
+        run: go run ./cmd/igit-release-profile-check
+
+      - name: pinned native Kubo download and daemon smoke
+        env:
+          IGIT_RUN_NATIVE_KUBO_INTEGRATION: "1"
+        run: |
+          set -euo pipefail
+          test_name=TestNativeKuboLifecycleIntegration
+          listed="$(go test -list "^${test_name}$" ./internal/bootstrap)"
+          matches="$(printf '%s\n' "$listed" | awk -v name="$test_name" '$0 == name { count++ } END { print count + 0 }')"
+          if [ "$matches" -ne 1 ]; then
+            echo "expected exactly one $test_name test, found $matches" >&2
+            exit 1
+          fi
+          go test -run '^TestNativeKuboLifecycleIntegration$' -count=1 -v ./internal/bootstrap
+
       # Cross-compile the igit toolchain (igit + git-remote-igit) for every
       # supported platform; pure-Go zero-dependency module, so CGO stays off.
       - name: build toolchain matrix
@@ -100,14 +125,144 @@ jobs:
           path: cli/dist/
           if-no-files-found: error
 
+  cli-windows:
+    name: cli native Windows (go 1.22)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.22"
+          cache-dependency-path: cli/go.sum
+
+      # This executes the Windows-specific Kubo wrapper/executable path rather
+      # than relying only on a Linux cross-compile.
+      - name: native setup, bootstrap, and backend tests
+        shell: pwsh
+        run: go test -count=1 ./...
+
+      - name: pinned native Kubo download and daemon smoke
+        shell: pwsh
+        env:
+          IGIT_RUN_NATIVE_KUBO_INTEGRATION: "1"
+        run: |
+          $testName = "TestNativeKuboLifecycleIntegration"
+          $listed = @(go test -list "^$testName`$" ./internal/bootstrap)
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $matches = @($listed | Where-Object { $_ -eq $testName })
+          if ($matches.Count -ne 1) {
+            throw "expected exactly one $testName test, found $($matches.Count)"
+          }
+          go test -run '^TestNativeKuboLifecycleIntegration$' -count=1 -v ./internal/bootstrap
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: native vet
+        shell: pwsh
+        run: go vet ./...
+
+      - name: native PowerShell readiness required-file regression
+        shell: pwsh
+        working-directory: .
+        run: |
+          Set-StrictMode -Version Latest
+          & .\scripts\migration-readiness-file-test.ps1
+
+      - name: native PowerShell cutover evidence regression
+        shell: pwsh
+        working-directory: .
+        run: |
+          Set-StrictMode -Version Latest
+          & .\scripts\migration-cutover-readiness-test.ps1
+
+      - name: build native commands
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          go build -trimpath -o dist/igit.exe ./cmd/igit
+          go build -trimpath -o dist/git-remote-igit.exe ./cmd/git-remote-igit
+
+  web:
+    name: web (node)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: install dependencies
+        run: npm ci
+
+      - name: strict SemVer release-tag regression vectors
+        run: node --test ../scripts/semver-check.test.mjs
+
+      - name: published Web profile release guard
+        run: npm run check:release-profile
+
+      - name: API tests
+        run: npm run test:api
+
+      - name: production build
+        run: npm run build
+
+  evm-v2:
+    name: EVM V2 (Foundry)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: contracts/evm-v2/package-lock.json
+
+      - name: install locked Solidity compiler
+        run: npm ci --prefix contracts/evm-v2
+
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09
+        with:
+          version: v1.7.1
+
+      - name: EVM V2 gate fail-closed regression
+        run: bash scripts/evm-v2-check-test.sh
+
+      - name: EVM V2 build and unit tests
+        run: bash scripts/evm-v2-check.sh --required
+
   acceptance-fixtures:
     name: acceptance fixtures (bash + go)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
 
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: contracts/evm-v2/package-lock.json
+
+      - name: install locked Solidity compiler
+        run: npm ci --prefix contracts/evm-v2
+
       - name: validate bootstrap shell script
         run: bash -n scripts/bootstrap-push.sh
+
+      - name: migration readiness source and documentation gate
+        run: bash scripts/migration-readiness.sh --source-only
+
+      - name: V1 snapshot export regression fixture
+        run: bash scripts/v1-export-snapshot-test.sh
 
       - name: validate bootstrap PowerShell script
         shell: pwsh
@@ -123,10 +278,27 @@ jobs:
             $errors | Format-List | Out-String | Write-Error
           }
 
+      - name: validate Windows migration readiness script
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path scripts/migration-readiness.ps1),
+            [ref]$tokens,
+            [ref]$errors
+          ) > $null
+          if ($errors.Count) {
+            $errors | Format-List | Out-String | Write-Error
+          }
+
       - uses: actions/setup-go@v6
         with:
           go-version: "1.22"
           cache: false
+
+      - name: migration and chain race gate
+        run: bash scripts/race-check.sh --required
 
       - name: feegrant policy gate regression tests
         run: bash scripts/feegrant-policy-gate-test.sh

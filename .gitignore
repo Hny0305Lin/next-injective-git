@@ -11,6 +11,12 @@ cli/dist/
 # Web
 web/node_modules/
 web/dist/
+web/src/.chain-evm-v2.test.generated.mjs
+contracts/evm-v2/node_modules/
+contracts/evm-v2/cache/
+contracts/evm-v2/out/
+/.codex-foundry-*/
+/docs/juice-check.haxeml
 
 # logs / scratch
 *.log

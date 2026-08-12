@@ -1,9 +1,12 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { loadConfig, saveConfig, type AppConfig } from "../lib/chain";
-
-const INJ_EXPLORER = "https://testnet.explorer.injective.network";
-const EVM_EXPLORER = "https://testnet-injective.cloud.blockscout.com";
+import {
+  configForProfile,
+  loadConfig,
+  NETWORK_PROFILES,
+  saveConfig,
+  type NetworkProfileId,
+} from "../lib/chain";
 
 const TESTNET_WALLETS = [
   { label: "MetaMask Wallet", inj: "inj1w5v3vhwpk7v8csaqxv5pzzfzvgaqn8qfuh5p5d", evm: "0x7519165DC1B7987C43A03328110922623A099C09" },
@@ -18,37 +21,36 @@ export default function Settings() {
   const [saved, setSaved] = useState(false);
 
   const restoreDefaults = () => {
-    const def: AppConfig = {
-      lcd: "https://k8s.testnet.lcd.injective.network",
-      contract: "inj1mg6x7ht3zyyszed9aq67q6kd0y5rtq7wf756jh",
-      ipfsGateway: "https://igit-hk.haohanyh.ovh",
-    };
-    setCfg(def);
+    setCfg(configForProfile());
     setSaved(false);
   };
 
-  const set = (k: keyof typeof cfg) => (e: React.ChangeEvent<HTMLInputElement>) => {
-    setCfg({ ...cfg, [k]: e.target.value });
+  const setProfile = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setCfg(configForProfile(e.target.value as NetworkProfileId, cfg.contractVersion));
     setSaved(false);
   };
+
+  const profile = NETWORK_PROFILES[cfg.profile];
 
   return (
     <div style={{ maxWidth: 640, margin: "0 auto" }}>
       <div className="card settings" style={{ padding: "24px" }}>
         <h2 style={{ margin: "0 0 6px", fontSize: "1.2rem" }}>Settings</h2>
         <p className="muted" style={{ margin: "0 0 20px", fontSize: "0.88rem", lineHeight: 1.5 }}>
-          Stored in your browser only. This app is fully client-side: it reads the chain through an
-          LCD endpoint and fetches packfiles from an IPFS gateway.
+          Stored in your browser only. Network endpoints, chain IDs, and contract addresses are
+          supplied by the selected profile.
         </p>
 
-        <label style={{ fontSize: "0.84rem", marginBottom: 6 }}>LCD endpoint</label>
-        <input className="field mono" style={{ marginBottom: 14 }} value={cfg.lcd} onChange={set("lcd")} />
+        <label style={{ fontSize: "0.84rem", marginBottom: 6 }}>Network profile</label>
+        <select className="field" style={{ marginBottom: 14 }} value={cfg.profile} onChange={setProfile}>
+          {Object.values(NETWORK_PROFILES).map((option) => (
+            <option key={option.id} value={option.id}>{option.label}</option>
+          ))}
+        </select>
 
-        <label style={{ fontSize: "0.84rem", marginBottom: 6 }}>repo-registry contract</label>
-        <input className="field mono" style={{ marginBottom: 14 }} value={cfg.contract} onChange={set("contract")} />
-
-        <label style={{ fontSize: "0.84rem", marginBottom: 6 }}>IPFS gateway</label>
-        <input className="field mono" style={{ marginBottom: 16 }} value={cfg.ipfsGateway} onChange={set("ipfsGateway")} />
+        <div className="muted mono" style={{ fontSize: "0.76rem", lineHeight: 1.6, marginBottom: 16 }}>
+          {profile.chainId} · EVM {profile.evmChainId} · automatic profile-managed chain routing
+        </div>
 
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           <button
@@ -98,9 +100,9 @@ export default function Settings() {
         </div>
         <p className="muted" style={{ fontSize: "0.82rem", marginTop: 10 }}>
           Links:{" "}
-          <a href={INJ_EXPLORER} target="_blank" rel="noreferrer">Injective Explorer ↗</a>
+          <a href={profile.explorer} target="_blank" rel="noreferrer">Injective Explorer ↗</a>
           {" · "}
-          <a href={EVM_EXPLORER} target="_blank" rel="noreferrer">Blockscout ↗</a>
+          <a href={profile.evmExplorer} target="_blank" rel="noreferrer">Blockscout ↗</a>
         </p>
       </div>
     </div>
