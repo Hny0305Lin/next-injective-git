@@ -2,9 +2,7 @@ import { useEffect, useState } from "react";
 import { isWalletInstalled, SUPPORTED_WALLETS } from "../lib/wallet";
 import { useWallet } from "../lib/WalletContext";
 
-// A GitHub/RainbowKit-style wallet picker listing every supported Web3 wallet
-// with an installed / install-link state. Cosmos wallets sign via CosmJS,
-// MetaMask via EIP-712 — the context routes by wallet id.
+// A compact injected EVM wallet picker for legacy Suite transactions.
 export function WalletModal({ onClose }: { onClose: () => void }) {
   const { connect, connecting, error } = useWallet();
   const [installed, setInstalled] = useState<Record<string, boolean>>({});
@@ -59,7 +57,7 @@ export function WalletModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         <div className="modal-sub muted">
-          Cosmos wallets sign natively; EVM wallets sign via EIP-712 (auto-switches to Injective inEVM).
+          Connect an EVM wallet on Injective testnet.
         </div>
         <div className="wallet-list">
           {SUPPORTED_WALLETS.map((w) => {
@@ -69,7 +67,7 @@ export function WalletModal({ onClose }: { onClose: () => void }) {
                 <span className="wallet-ic">{w.icon}</span>
                 <span className="wallet-name">
                   {w.label}
-                  <span className="wallet-kind muted">{w.kind === "evm" ? "EVM" : "Cosmos"}</span>
+                  <span className="wallet-kind muted">EVM</span>
                 </span>
                 {ok ? (
                   <button

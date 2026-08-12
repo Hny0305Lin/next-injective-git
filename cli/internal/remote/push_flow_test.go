@@ -29,7 +29,7 @@ func (f *fakeChain) ResolveRepo(owner, repo string) (*chain.ResolvedRepo, error)
 		return f.resolved, nil
 	}
 	return &chain.ResolvedRepo{
-		Backend:     chain.BackendCosmWasm,
+		Backend:     chain.BackendEVM,
 		Requested:   chain.RepoLocator{Owner: owner, Name: repo},
 		Canonical:   chain.RepoLocator{Owner: owner, Name: repo},
 		IsCanonical: true,
@@ -228,50 +228,6 @@ func TestMovedRepositoryStopsBeforePreflightPackIPFSAndWrite(t *testing.T) {
 	wantURL := "igit://" + canonicalOwner + "/repo"
 	if got := out.String(); !strings.Contains(got, "error refs/heads/main repository moved to "+wantURL) {
 		t.Fatalf("protocol output = %q", got)
-	}
-}
-
-func TestLegacyReadFallbackStopsPushAndDeleteBeforePreflightOrSideEffects(t *testing.T) {
-	for _, command := range []string{
-		"push refs/heads/main:refs/heads/main",
-		"push :refs/heads/old",
-	} {
-		t.Run(command, func(t *testing.T) {
-			c := &fakeChain{resolved: &chain.ResolvedRepo{
-				Backend:       chain.BackendCosmWasm,
-				Requested:     chain.RepoLocator{Owner: "inj1owner", Name: "repo"},
-				Canonical:     chain.RepoLocator{Owner: "inj1owner", Name: "repo"},
-				IsCanonical:   true,
-				WriteDisabled: true,
-				Info:          chain.RepoInfo{Owner: "inj1owner", Name: "repo", DefaultBranch: "main"},
-			}}
-			i, r := &fakeIPFS{}, &fakeAuthorizer{}
-			var out bytes.Buffer
-			h := NewHelper(
-				RepoURL{Owner: "inj1owner", Repo: "repo"}, c, i, r,
-				[]string{"/dns4/us.example/tcp/4001/p2p/peer"}, fakeGit{},
-				strings.NewReader(""), &out, io.Discard,
-			)
-			preflightCalled := false
-			h.SetPushPreflight(func(bool) error {
-				preflightCalled = true
-				return nil
-			})
-
-			if err := h.cmdPushBatch(command); err != nil {
-				t.Fatal(err)
-			}
-			if preflightCalled || i.add != 0 || i.swarm != 0 || i.gc != 0 || r.authorized != 0 || c.updates != 0 || c.deletes != 0 {
-				t.Fatalf(
-					"preflight=%v add=%d swarm=%d gc=%d authorized=%d updates=%d deletes=%d",
-					preflightCalled, i.add, i.swarm, i.gc, r.authorized, c.updates, c.deletes,
-				)
-			}
-			got := out.String()
-			if !strings.Contains(got, "clone/fetch only until it is imported to V2") || !strings.Contains(got, "error ") {
-				t.Fatalf("protocol output = %q", got)
-			}
-		})
 	}
 }
 

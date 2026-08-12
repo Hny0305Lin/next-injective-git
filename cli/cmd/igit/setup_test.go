@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,13 +14,11 @@ import (
 func TestCmdSetupDefaultsToPushBootstrap(t *testing.T) {
 	t.Setenv("IGIT_HOME", t.TempDir())
 	cfg := config.Defaults()
-	cfg.ContractBackend = "evm"
-	cfg.ContractVersion = "v2"
-	cfg.EVMContractAddress = ""
+	cfg.EVMSuiteDirectoryAddress = ""
 
 	err := cmdSetup(cfg, nil)
-	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "deployment") {
-		t.Fatalf("cmdSetup without subcommand error = %v, want guarded EVM deployment error", err)
+	if err == nil || !strings.Contains(err.Error(), "SuiteDirectory") {
+		t.Fatalf("cmdSetup without subcommand error = %v, want guarded suite deployment error", err)
 	}
 }
 
@@ -31,14 +28,9 @@ func TestSetupPushEVMUsesKuboOnlyAndPersistsNativePath(t *testing.T) {
 	cfg.InjectivedBin = "must-not-be-used-by-v2-setup"
 	wantIPFSBin := filepath.Join(t.TempDir(), "ipfs.exe")
 
-	legacyCalls := 0
 	kuboCalls := 0
 	doctorCalls := 0
 	services := setupServices{
-		prepareLegacy: func(context.Context, config.Config, bootstrap.Options) (config.Config, bootstrap.Result, error) {
-			legacyCalls++
-			return config.Config{}, bootstrap.Result{}, fmt.Errorf("legacy bootstrap must not run")
-		},
 		prepareKubo: func(_ context.Context, got config.Config, opts bootstrap.Options) (config.Config, bootstrap.Result, error) {
 			kuboCalls++
 			if got.InjectivedBin != cfg.InjectivedBin {
@@ -66,8 +58,8 @@ func TestSetupPushEVMUsesKuboOnlyAndPersistsNativePath(t *testing.T) {
 	if err := setupPushWithServices(cfg, setupOptions{yes: true, force: true}, services); err != nil {
 		t.Fatalf("setupPushWithServices = %v", err)
 	}
-	if legacyCalls != 0 || kuboCalls != 1 || doctorCalls != 1 {
-		t.Fatalf("calls legacy=%d kubo=%d doctor=%d", legacyCalls, kuboCalls, doctorCalls)
+	if kuboCalls != 1 || doctorCalls != 1 {
+		t.Fatalf("calls kubo=%d doctor=%d", kuboCalls, doctorCalls)
 	}
 	saved, err := config.Load()
 	if err != nil {
@@ -85,10 +77,6 @@ func TestSetupPushEVMSkipKuboDoesNotInvokeInstaller(t *testing.T) {
 	t.Setenv("IGIT_HOME", t.TempDir())
 	cfg := evmSetupConfig()
 	services := setupServices{
-		prepareLegacy: func(context.Context, config.Config, bootstrap.Options) (config.Config, bootstrap.Result, error) {
-			t.Fatal("legacy bootstrap must not run")
-			return config.Config{}, bootstrap.Result{}, nil
-		},
 		prepareKubo: func(context.Context, config.Config, bootstrap.Options) (config.Config, bootstrap.Result, error) {
 			t.Fatal("Kubo installer must not run with --no-kubo")
 			return config.Config{}, bootstrap.Result{}, nil
@@ -111,7 +99,7 @@ func TestSetupPushEVMSkipKuboDoesNotInvokeInstaller(t *testing.T) {
 func TestSetupPushEVMRejectsInvalidDeploymentBeforeKubo(t *testing.T) {
 	t.Setenv("IGIT_HOME", t.TempDir())
 	cfg := evmSetupConfig()
-	cfg.EVMContractAddress = config.DefaultContractAddress
+	cfg.EVMSuiteDirectoryAddress = config.DefaultContractAddress
 	kuboCalled := false
 	services := setupServices{
 		prepareKubo: func(context.Context, config.Config, bootstrap.Options) (config.Config, bootstrap.Result, error) {
@@ -121,7 +109,7 @@ func TestSetupPushEVMRejectsInvalidDeploymentBeforeKubo(t *testing.T) {
 	}
 
 	err := setupPushWithServices(cfg, setupOptions{yes: true}, services)
-	if err == nil || !strings.Contains(err.Error(), "invalid EVM V2 contract address") {
+	if err == nil || !strings.Contains(err.Error(), "invalid EVM SuiteDirectory address") {
 		t.Fatalf("invalid deployment error = %v", err)
 	}
 	if kuboCalled {
@@ -131,8 +119,6 @@ func TestSetupPushEVMRejectsInvalidDeploymentBeforeKubo(t *testing.T) {
 
 func evmSetupConfig() config.Config {
 	cfg := config.Defaults()
-	cfg.ContractBackend = "evm"
-	cfg.ContractVersion = "v2"
-	cfg.EVMContractAddress = "0x1111111111111111111111111111111111111111"
+	cfg.EVMSuiteDirectoryAddress = "0x1111111111111111111111111111111111111111"
 	return cfg
 }

@@ -165,9 +165,6 @@ func movedError(resolved *chain.ResolvedRepo) error {
 	if resolved == nil {
 		return nil
 	}
-	if resolved.WriteDisabled {
-		return fmt.Errorf("%w: %s is available for clone/fetch only until it is imported to V2", chain.ErrLegacyWriteFallbackDisabled, resolved.CanonicalURL())
-	}
 	if resolved.IsCanonical {
 		return nil
 	}

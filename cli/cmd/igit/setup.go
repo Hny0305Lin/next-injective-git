@@ -26,15 +26,13 @@ type setupOptions struct {
 }
 
 type setupServices struct {
-	prepareLegacy func(context.Context, config.Config, bootstrap.Options) (config.Config, bootstrap.Result, error)
-	prepareKubo   func(context.Context, config.Config, bootstrap.Options) (config.Config, bootstrap.Result, error)
-	runDoctor     func(context.Context, config.Config, environment.Mode) environment.Report
+	prepareKubo func(context.Context, config.Config, bootstrap.Options) (config.Config, bootstrap.Result, error)
+	runDoctor   func(context.Context, config.Config, environment.Mode) environment.Report
 }
 
 var defaultSetupServices = setupServices{
-	prepareLegacy: bootstrap.Prepare,
-	prepareKubo:   bootstrap.PrepareKubo,
-	runDoctor:     environment.Run,
+	prepareKubo: bootstrap.PrepareKubo,
+	runDoctor:   environment.Run,
 }
 
 func cmdSetup(cfg config.Config, args []string) error {
@@ -53,25 +51,17 @@ func cmdSetup(cfg config.Config, args []string) error {
 			return forwardSetupToWSL(wsl, append([]string{"status"}, remaining...))
 		}
 		return cmdDoctor(cfg, append([]string{"--push"}, remaining...))
-	case "push", "upgrade":
+	case "push":
 		opts, forwarded, err := parseSetupOptions(args[1:])
 		if err != nil {
 			return err
 		}
-		if args[0] == "upgrade" {
-			opts.force = true
-			forwarded = append(forwarded, "--force")
-		}
 		if opts.wsl != "" {
 			return forwardSetupToWSL(opts.wsl, append([]string{"push"}, forwarded...))
 		}
-		usesV2 := chain.UsesEVMBackend(cfg)
-		if runtime.GOOS == "windows" && !usesV2 {
-			return fmt.Errorf("Windows push requires WSL2; run `igit setup push --wsl Ubuntu-24.04` or `powershell -File scripts/bootstrap-push.ps1`")
-		}
 		return setupPush(cfg, opts)
 	default:
-		return fmt.Errorf("unknown setup subcommand %q (expected push, status, or upgrade)", args[0])
+		return fmt.Errorf("unknown setup subcommand %q (expected push or status)", args[0])
 	}
 }
 
@@ -150,113 +140,59 @@ func setupPush(cfg config.Config, opts setupOptions) error {
 }
 
 func setupPushWithServices(cfg config.Config, opts setupOptions, services setupServices) error {
-	usesV2 := chain.UsesEVMBackend(cfg)
-	if usesV2 {
-		cfg = config.ApplyNetworkProfile(cfg)
-		// A named, reviewed deployment is the authority to enable V2 writes.
-		// Check it before installing tools or creating a key so a missing profile
-		// cannot leave setup looking partially successful.
-		if cfg.EffectiveEVMContractAddress() == "" {
-			return fmt.Errorf("EVM V2 deployment is not configured for %s; setup cannot enable writes before a reviewed contract address is published", cfg.Network)
-		}
-		if err := cfg.ValidateContract(); err != nil {
-			return fmt.Errorf("EVM V2 deployment profile is incomplete: %w", err)
-		}
-		if err := confirmSetup(opts, false); err != nil {
-			return err
-		}
-		if opts.createKey != "" {
-			keyCfg := cfg
-			keyCfg.KeyName = opts.createKey
-			signer := chain.NewEVMKeystoreSigner(keyCfg)
-			if _, err := signer.OwnerAddress(); err == nil {
-				cfg.KeyName = opts.createKey
-				if err := config.Save(cfg); err != nil {
-					return err
-				}
-			} else if err := cmdKey(cfg, []string{"new", opts.createKey}); err != nil {
-				return fmt.Errorf("create key %q: %w", opts.createKey, err)
-			} else {
-				var loadErr error
-				cfg, loadErr = config.Load()
-				if loadErr != nil {
-					return loadErr
-				}
-			}
-		}
-
-		result := bootstrap.Result{}
-		if !opts.skipKubo {
-			ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
-			updated, prepared, err := services.prepareKubo(ctx, cfg, bootstrap.Options{
-				Force: opts.force, Progress: os.Stdout,
-			})
-			cancel()
-			if err != nil {
-				return err
-			}
-			cfg = updated
-			result = prepared
-		}
-		if err := config.Save(cfg); err != nil {
-			return err
-		}
-		return finishSetup(cfg, opts, result, services.runDoctor)
+	cfg = config.ApplyNetworkProfile(cfg)
+	// A reviewed SuiteDirectory is the sole authority to enable ordinary
+	// writes. Check it before installing tools or creating a key.
+	if err := cfg.ValidateContract(); err != nil {
+		return fmt.Errorf("EVM suite deployment profile is incomplete: %w", err)
 	}
-	if err := confirmSetup(opts, true); err != nil {
+	if err := confirmSetup(opts); err != nil {
 		return err
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
-	defer cancel()
-	updated, result, err := services.prepareLegacy(ctx, cfg, bootstrap.Options{
-		Force: opts.force, SkipKubo: opts.skipKubo, Progress: os.Stdout,
-	})
-	if err != nil {
-		return err
-	}
-	if err := config.Save(updated); err != nil {
-		return err
-	}
-	cfg = updated
-
 	if opts.createKey != "" {
 		keyCfg := cfg
 		keyCfg.KeyName = opts.createKey
-		signer, signerErr := chain.NewSignerBackend(keyCfg)
-		if signerErr == nil {
-			_, signerErr = signer.OwnerAddress()
-		}
-		if signerErr == nil {
+		signer := chain.NewEVMKeystoreSigner(keyCfg)
+		if _, err := signer.OwnerAddress(); err == nil {
 			cfg.KeyName = opts.createKey
 			if err := config.Save(cfg); err != nil {
 				return err
 			}
-			fmt.Printf("Using existing key %q\n", opts.createKey)
+		} else if err := cmdKey(cfg, []string{"new", opts.createKey}); err != nil {
+			return fmt.Errorf("create key %q: %w", opts.createKey, err)
 		} else {
-			if err := cmdKey(cfg, []string{"new", opts.createKey}); err != nil {
-				return fmt.Errorf("create key %q: %w", opts.createKey, err)
-			}
-			cfg, err = config.Load()
-			if err != nil {
-				return err
+			var loadErr error
+			cfg, loadErr = config.Load()
+			if loadErr != nil {
+				return loadErr
 			}
 		}
 	}
-
+	result := bootstrap.Result{}
+	if !opts.skipKubo {
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
+		updated, prepared, err := services.prepareKubo(ctx, cfg, bootstrap.Options{
+			Force: opts.force, Progress: os.Stdout,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		cfg = updated
+		result = prepared
+	}
+	if err := config.Save(cfg); err != nil {
+		return err
+	}
 	return finishSetup(cfg, opts, result, services.runDoctor)
 }
 
-func confirmSetup(opts setupOptions, legacy bool) error {
-	if opts.yes || (!legacy && opts.skipKubo) {
+func confirmSetup(opts setupOptions) error {
+	if opts.yes || opts.skipKubo {
 		return nil
 	}
 	fmt.Println("igit will install pinned push dependencies under ~/.igit/deps.")
-	if legacy {
-		fmt.Println("Existing working injectived and Kubo installations will be preserved.")
-	} else {
-		fmt.Println("Existing working Kubo installations will be preserved; V2 setup does not install injectived.")
-	}
+	fmt.Println("Existing working Kubo installations will be preserved; EVM suite setup does not install injectived.")
 	fmt.Print("Continue? [y/N] ")
 	answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 	answer = strings.ToLower(strings.TrimSpace(answer))

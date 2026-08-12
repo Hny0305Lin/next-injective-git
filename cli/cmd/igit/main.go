@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/big"
 	"os"
 	"os/exec"
 	"strconv"
@@ -66,17 +65,19 @@ Usage:
   igit splits set <repo> [addr:bps]... set revenue splits (owner only)
   igit splits show <owner> <repo>      show revenue splits
   igit username register <name>        claim a username (locks deposit)
-  igit username release                release username, refund deposit
+	igit username claim <name>           reclaim a migrated V1 username
+  igit username release                release username
   igit username show [name|address]    resolve a username / reverse lookup
   igit release register <version> <platform=sha256>...
                                        register immutable release checksums (admin)
   igit release verify <version> <platform> <file>
                                        verify a file against the on-chain checksum
-  igit upgrade schedule <wasm-sha256> announce a delayed contract upgrade
-  igit upgrade cancel                   cancel the pending upgrade announcement
-  igit upgrade show                     show the pending upgrade and delay
+  igit suite info [--json]             show the verified EVM suite binding
+  igit suite verify [--json]           verify chain, code hashes and bindings
+  igit archive <query|inventory|verify> read-only CosmWasm V1 evidence tools
   igit key show                        show the configured signing address
   igit key new <name>                  create an encrypted signing key
+	igit key import <name>               import a private key without terminal echo
   igit gateway status                  probe HK/US read-only gateway health
   igit gateway select                  print the automatically selected order
 	igit doctor [--clone|--push] [--json] diagnose tools, config and services
@@ -90,14 +91,9 @@ Usage:
   igit version                         print version
 
 Config keys:
-  network contract_backend contract_version contract_address
-  evm_rpc evm_contract_address evm_chain_id evm_explorer evm_keystore_dir
-  evm_badge_module_address
-  evm_economic_module_address
-  evm_moderation_module_address
-  chain_id
-  lcd_endpoint node key_name keyring_backend
-  injectived_bin gas_prices ipfs_bin ipfs_api ipfs_gateway
+  network evm_rpc evm_suite_directory_address evm_chain_id
+  evm_explorer evm_keystore_dir key_name
+  ipfs_bin ipfs_api ipfs_gateway
   upload.endpoint upload.authorization_endpoint upload.authorization
   upload.us_peer upload.hk_peer
 
@@ -148,15 +144,20 @@ const usageChinese = `igit - Next Injective Git（Injective + IPFS）
   igit badge list [address|username]   显示贡献者的奖杯墙
   igit splits set <repo> [addr:bps]... 设置收益分成（仅所有者）
   igit splits show <owner> <repo>      显示收益分成
-  igit username register <name>        注册用户名（锁定押金）
-  igit username release                释放用户名并退还押金
+	igit username register <name>        注册用户名
+	igit username claim <name>           在限时窗口内重领 V1 用户名
+  igit username release                释放用户名
   igit username show [name|address]    查询用户名/反向查询
   igit release register <版本> <平台=sha256>...
                                        登记不可变发布物校验和（管理员）
   igit release verify <版本> <平台> <文件>
                                        对照链上校验和验证文件
+	igit suite info [--json]             显示已验证的 EVM suite 绑定
+	igit suite verify [--json]           验证链、代码哈希和模块绑定
+  igit archive <query|inventory|verify> CosmWasm V1 只读证据工具
   igit key show                        显示已配置的签名地址
   igit key new <name>                  创建加密签名密钥
+	igit key import <name>               无回显导入私钥
   igit gateway status                  探测 HK/US 只读网关健康状态
   igit gateway select                  输出自动选择的顺序
   igit doctor [--clone|--push] [--json] 诊断工具、配置和服务
@@ -170,8 +171,8 @@ const usageChinese = `igit - Next Injective Git（Injective + IPFS）
   igit version                         输出版本
 
 配置项：
-  contract_address chain_id lcd_endpoint node key_name keyring_backend
-  injectived_bin gas_prices ipfs_bin ipfs_api ipfs_gateway
+  network evm_rpc evm_suite_directory_address evm_chain_id
+  evm_explorer evm_keystore_dir key_name ipfs_bin ipfs_api ipfs_gateway
   upload.endpoint upload.authorization_endpoint upload.authorization
   upload.us_peer upload.hk_peer
 
@@ -196,6 +197,11 @@ func run(args []string) error {
 	if len(args) == 0 {
 		fmt.Print(usageText())
 		return nil
+	}
+	// The V1 archive is deliberately isolated from normal configuration and
+	// signer loading. It has no execute path and cannot trigger config upgrade.
+	if args[0] == "archive" {
+		return cmdArchive(args[1:])
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -240,8 +246,13 @@ func run(args []string) error {
 		return cmdUsername(cfg, args[1:])
 	case "release":
 		return cmdRelease(cfg, args[1:])
+	case "suite":
+		return cmdSuite(cfg, args[1:])
 	case "upgrade":
-		return cmdUpgrade(cfg, args[1:])
+		return i18n.Errorf(
+			"igit upgrade was removed with the immutable EVM suite; use `igit suite verify`",
+			"不可升级 EVM suite 已移除 igit upgrade；请使用 `igit suite verify`",
+		)
 	case "key":
 		return cmdKey(cfg, args[1:])
 	case "gateway":
@@ -569,15 +580,15 @@ func cmdCollab(cfg config.Config, args []string) error {
 		if len(args) < 3 || len(args) > 4 {
 			return i18n.Errorf("usage: igit collab add <repo> <address> [maintainer|reader]", "用法：igit collab add <repo> <address> [maintainer|reader]")
 		}
-		if err := cfg.Validate(); err != nil {
-			return err
-		}
 		role := "maintainer"
 		if len(args) > 3 {
 			role = strings.ToLower(strings.TrimSpace(args[3]))
 		}
 		if role != "maintainer" && role != "reader" {
 			return i18n.Errorf("invalid role %q (maintainer|reader)", "角色 %q 无效（maintainer|reader）", role)
+		}
+		if err := cfg.Validate(); err != nil {
+			return err
 		}
 		signer, err := chain.NewSignerBackend(cfg)
 		if err != nil {
@@ -799,7 +810,7 @@ func cmdGuardians(cfg config.Config, args []string) error {
 	if len(args) < 1 {
 		return i18n.Errorf("usage: igit guardians <set|propose|approve|cancel|accept|show> ...", "用法：igit guardians <set|propose|approve|cancel|accept|show> ...")
 	}
-	cc, err := legacyClient(cfg)
+	backend, err := chain.NewRecoveryBackend(cfg)
 	if err != nil {
 		return err
 	}
@@ -821,7 +832,7 @@ func cmdGuardians(cfg config.Config, args []string) error {
 				return i18n.Errorf("guardian %q must be an inj1... address", "守护人 %q 必须是 inj1... 地址", address)
 			}
 		}
-		if err := cc.SetGuardians(args[1], guardians, uint8(threshold)); err != nil {
+		if err := backend.SetGuardians(args[1], guardians, uint8(threshold)); err != nil {
 			return err
 		}
 		fmt.Printf(i18n.Text("guardians configured for %s (threshold %d)\n", "%s 的守护人已配置（阈值 %d）\n"), args[1], threshold)
@@ -833,7 +844,7 @@ func cmdGuardians(cfg config.Config, args []string) error {
 		if err := cfg.Validate(); err != nil {
 			return err
 		}
-		if err := cc.ProposeRecovery(args[1], args[2], args[3]); err != nil {
+		if err := backend.ProposeRecovery(args[1], args[2], args[3]); err != nil {
 			return err
 		}
 		fmt.Println(i18n.Text("guardian recovery proposed; wait 7 days and collect approvals", "已发起守护人恢复；等待 7 天并收集审批"))
@@ -845,7 +856,7 @@ func cmdGuardians(cfg config.Config, args []string) error {
 		if err := cfg.Validate(); err != nil {
 			return err
 		}
-		if err := cc.ApproveRecovery(args[1], args[2]); err != nil {
+		if err := backend.ApproveRecovery(args[1], args[2]); err != nil {
 			return err
 		}
 		fmt.Println(i18n.Text("guardian recovery approved", "守护人恢复已审批"))
@@ -857,7 +868,7 @@ func cmdGuardians(cfg config.Config, args []string) error {
 		if err := cfg.Validate(); err != nil {
 			return err
 		}
-		if err := cc.CancelRecovery(args[1]); err != nil {
+		if err := backend.CancelRecovery(args[1]); err != nil {
 			return err
 		}
 		fmt.Println(i18n.Text("guardian recovery cancelled", "守护人恢复已取消"))
@@ -869,7 +880,7 @@ func cmdGuardians(cfg config.Config, args []string) error {
 		if err := cfg.Validate(); err != nil {
 			return err
 		}
-		if err := cc.AcceptRecovery(args[1], args[2]); err != nil {
+		if err := backend.AcceptRecovery(args[1], args[2]); err != nil {
 			return err
 		}
 		fmt.Println(i18n.Text("guardian recovery accepted", "守护人恢复已接受"))
@@ -881,7 +892,7 @@ func cmdGuardians(cfg config.Config, args []string) error {
 		if err := cfg.ValidateContract(); err != nil {
 			return err
 		}
-		status, err := cc.OwnershipSecurity(args[1], args[2])
+		status, err := backend.OwnershipSecurity(args[1], args[2])
 		if err != nil {
 			return err
 		}
@@ -1046,24 +1057,6 @@ func cmdMod(cfg config.Config, args []string) error {
 	return nil
 }
 
-// legacyClient is used by extension commands that still depend on the V1
-// message/query surface. Explicit V2 configuration must fail loudly instead
-// of silently writing to the legacy contract.
-func legacyClient(cfg config.Config) (*chain.Client, error) {
-	if chain.UsesEVMBackend(cfg) {
-		return nil, fmt.Errorf("%w: this command is not available in EVM registry V2 yet", chain.ErrEVMUnsupportedFeature)
-	}
-	return chain.New(cfg), nil
-}
-
-// resolveOwner turns a username into its address; addresses pass through.
-func resolveOwner(cc *chain.Client, owner string) (string, error) {
-	if strings.HasPrefix(owner, "inj1") {
-		return owner, nil
-	}
-	return cc.ResolveUsername(owner)
-}
-
 // parseINJ converts a decimal INJ amount ("0.5") into base units ("5...0inj").
 func parseINJ(s string) (string, error) {
 	whole, frac, _ := strings.Cut(strings.TrimSuffix(s, "inj"), ".")
@@ -1084,21 +1077,6 @@ func parseINJ(s string) (string, error) {
 		return "", i18n.Errorf("amount must be positive", "金额必须为正数")
 	}
 	return base + "inj", nil
-}
-
-func addCoinAmounts(a, b chain.Coin) (string, error) {
-	if a.Denom == "" || a.Denom != b.Denom {
-		return "", fmt.Errorf("username deposit and fee use different denoms")
-	}
-	left, ok := new(big.Int).SetString(a.Amount, 10)
-	if !ok {
-		return "", fmt.Errorf("invalid username deposit amount %q", a.Amount)
-	}
-	right, ok := new(big.Int).SetString(b.Amount, 10)
-	if !ok {
-		return "", fmt.Errorf("invalid username fee amount %q", b.Amount)
-	}
-	return new(big.Int).Add(left, right).String() + a.Denom, nil
 }
 
 func cmdSponsor(cfg config.Config, args []string) error {
@@ -1142,11 +1120,11 @@ func cmdFork(cfg config.Config, args []string) error {
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
-	cc, err := legacyClient(cfg)
+	registry, err := chain.NewRegistryBackend(cfg)
 	if err != nil {
 		return err
 	}
-	owner, err := resolveOwner(cc, args[0])
+	owner, err := resolveRegistryOwner(registry, args[0])
 	if err != nil {
 		return err
 	}
@@ -1154,10 +1132,18 @@ func cmdFork(cfg config.Config, args []string) error {
 	if len(args) > 2 {
 		newName = args[2]
 	}
-	if err := cc.ForkRepo(owner, args[1], newName); err != nil {
+	forker, err := chain.NewForkBackend(cfg)
+	if err != nil {
 		return err
 	}
-	self, err := cc.OwnerAddress()
+	if err := forker.ForkRepo(owner, args[1], newName); err != nil {
+		return err
+	}
+	signer, err := chain.NewSignerBackend(cfg)
+	if err != nil {
+		return err
+	}
+	self, err := signer.OwnerAddress()
 	if err != nil {
 		return err
 	}
@@ -1349,9 +1335,9 @@ func cmdSplits(cfg config.Config, args []string) error {
 
 func cmdUsername(cfg config.Config, args []string) error {
 	if len(args) < 1 {
-		return i18n.Errorf("usage: igit username <register|release|show> ...", "用法：igit username <register|release|show> ...")
+		return i18n.Errorf("usage: igit username <register|claim|release|show> ...", "用法：igit username <register|claim|release|show> ...")
 	}
-	cc, err := legacyClient(cfg)
+	backend, err := chain.NewUsernameBackend(cfg)
 	if err != nil {
 		return err
 	}
@@ -1363,41 +1349,57 @@ func cmdUsername(cfg config.Config, args []string) error {
 		if err := cfg.Validate(); err != nil {
 			return err
 		}
-		info, err := cc.ConfigInfo()
-		if err != nil {
-			return i18n.Errorf("fetch deposit config: %w", "获取押金配置失败：%w", err)
-		}
-		registrationCost, err := addCoinAmounts(info.UsernameDeposit, info.UsernameFee)
-		if err != nil {
+		if err := backend.RegisterUsername(args[1]); err != nil {
 			return err
 		}
-		if err := cc.RegisterUsername(args[1], registrationCost); err != nil {
-			return err
-		}
-		fmt.Printf(i18n.Text("username %q registered (deposit %s locked; registration fee sent to treasury)\n", "用户名 %q 已注册（押金 %s 已锁定；注册费已发送到金库）\n"), args[1], info.UsernameDeposit.Amount+info.UsernameDeposit.Denom)
+		fmt.Printf(i18n.Text("username %q registered\n", "用户名 %q 已注册\n"), args[1])
 		fmt.Printf(i18n.Text("your repos are now reachable as igit://%s/<repo>\n", "你的仓库现在可通过 igit://%s/<repo> 访问\n"), args[1])
 		return nil
-	case "release":
+	case "claim":
+		if len(args) != 2 {
+			return i18n.Errorf("usage: igit username claim <name>", "用法：igit username claim <name>")
+		}
 		if err := cfg.Validate(); err != nil {
 			return err
 		}
-		if err := cc.ReleaseUsername(); err != nil {
+		if err := backend.ClaimOriginalUsername(args[1]); err != nil {
 			return err
 		}
-		fmt.Println(i18n.Text("username released, deposit refunded", "用户名已释放，押金已退还"))
+		fmt.Printf(i18n.Text("original username %q claimed\n", "已重领原用户名 %q\n"), args[1])
+		return nil
+	case "release":
+		if len(args) != 1 {
+			return i18n.Errorf("usage: igit username release", "用法：igit username release")
+		}
+		if err := cfg.Validate(); err != nil {
+			return err
+		}
+		if err := backend.ReleaseUsername(); err != nil {
+			return err
+		}
+		fmt.Println(i18n.Text("username released", "用户名已释放"))
 		return nil
 	case "show":
+		if len(args) > 2 {
+			return i18n.Errorf("usage: igit username show [name|address]", "用法：igit username show [用户名|地址]")
+		}
+		if err := cfg.ValidateContract(); err != nil {
+			return err
+		}
 		target := ""
 		if len(args) > 1 {
 			target = args[1]
 		} else {
-			var err error
-			if target, err = cc.OwnerAddress(); err != nil {
+			signer, err := chain.NewSignerBackend(cfg)
+			if err != nil {
+				return err
+			}
+			if target, err = signer.OwnerAddress(); err != nil {
 				return err
 			}
 		}
-		if strings.HasPrefix(target, "inj1") {
-			name, err := cc.AddressUsername(target)
+		if strings.HasPrefix(target, "inj1") || strings.HasPrefix(strings.ToLower(target), "0x") {
+			name, err := backend.AddressUsername(target)
 			if err != nil {
 				return err
 			}
@@ -1408,7 +1410,7 @@ func cmdUsername(cfg config.Config, args []string) error {
 			}
 			return nil
 		}
-		owner, err := cc.ResolveUsername(target)
+		owner, err := backend.ResolveUsername(target)
 		if err != nil {
 			return err
 		}
@@ -1423,7 +1425,7 @@ func cmdRelease(cfg config.Config, args []string) error {
 	if len(args) < 1 {
 		return i18n.Errorf("usage: igit release <register|verify> ...", "用法：igit release <register|verify> ...")
 	}
-	cc, err := legacyClient(cfg)
+	backend, err := chain.NewReleaseBackend(cfg)
 	if err != nil {
 		return err
 	}
@@ -1451,7 +1453,7 @@ func cmdRelease(cfg config.Config, args []string) error {
 			seen[platform] = true
 			artifacts = append(artifacts, chain.ReleaseArtifact{Platform: platform, SHA256: strings.ToLower(digest)})
 		}
-		if err := cc.RegisterRelease(args[1], artifacts); err != nil {
+		if err := backend.RegisterRelease(args[1], artifacts); err != nil {
 			return err
 		}
 		fmt.Printf(i18n.Text("release %s registered (%d artifacts)\n", "发布 %s 已登记（%d 个发布物）\n"), args[1], len(artifacts))
@@ -1463,7 +1465,7 @@ func cmdRelease(cfg config.Config, args []string) error {
 		if err := cfg.ValidateContract(); err != nil {
 			return err
 		}
-		want, err := cc.ReleaseArtifacts(args[1])
+		want, err := backend.ReleaseArtifacts(args[1])
 		if err != nil {
 			return err
 		}
@@ -1491,65 +1493,6 @@ func cmdRelease(cfg config.Config, args []string) error {
 	}
 }
 
-func cmdUpgrade(cfg config.Config, args []string) error {
-	if len(args) < 1 {
-		return i18n.Errorf("usage: igit upgrade <schedule|cancel|show> ...", "usage: igit upgrade <schedule|cancel|show> ...")
-	}
-	cc, err := legacyClient(cfg)
-	if err != nil {
-		return err
-	}
-	switch args[0] {
-	case "schedule":
-		if len(args) != 2 || len(args[1]) != sha256.Size*2 {
-			return i18n.Errorf("usage: igit upgrade schedule <wasm-sha256>", "usage: igit upgrade schedule <wasm-sha256>")
-		}
-		if _, err := hex.DecodeString(args[1]); err != nil {
-			return i18n.Errorf("wasm SHA-256 must be 64 hexadecimal characters", "wasm SHA-256 must be 64 hexadecimal characters")
-		}
-		if err := cfg.Validate(); err != nil {
-			return err
-		}
-		if err := cc.ScheduleUpgrade(strings.ToLower(args[1])); err != nil {
-			return err
-		}
-		fmt.Println(i18n.Text("upgrade scheduled; wait 14 days before migrate", "upgrade scheduled; wait 14 days before migrate"))
-		return nil
-	case "cancel":
-		if len(args) != 1 {
-			return i18n.Errorf("usage: igit upgrade cancel", "usage: igit upgrade cancel")
-		}
-		if err := cfg.Validate(); err != nil {
-			return err
-		}
-		if err := cc.CancelUpgrade(); err != nil {
-			return err
-		}
-		fmt.Println(i18n.Text("pending upgrade cancelled", "pending upgrade cancelled"))
-		return nil
-	case "show":
-		if len(args) != 1 {
-			return i18n.Errorf("usage: igit upgrade show", "usage: igit upgrade show")
-		}
-		if err := cfg.ValidateContract(); err != nil {
-			return err
-		}
-		security, err := cc.UpgradeSecurity()
-		if err != nil {
-			return err
-		}
-		fmt.Printf("timelock_seconds=%d\n", security.TimelockSeconds)
-		if security.Proposal == nil {
-			fmt.Println("proposal=none")
-			return nil
-		}
-		fmt.Printf("wasm_sha256=%s\nproposed_at=%d\nexecute_after=%d\n", security.Proposal.WasmSHA256, security.Proposal.ProposedAt, security.Proposal.ExecuteAfter)
-		return nil
-	default:
-		return i18n.Errorf("unknown upgrade subcommand %q", "unknown upgrade subcommand %q", args[0])
-	}
-}
-
 func sha256File(path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -1563,9 +1506,43 @@ func sha256File(path string) (string, error) {
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
+func cmdSuite(cfg config.Config, args []string) error {
+	if len(args) < 1 || len(args) > 2 || (args[0] != "info" && args[0] != "verify") || (len(args) == 2 && args[1] != "--json") {
+		return i18n.Errorf("usage: igit suite <info|verify> [--json]", "用法：igit suite <info|verify> [--json]")
+	}
+	if err := cfg.ValidateContract(); err != nil {
+		return err
+	}
+	registry := chain.NewEVMSuiteRegistry(cfg)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	info, err := registry.SuiteInfo(ctx)
+	if err != nil {
+		return err
+	}
+	if len(args) == 2 {
+		data, err := json.MarshalIndent(info, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
+		return nil
+	}
+	if args[0] == "verify" {
+		fmt.Println(i18n.Text("suite verification passed", "suite 验证通过"))
+	}
+	fmt.Printf("directory=%s\nversion=%d\nchain_id=%d\nstate=%s\nsnapshot_root=%s\nbootstrap_coordinator=%s\nblock=%s\n",
+		info.Directory, info.Version, info.ChainID, info.State, info.SnapshotRoot,
+		info.BootstrapCoordinator, info.BlockTag)
+	for _, module := range info.Modules {
+		fmt.Printf("module.%s.address=%s\nmodule.%s.code_hash=%s\n", module.Name, module.Address, module.Name, module.CodeHash)
+	}
+	return nil
+}
+
 func cmdKey(cfg config.Config, args []string) error {
 	if len(args) == 0 {
-		return i18n.Errorf("usage: igit key <show|new> [name]", "用法：igit key <show|new> [name]")
+		return i18n.Errorf("usage: igit key <show|new|import> [name]", "用法：igit key <show|new|import> [name]")
 	}
 	switch args[0] {
 	case "show":
@@ -1609,6 +1586,36 @@ func cmdKey(cfg config.Config, args []string) error {
 		}
 		fmt.Printf("address: %s\n", address)
 		fmt.Printf(i18n.Text("\nkey_name set to %q in igit config.\n", "\n已在 igit 配置中将 key_name 设为 %q。\n"), args[1])
+		return nil
+	case "import":
+		if len(args) != 2 {
+			return i18n.Errorf("usage: igit key import <name>", "用法：igit key import <name>")
+		}
+		signer, err := chain.NewSignerBackend(cfg)
+		if err != nil {
+			return err
+		}
+		importer, ok := signer.(chain.KeyImporter)
+		if !ok {
+			return i18n.Errorf("selected signer does not support private-key import", "所选签名器不支持导入私钥")
+		}
+		if err := importer.ImportKey(args[1]); err != nil {
+			return err
+		}
+		cfg.KeyName = args[1]
+		if err := config.Save(cfg); err != nil {
+			return err
+		}
+		signer, err = chain.NewSignerBackend(cfg)
+		if err != nil {
+			return err
+		}
+		address, err := signer.OwnerAddress()
+		if err != nil {
+			return err
+		}
+		fmt.Printf("address: %s\n", address)
+		fmt.Printf(i18n.Text("\nimported key %q into the encrypted local keystore.\n", "\n已将密钥 %q 导入本机加密 keystore。\n"), args[1])
 		return nil
 	default:
 		return i18n.Errorf("unknown key subcommand %q", "未知的 key 子命令 %q", args[0])
@@ -1707,22 +1714,10 @@ func setConfigField(cfg *config.Config, key, value string) error {
 			return err
 		}
 		*cfg = selected
-	case "contract_backend":
-		cfg.ContractBackend = value
-	case "contract_version":
-		cfg.ContractVersion = value
-	case "contract_address":
-		cfg.ContractAddress = value
 	case "evm_rpc":
 		cfg.EVMRPC = value
-	case "evm_contract_address":
-		cfg.EVMContractAddress = value
-	case "evm_badge_module_address":
-		cfg.EVMBadgeModuleAddress = value
-	case "evm_economic_module_address":
-		cfg.EVMEconomicModuleAddress = value
-	case "evm_moderation_module_address":
-		cfg.EVMModerationModuleAddress = value
+	case "evm_suite_directory_address":
+		cfg.EVMSuiteDirectoryAddress = value
 	case "evm_chain_id":
 		parsed, err := strconv.ParseUint(value, 10, 64)
 		if err != nil {
@@ -1733,20 +1728,8 @@ func setConfigField(cfg *config.Config, key, value string) error {
 		cfg.EVMExplorer = value
 	case "evm_keystore_dir":
 		cfg.EVMKeystoreDir = value
-	case "chain_id":
-		cfg.ChainID = value
-	case "lcd_endpoint":
-		cfg.LCDEndpoint = value
-	case "node":
-		cfg.Node = value
 	case "key_name":
 		cfg.KeyName = value
-	case "keyring_backend":
-		cfg.KeyringBackend = value
-	case "injectived_bin":
-		cfg.InjectivedBin = value
-	case "gas_prices":
-		cfg.GasPrices = value
 	case "ipfs_api":
 		cfg.IPFSAPI = value
 	case "ipfs_bin":

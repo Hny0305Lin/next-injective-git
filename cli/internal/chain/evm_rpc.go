@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"strings"
 	"sync"
@@ -20,6 +21,7 @@ const (
 	maxRPCAttempts         = 3
 	initialRPCBackoff      = 100 * time.Millisecond
 	maxRPCResponseBytes    = 8 << 20
+	maxReceiptRPCErrors    = 3
 )
 
 // RPCError is a JSON-RPC error returned by an EVM node. Data is retained as a
@@ -286,6 +288,7 @@ type EVMReceipt struct {
 	BlockNumber     string   `json:"blockNumber"`
 	BlockHash       string   `json:"blockHash"`
 	To              string   `json:"to"`
+	ContractAddress string   `json:"contractAddress"`
 	Status          string   `json:"status"`
 	GasUsed         string   `json:"gasUsed"`
 	Logs            []EVMLog `json:"logs"`
@@ -362,6 +365,26 @@ func (r *EVMRPC) BlockByNumber(ctx context.Context, blockTag string) (*EVMBlock,
 	return block, nil
 }
 
+// CodeAt returns the runtime bytecode at address for a fixed block tag.
+// Suite verification hashes these exact bytes before trusting a module.
+func (r *EVMRPC) CodeAt(ctx context.Context, address, blockTag string) ([]byte, error) {
+	if strings.TrimSpace(blockTag) == "" {
+		blockTag = "latest"
+	}
+	address, err := normalizeEVMAddress(address)
+	if err != nil {
+		return nil, err
+	}
+	var raw string
+	if err := r.Call(ctx, "eth_getCode", []any{address, blockTag}, &raw); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(raw) == "" {
+		return nil, fmt.Errorf("eth_getCode returned null result")
+	}
+	return decodeHexBytes(raw)
+}
+
 func (r *EVMRPC) CallContract(ctx context.Context, to, data string) ([]byte, error) {
 	return r.CallContractAt(ctx, to, data, "latest")
 }
@@ -407,6 +430,31 @@ func (r *EVMRPC) TransactionCount(ctx context.Context, address, blockTag string)
 	return parseHexUint(raw)
 }
 
+// Balance returns an account's native INJ balance in wei at a block tag.
+func (r *EVMRPC) Balance(ctx context.Context, address, blockTag string) (*big.Int, error) {
+	if strings.TrimSpace(blockTag) == "" {
+		blockTag = "latest"
+	}
+	normalized, err := normalizeEVMAddress(address)
+	if err != nil {
+		return nil, err
+	}
+	var raw string
+	if err := r.Call(ctx, "eth_getBalance", []any{normalized, blockTag}, &raw); err != nil {
+		return nil, err
+	}
+	value := strings.TrimSpace(raw)
+	value = strings.TrimPrefix(strings.TrimPrefix(value, "0x"), "0X")
+	if value == "" {
+		return nil, fmt.Errorf("eth_getBalance returned an empty quantity")
+	}
+	balance, ok := new(big.Int).SetString(value, 16)
+	if !ok {
+		return nil, fmt.Errorf("invalid eth_getBalance quantity %q", raw)
+	}
+	return balance, nil
+}
+
 // GasPrice returns the node's current legacy gas price as a normalized hex
 // quantity. The signer uses it for a replay-protected legacy transaction;
 // Injective's EVM RPC accepts this form and it keeps the signer independent of
@@ -448,10 +496,16 @@ func (r *EVMRPC) WaitReceipt(ctx context.Context, hash string) (*EVMReceipt, err
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	transientErrors := 0
 	for {
 		receipt, err := r.TransactionReceipt(ctx, hash)
 		if err != nil {
-			return nil, err
+			if !isTransientReceiptRPCError(err) || transientErrors >= maxReceiptRPCErrors-1 {
+				return nil, err
+			}
+			transientErrors++
+		} else {
+			transientErrors = 0
 		}
 		if receipt != nil {
 			if strings.EqualFold(strings.TrimSpace(receipt.Status), "0x0") || strings.TrimSpace(receipt.Status) == "0" {
@@ -475,6 +529,15 @@ func (r *EVMRPC) WaitReceipt(ctx context.Context, hash string) (*EVMReceipt, err
 		case <-timer.C:
 		}
 	}
+}
+
+func isTransientReceiptRPCError(err error) bool {
+	if retryableRPCError(err) {
+		return true
+	}
+	var rpcErr *RPCError
+	return errors.As(err, &rpcErr) && rpcErr.Method == "eth_getTransactionReceipt" &&
+		(rpcErr.Code == -32603 || strings.Contains(strings.ToLower(rpcErr.Message), "internal error"))
 }
 
 func parseHexUint(raw string) (uint64, error) {

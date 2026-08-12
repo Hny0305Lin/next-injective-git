@@ -38,6 +38,29 @@ func TestFormatINJ(t *testing.T) {
 	}
 }
 
+func TestBalanceCheckUsesEVMRPC(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var request struct {
+			Method string            `json:"method"`
+			Params []json.RawMessage `json:"params"`
+		}
+		if err := json.NewDecoder(req.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if request.Method != "eth_getBalance" || len(request.Params) != 2 {
+			t.Fatalf("request = %#v, want eth_getBalance with address and block tag", request)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": 1, "result": "0x1158e460913d00000"})
+	}))
+	defer server.Close()
+	cfg := config.Defaults()
+	cfg.EVMRPC = server.URL
+	check := balanceCheck(context.Background(), cfg, "0x1111111111111111111111111111111111111111")
+	if check.Status != StatusOK || check.Detail != "20 INJ" {
+		t.Fatalf("balance check = %#v", check)
+	}
+}
+
 func TestPushPreflightReportsMissingRequirementsTogether(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.ContractAddress = ""
@@ -49,7 +72,7 @@ func TestPushPreflightReportsMissingRequirementsTogether(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected incomplete environment")
 	}
-	for _, want := range []string{"contract", "key_name", "injectived", "Injective RPC", "local Kubo API"} {
+	for _, want := range []string{"SuiteDirectory", "key_name", "local Kubo API"} {
 		if !contains(err.Error(), want) {
 			t.Errorf("error %q does not contain %q", err, want)
 		}
@@ -59,27 +82,18 @@ func TestPushPreflightReportsMissingRequirementsTogether(t *testing.T) {
 func TestBackendCheckUsesUnifiedSelector(t *testing.T) {
 	cfg := config.Defaults()
 	check := backendCheck(cfg)
-	if check.Status != StatusOK || check.Name != "chain backend" {
-		t.Fatalf("default backend check = %#v, want OK chain backend", check)
+	if check.Status != StatusFail || check.Name != "chain backend" || !contains(check.Detail, "SuiteDirectory") {
+		t.Fatalf("default backend check = %#v, want fail-closed missing Directory", check)
 	}
-
-	cfg.ContractVersion = "v2"
+	cfg.EVMSuiteDirectoryAddress = "0x2222222222222222222222222222222222222222"
 	check = backendCheck(cfg)
-	if check.Status != StatusFail || !contains(check.Detail, "EVM V2 contract address") {
-		t.Fatalf("v2 backend check = %#v, want incomplete EVM profile failure", check)
-	}
-
-	cfg.ContractBackend = "mystery"
-	check = backendCheck(cfg)
-	if check.Status != StatusFail || !contains(check.Detail, "unsupported contract backend") {
-		t.Fatalf("unknown backend check = %#v, want selector failure", check)
+	if check.Status != StatusOK || check.Detail != "evm v3 immutable suite" {
+		t.Fatalf("suite backend check = %#v, want EVM v3", check)
 	}
 }
 
 func TestExplicitEVMDoesNotRequireLegacyInjectived(t *testing.T) {
 	cfg := config.Defaults()
-	cfg.ContractBackend = "evm"
-	cfg.ContractVersion = "v2"
 	cfg.KeyName = "dev"
 	cfg.InjectivedBin = t.TempDir() + "/missing-injectived"
 	err := PushPreflight(context.Background(), cfg, false)
@@ -89,7 +103,7 @@ func TestExplicitEVMDoesNotRequireLegacyInjectived(t *testing.T) {
 	if contains(err.Error(), "injectived") {
 		t.Fatalf("EVM preflight unexpectedly requires legacy injectived: %v", err)
 	}
-	if !contains(err.Error(), "EVM V2 contract address") {
+	if !contains(err.Error(), "SuiteDirectory") {
 		t.Fatalf("EVM preflight error = %v, want unified backend failure", err)
 	}
 }
@@ -102,9 +116,7 @@ func TestExplicitEVMPreflightChecksRPCWithoutConfiguredKey(t *testing.T) {
 	}))
 	defer server.Close()
 	cfg := config.Defaults()
-	cfg.ContractBackend = "evm"
-	cfg.ContractVersion = "v2"
-	cfg.EVMContractAddress = "0x2222222222222222222222222222222222222222"
+	cfg.EVMSuiteDirectoryAddress = "0x2222222222222222222222222222222222222222"
 	cfg.EVMRPC = server.URL
 	cfg.KeyName = ""
 	if err := PushPreflight(context.Background(), cfg, false); err == nil {
@@ -123,9 +135,7 @@ func TestExplicitEVMPreflightRejectsChainIDMismatch(t *testing.T) {
 	}))
 	defer server.Close()
 	cfg := config.Defaults()
-	cfg.ContractBackend = "evm"
-	cfg.ContractVersion = "v2"
-	cfg.EVMContractAddress = "0x2222222222222222222222222222222222222222"
+	cfg.EVMSuiteDirectoryAddress = "0x2222222222222222222222222222222222222222"
 	cfg.EVMRPC = server.URL
 	cfg.KeyName = "dev"
 	err := PushPreflight(context.Background(), cfg, false)

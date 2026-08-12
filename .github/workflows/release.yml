@@ -20,11 +20,6 @@ jobs:
           go-version: "1.22"
           cache: false
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.81.0
-          targets: wasm32-unknown-unknown
-
       - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09
         with:
           version: v1.7.1
@@ -57,22 +52,25 @@ jobs:
           go vet ./...
           go test ./...
 
-      - name: verify migration source readiness
-        run: bash scripts/migration-readiness.sh --required
+      - name: verify immutable Suite source readiness
+        run: bash scripts/suite-readiness.sh --required
 
       - name: test migration cutover gate fail-closed behavior
         env:
           EXPECTED_CUTOVER_COMMIT: ${{ github.sha }}
         run: bash scripts/migration-cutover-readiness-test.sh
 
+      - name: validate Suite cutover evidence parser
+        run: node --check scripts/validate-suite-cutover.mjs
+
       - name: verify migration and signer race safety
         run: bash scripts/race-check.sh --required
 
-      - name: enforce V1-only published profile until reviewed V2 cutover
+      - name: enforce immutable Suite CLI profile shape
         working-directory: cli
         run: go run ./cmd/igit-release-profile-check
 
-      - name: enforce V1-only Web profiles until reviewed V2 cutover
+      - name: enforce immutable Suite Web profile shape
         working-directory: web
         run: npm run check:release-profile
 
@@ -92,20 +90,10 @@ jobs:
           go test -count=1 -run '^TestVersionLinkerInjection$' \
             -ldflags "-X github.com/Hny0305Lin/next-injective-git/cli/cmd/igit.version=${IGIT_EXPECTED_VERSION}" ./cmd/igit
 
-      - name: test Rust contract
-        working-directory: contracts/repo-registry
-        run: |
-          set -euo pipefail
-          rustc --version | grep -Eq '^rustc 1\.81\.'
-          cargo test --locked
-
-      - name: test EVM V2 alpha contract
+      - name: test immutable EVM Suite
         run: |
           bash scripts/evm-v2-check-test.sh
           bash scripts/evm-v2-check.sh --required
-
-      - name: test V1 snapshot exporter
-        run: bash scripts/v1-export-snapshot-test.sh
 
       - name: build release assets
         env:
@@ -127,17 +115,6 @@ jobs:
               -o "../release/git-remote-igit-${os}-${arch}${ext}" ./cmd/git-remote-igit)
           done
 
-          # Run from the contract directory so its .cargo/config.toml keeps
-          # the CosmWasm host imports undefined during wasm linking.
-          (cd contracts/repo-registry && \
-            cargo build --release --target wasm32-unknown-unknown --lib --locked)
-          cp contracts/repo-registry/target/wasm32-unknown-unknown/release/repo_registry.wasm \
-            release/repo-registry.wasm
-
-          test -s release/repo-registry.wasm
-          wasm_magic="$(od -An -tx1 -N4 release/repo-registry.wasm | tr -d '[:space:]')"
-          test "$wasm_magic" = "0061736d"
-
           (cd release && sha256sum -- \
             igit-linux-amd64 \
             igit-linux-arm64 \
@@ -148,8 +125,7 @@ jobs:
             git-remote-igit-linux-arm64 \
             git-remote-igit-darwin-amd64 \
             git-remote-igit-darwin-arm64 \
-            git-remote-igit-windows-amd64.exe \
-            repo-registry.wasm > checksums.txt)
+            git-remote-igit-windows-amd64.exe > checksums.txt)
 
       - name: verify release assets
         env:

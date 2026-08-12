@@ -6,22 +6,20 @@ import {
   badgesByRepo,
   awardBadgeWithEvm,
   formatError,
-  formatFunds,
   formatInj,
   listCollaborators,
   revenueSplits,
   setRevenueSplitsWithEconomicModule,
-  sponsorEvents,
   sponsorTotals,
   timeAgo,
   type AppConfig,
   type BadgeInfo,
   type CollaboratorInfo,
-  type SponsorEvent,
   type SponsorTotal,
   type SplitEntry,
 } from "../../lib/chain";
 import type { Eip1193 } from "../../lib/wallet";
+import type { Hex } from "viem";
 import SponsorForm from "./SponsorForm";
 
 const BAR_COLORS = ["#4493f8", "#3fb950", "#d29922", "#a371f7", "#f85149", "#39c5cf"];
@@ -32,7 +30,6 @@ export default function SponsorsTab({
   repo,
   owner,
   repoId,
-  backend,
   badgeProvider,
   economicProvider,
 }: {
@@ -40,15 +37,13 @@ export default function SponsorsTab({
   addr: string;
   repo: string;
   owner: string;
-  repoId: string | null;
-  backend: "evm" | "cosmwasm";
+  repoId: Hex | null;
   badgeProvider?: Eip1193;
   economicProvider?: Eip1193;
 }) {
   const [totals, setTotals] = useState<SponsorTotal[] | null>(null);
   const [splits, setSplits] = useState<SplitEntry[]>([]);
   const [collabs, setCollabs] = useState<CollaboratorInfo[]>([]);
-  const [events, setEvents] = useState<SponsorEvent[]>([]);
   const [badges, setBadges] = useState<BadgeInfo[]>([]);
   const [err, setErr] = useState("");
   const [badgeRecipient, setBadgeRecipient] = useState("");
@@ -134,11 +129,10 @@ export default function SponsorsTab({
   useEffect(() => {
     (async () => {
       try {
-        const [t, s, c, events, badgeResult] = await Promise.all([
+        const [t, s, c, badgeResult] = await Promise.all([
           sponsorTotals(cfg, addr, repo),
           revenueSplits(cfg, addr, repo),
           listCollaborators(cfg, addr, repo),
-          backend === "cosmwasm" ? sponsorEvents(cfg, addr, repo).catch(() => []) : Promise.resolve([]),
           badgesByRepo(cfg, addr, repo).then(
             (value) => ({ value, error: "" }),
             (error) => ({ value: [] as BadgeInfo[], error: formatError(error) }),
@@ -148,14 +142,13 @@ export default function SponsorsTab({
         setSplits(s);
         setSplitDraft(draftFromSplits(s));
         setCollabs(c);
-        setEvents(events);
         setBadges(badgeResult.value);
         setBadgeQueryError(badgeResult.error);
       } catch (e) {
         setErr(String(e));
       }
     })();
-  }, [cfg, addr, repo, backend]);
+  }, [cfg, addr, repo]);
 
   if (err) return <div className="error" role="alert">{err}</div>;
   if (!totals) return <div className="spinner" aria-live="polite">querying chain…</div>;
@@ -164,7 +157,7 @@ export default function SponsorsTab({
 
   return (
     <div>
-      <SponsorForm cfg={cfg} addr={addr} repo={repo} repoId={repoId} backend={backend} />
+      <SponsorForm cfg={cfg} addr={addr} repo={repo} repoId={repoId} />
 
       <div className="dash-section-title">Lifetime sponsorship</div>
       {totals.length === 0 ? (
@@ -177,24 +170,6 @@ export default function SponsorsTab({
             <b>{formatInj(t.amount, t.denom)}</b> <span className="muted">total received</span>
           </div>
         ))
-      )}
-
-      {events.length > 0 && (
-        <>
-          <div className="dash-section-title" style={{ marginTop: 20 }}>Sponsor wall</div>
-          {events.map((e) => (
-            <div className="card sponsor-entry" key={e.txhash}>
-              <div>
-                <b>{formatFunds(e.funds)}</b>{" "}
-                <span className="muted">
-                  from <code>{e.sponsor.slice(0, 14)}…</code> ·{" "}
-                  {e.timestamp.slice(0, 16).replace("T", " ")}
-                </span>
-              </div>
-              {e.message && <div className="sponsor-msg">"{e.message}"</div>}
-            </div>
-          ))}
-        </>
       )}
 
       <div className="dash-section-title" style={{ marginTop: 20 }}>Revenue split</div>
@@ -234,7 +209,7 @@ export default function SponsorsTab({
         </tbody>
       </table>
 
-      {economicProvider && repoId && backend === "evm" && (
+      {economicProvider && repoId && (
         <form className="split-editor" onSubmit={saveRevenueSplits}>
           <div className="split-editor-head">
             <b>Revenue split recipients</b>

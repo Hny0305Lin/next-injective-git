@@ -24,34 +24,28 @@ func TestRemoteHelperEntrypointKeepsGitProtocolOnStandardStreams(t *testing.T) {
 	}
 }
 
-func TestValidateContractSelectionUsesEVMAddressForV2(t *testing.T) {
+func TestValidateContractSelectionRequiresSuiteDirectory(t *testing.T) {
 	cfg := config.Defaults()
-	cfg.ContractBackend = "evm"
-	cfg.ContractVersion = "v2"
-	cfg.ContractAddress = ""
-	if err := validateContractSelection(cfg); err == nil || !strings.Contains(err.Error(), "EVM V2 contract address") {
-		t.Fatalf("validation error = %v, want EVM address error", err)
+	if err := validateContractSelection(cfg); err == nil || !strings.Contains(err.Error(), "SuiteDirectory") {
+		t.Fatalf("validation error = %v, want SuiteDirectory error", err)
 	}
-	cfg.EVMContractAddress = "0x2222222222222222222222222222222222222222"
+	cfg.EVMSuiteDirectoryAddress = "0x2222222222222222222222222222222222222222"
 	if err := validateContractSelection(cfg); err != nil {
-		t.Fatalf("valid EVM selection rejected: %v", err)
+		t.Fatalf("valid suite selection rejected: %v", err)
 	}
-	cfg.EVMContractAddress = "inj1legacyaddress"
-	if err := validateContractSelection(cfg); err == nil || !strings.Contains(err.Error(), "invalid EVM V2 contract address") {
-		t.Fatalf("validation error = %v, want invalid EVM address error", err)
+	cfg.EVMSuiteDirectoryAddress = "inj1legacyaddress"
+	if err := validateContractSelection(cfg); err == nil || !strings.Contains(err.Error(), "invalid EVM SuiteDirectory address") {
+		t.Fatalf("validation error = %v, want invalid SuiteDirectory error", err)
 	}
 }
 
-func TestValidateContractSelectionUsesLegacyAddressForV1(t *testing.T) {
+func TestValidateContractSelectionIgnoresLegacyBackendFields(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.ContractBackend = "auto"
 	cfg.ContractVersion = "v1"
-	cfg.ContractAddress = ""
-	if err := validateContractSelection(cfg); err == nil || !strings.Contains(err.Error(), "contract_address") {
-		t.Fatalf("validation error = %v, want legacy address error", err)
-	}
 	cfg.ContractAddress = config.DefaultContractAddress
-	if err := validateContractSelection(cfg); err != nil {
-		t.Fatalf("valid legacy selection rejected: %v", err)
+	cfg.EVMContractAddress = "0x3333333333333333333333333333333333333333"
+	if err := validateContractSelection(cfg); err == nil || !strings.Contains(err.Error(), "SuiteDirectory") {
+		t.Fatalf("validation error = %v, want SuiteDirectory error despite legacy fields", err)
 	}
 }

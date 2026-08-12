@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -45,87 +46,67 @@ func TestEffectiveUploadPeersUseBuiltInDefaultsForLegacyEmptyValues(t *testing.T
 	}
 }
 
-func TestDefaultsExposeBackendMigrationMetadata(t *testing.T) {
+func TestDefaultsSelectEVMSuiteWithoutUnverifiedDirectory(t *testing.T) {
 	cfg := Defaults()
 	if cfg.Network != "injective-testnet" {
 		t.Fatalf("network = %q, want injective-testnet", cfg.Network)
 	}
-	if cfg.EffectiveContractBackend() != "auto" {
-		t.Fatalf("backend = %q, want auto", cfg.EffectiveContractBackend())
+	if cfg.EffectiveContractBackend() != "evm" {
+		t.Fatalf("backend = %q, want evm", cfg.EffectiveContractBackend())
 	}
-	if cfg.EffectiveContractVersion() != "v1" {
-		t.Fatalf("version = %q, want v1 during compatibility period", cfg.EffectiveContractVersion())
+	if cfg.EffectiveContractVersion() != "v3" {
+		t.Fatalf("version = %q, want v3", cfg.EffectiveContractVersion())
+	}
+	if cfg.EffectiveEVMSuiteDirectoryAddress() != "" {
+		t.Fatalf("unverified default directory = %q", cfg.EffectiveEVMSuiteDirectoryAddress())
 	}
 }
 
-// TestPublishedProfilesRemainV1OnlyUntilReviewedCutover is the semantic release
-// guard used by the tag workflow. A reviewed V2 release must replace this gate
-// with one that verifies its deployment manifest and cutover evidence.
-func TestPublishedProfilesRemainV1OnlyUntilReviewedCutover(t *testing.T) {
-	if err := ValidatePublishedProfilesV1Only(); err != nil {
+func TestPublishedProfilesRejectUnverifiedDirectoryUntilCutover(t *testing.T) {
+	if err := ValidatePublishedSuiteProfiles(); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestPublishedProfileGuardWalksEntireMap(t *testing.T) {
 	const name = "unreviewed-profile"
-	networkProfiles[name] = NetworkProfile{Name: name, EVMContract: "0x1111111111111111111111111111111111111111"}
+	networkProfiles[name] = NetworkProfile{Name: name, EVMSuiteDirectory: "0x1111111111111111111111111111111111111111"}
 	t.Cleanup(func() { delete(networkProfiles, name) })
-	if err := ValidatePublishedProfilesV1Only(); err == nil {
-		t.Fatal("profile with an unreviewed V2 address unexpectedly passed")
+	if err := ValidatePublishedSuiteProfiles(); err == nil {
+		t.Fatal("profile with an unreviewed SuiteDirectory unexpectedly passed")
 	}
 }
 
-func TestPublishedProfileGuardRejectsAnyBadgeModuleAddress(t *testing.T) {
-	const name = "unreviewed-badge-profile"
-	networkProfiles[name] = NetworkProfile{
-		Name:           name,
-		EVMBadgeModule: "0x2222222222222222222222222222222222222222",
-	}
-	t.Cleanup(func() { delete(networkProfiles, name) })
-	if err := ValidatePublishedProfilesV1Only(); err == nil {
-		t.Fatal("profile with an unreviewed badge module address unexpectedly passed")
-	}
-}
-
-func TestPublishedProfileGuardRejectsAnyEconomicModuleAddress(t *testing.T) {
-	const name = "unreviewed-economic-profile"
-	networkProfiles[name] = NetworkProfile{
-		Name:              name,
-		EVMEconomicModule: "0x3333333333333333333333333333333333333333",
-	}
-	t.Cleanup(func() { delete(networkProfiles, name) })
-	if err := ValidatePublishedProfilesV1Only(); err == nil {
-		t.Fatal("profile with an unreviewed economic module address unexpectedly passed")
-	}
-}
-
-func TestLegacyConfigUsesCompatibleBackendDefaults(t *testing.T) {
+func TestLegacyMetadataCannotChangeEffectiveRuntime(t *testing.T) {
 	cfg := Config{}
-	if cfg.EffectiveContractBackend() != "auto" {
-		t.Fatalf("empty backend = %q, want auto", cfg.EffectiveContractBackend())
-	}
-	if cfg.EffectiveContractVersion() != "v1" {
-		t.Fatalf("empty version = %q, want v1", cfg.EffectiveContractVersion())
-	}
-	cfg.ContractBackend = " EVM "
 	if cfg.EffectiveContractBackend() != "evm" {
-		t.Fatalf("normalized backend = %q, want evm", cfg.EffectiveContractBackend())
+		t.Fatalf("empty backend = %q, want evm", cfg.EffectiveContractBackend())
+	}
+	if cfg.EffectiveContractVersion() != "v3" {
+		t.Fatalf("empty version = %q, want v3", cfg.EffectiveContractVersion())
+	}
+	cfg.ContractBackend = "cosmwasm"
+	cfg.ContractVersion = "v1"
+	if cfg.EffectiveContractBackend() != "evm" {
+		t.Fatalf("legacy backend changed runtime to %q", cfg.EffectiveContractBackend())
+	}
+	if cfg.EffectiveContractVersion() != "v3" {
+		t.Fatalf("legacy version changed runtime to %q", cfg.EffectiveContractVersion())
 	}
 }
 
-func TestValidateContractRejectsUnknownBackendMetadata(t *testing.T) {
+func TestValidateContractRequiresSuiteDirectory(t *testing.T) {
 	cfg := Defaults()
-	cfg.ContractAddress = DefaultContractAddress
-	cfg.ContractBackend = "unknown"
 	if err := cfg.ValidateContract(); err == nil {
-		t.Fatal("unknown contract backend was accepted")
+		t.Fatal("missing SuiteDirectory was accepted")
 	}
-
-	cfg.ContractBackend = "auto"
-	cfg.ContractVersion = "v9"
+	cfg.EVMSuiteDirectoryAddress = "inj1notanevmaddress"
 	if err := cfg.ValidateContract(); err == nil {
-		t.Fatal("unknown contract version was accepted")
+		t.Fatal("malformed SuiteDirectory was accepted")
+	}
+	cfg.EVMSuiteDirectoryAddress = "0x1111111111111111111111111111111111111111"
+	if err := cfg.ValidateContract(); err != nil {
+		t.Fatalf("valid SuiteDirectory profile rejected: %v", err)
 	}
 }
 
@@ -137,58 +118,26 @@ func TestNetworkProfileDerivesEVMTransportDefaults(t *testing.T) {
 	if cfg.EffectiveEVMChainID() != 1439 {
 		t.Fatalf("EVM chain ID = %d, want 1439", cfg.EffectiveEVMChainID())
 	}
-	if cfg.EffectiveEVMContractAddress() != "" {
-		t.Fatalf("EVM contract address = %q, want unset until deployment", cfg.EffectiveEVMContractAddress())
-	}
-	if cfg.EffectiveEVMEconomicModuleAddress() != "" {
-		t.Fatalf("EVM economic module address = %q, want unset until deployment", cfg.EffectiveEVMEconomicModuleAddress())
-	}
-	if cfg.EffectiveEVMModerationModuleAddress() != "" {
-		t.Fatalf("EVM moderation module address = %q, want unset until deployment", cfg.EffectiveEVMModerationModuleAddress())
+	if cfg.EffectiveEVMSuiteDirectoryAddress() != "" {
+		t.Fatalf("SuiteDirectory = %q, want unset until evidence-approved deployment", cfg.EffectiveEVMSuiteDirectoryAddress())
 	}
 }
 
-func TestValidateEconomicModuleRequiresReviewedV2Address(t *testing.T) {
+func TestModuleValidationUsesOnlySuiteDirectory(t *testing.T) {
 	cfg := Config{
-		Network:            "injective-testnet",
-		ContractBackend:    "evm",
-		ContractVersion:    "v2",
-		EVMContractAddress: "0x1111111111111111111111111111111111111111",
-		EVMRPC:             "https://example.invalid",
-		EVMChainID:         1439,
+		Network:                  "injective-testnet",
+		EVMSuiteDirectoryAddress: "0x1111111111111111111111111111111111111111",
+		EVMRPC:                   "https://example.invalid",
+		EVMChainID:               1439,
 	}
-	if err := cfg.ValidateEconomicModule(); err == nil {
-		t.Fatal("missing economic module address was accepted")
-	}
-	cfg.EVMEconomicModuleAddress = "inj1notanevmaddress"
-	if err := cfg.ValidateEconomicModule(); err == nil {
-		t.Fatal("malformed economic module address was accepted")
-	}
-	cfg.EVMEconomicModuleAddress = "0x3333333333333333333333333333333333333333"
-	if err := cfg.ValidateEconomicModule(); err != nil {
-		t.Fatalf("reviewed economic module address rejected: %v", err)
-	}
-}
-
-func TestValidateModerationModuleRequiresReviewedV2Address(t *testing.T) {
-	cfg := Config{
-		Network:            "injective-testnet",
-		ContractBackend:    "evm",
-		ContractVersion:    "v2",
-		EVMContractAddress: "0x1111111111111111111111111111111111111111",
-		EVMRPC:             "https://example.invalid",
-		EVMChainID:         1439,
-	}
-	if err := cfg.ValidateModerationModule(); err == nil {
-		t.Fatal("missing moderation module address was accepted")
-	}
-	cfg.EVMModerationModuleAddress = "inj1notanevmaddress"
-	if err := cfg.ValidateModerationModule(); err == nil {
-		t.Fatal("malformed moderation module address was accepted")
-	}
-	cfg.EVMModerationModuleAddress = "0x4444444444444444444444444444444444444444"
-	if err := cfg.ValidateModerationModule(); err != nil {
-		t.Fatalf("reviewed moderation module address rejected: %v", err)
+	for name, validate := range map[string]func() error{
+		"badge":      cfg.ValidateBadgeModule,
+		"economic":   cfg.ValidateEconomicModule,
+		"moderation": cfg.ValidateModerationModule,
+	} {
+		if err := validate(); err != nil {
+			t.Fatalf("%s validation rejected suite directory: %v", name, err)
+		}
 	}
 }
 
@@ -200,6 +149,7 @@ func TestSelectNetworkProfileReplacesAllProfileOwnedFields(t *testing.T) {
 	cfg.EVMRPC = "https://stale-evm.invalid"
 	cfg.EVMChainID = 999
 	cfg.EVMExplorer = "https://stale-explorer.invalid"
+	cfg.EVMSuiteDirectoryAddress = "0x5555555555555555555555555555555555555555"
 	cfg.ContractAddress = DefaultContractAddress
 	cfg.EVMContractAddress = "0x1111111111111111111111111111111111111111"
 	cfg.EVMBadgeModuleAddress = "0x2222222222222222222222222222222222222222"
@@ -216,7 +166,7 @@ func TestSelectNetworkProfileReplacesAllProfileOwnedFields(t *testing.T) {
 	if selected.LCDEndpoint != "https://lcd.injective.network" || selected.Node != "https://tm.injective.network" || selected.EVMRPC != "https://k8s.json-rpc.injective.network" {
 		t.Fatalf("selected transport fields = %#v", selected)
 	}
-	if selected.ContractAddress != "" || selected.EVMContractAddress != "" || selected.EVMBadgeModuleAddress != "" || selected.EVMEconomicModuleAddress != "" || selected.EVMModerationModuleAddress != "" {
+	if selected.EVMSuiteDirectoryAddress != "" || selected.ContractAddress != "" || selected.EVMContractAddress != "" || selected.EVMBadgeModuleAddress != "" || selected.EVMEconomicModuleAddress != "" || selected.EVMModerationModuleAddress != "" {
 		t.Fatalf("undeployed mainnet contracts/modules must be empty: %#v", selected)
 	}
 	if _, err := SelectNetworkProfile(cfg, "unknown"); err == nil {
@@ -224,31 +174,53 @@ func TestSelectNetworkProfileReplacesAllProfileOwnedFields(t *testing.T) {
 	}
 }
 
-func TestExplicitEVMValidationDoesNotRequireLegacyContract(t *testing.T) {
+func TestSuiteValidationDoesNotRequireLegacyContract(t *testing.T) {
 	cfg := Config{
-		Network:            "injective-mainnet",
-		ContractBackend:    "evm",
-		ContractVersion:    "v2",
-		EVMContractAddress: "0x1111111111111111111111111111111111111111",
-		EVMRPC:             "https://example.invalid",
-		EVMChainID:         1776,
+		Network:                  "injective-mainnet",
+		EVMSuiteDirectoryAddress: "0x1111111111111111111111111111111111111111",
+		EVMRPC:                   "https://example.invalid",
+		EVMChainID:               1776,
 	}
 	if err := cfg.ValidateContract(); err != nil {
 		t.Fatalf("explicit EVM config rejected without legacy contract: %v", err)
 	}
 }
 
-func TestExplicitEVMValidationRejectsMalformedContractAddress(t *testing.T) {
+func TestSuiteValidationRejectsMalformedDirectoryAddress(t *testing.T) {
 	cfg := Config{
-		Network:            "injective-testnet",
-		ContractBackend:    "evm",
-		ContractVersion:    "v2",
-		EVMContractAddress: "inj1legacyaddress",
-		EVMRPC:             "https://example.invalid",
-		EVMChainID:         1439,
+		Network:                  "injective-testnet",
+		EVMSuiteDirectoryAddress: "inj1legacyaddress",
+		EVMRPC:                   "https://example.invalid",
+		EVMChainID:               1439,
 	}
 	if err := cfg.ValidateContract(); err == nil {
 		t.Fatal("malformed EVM contract address was accepted")
+	}
+}
+
+func TestLoadUpgradesAndClearsLegacyContractFields(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("IGIT_HOME", home)
+	path := filepath.Join(home, "config.json")
+	legacy := `{"network":"injective-testnet","contract_backend":"auto","contract_version":"v2","contract_address":"inj1legacy","evm_contract_address":"0x1111111111111111111111111111111111111111","evm_badge_module_address":"0x2222222222222222222222222222222222222222"}`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.EffectiveContractBackend() != "evm" || cfg.EffectiveContractVersion() != "v3" {
+		t.Fatalf("upgraded runtime = %s/%s", cfg.EffectiveContractBackend(), cfg.EffectiveContractVersion())
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, legacyKey := range []string{"contract_backend", "contract_version", "contract_address", "evm_contract_address", "evm_badge_module_address"} {
+		if strings.Contains(string(data), legacyKey) {
+			t.Fatalf("upgraded config retained %q: %s", legacyKey, data)
+		}
 	}
 }
 

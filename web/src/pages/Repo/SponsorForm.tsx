@@ -6,20 +6,19 @@ import {
   sponsorWithEconomicModule,
   type AppConfig,
 } from "../../lib/chain";
-import { getEvmProvider, sponsorWithKeplr } from "../../lib/wallet";
+import { getEvmProvider } from "../../lib/wallet";
+import type { Hex } from "viem";
 
 export default function SponsorForm({
   cfg,
   addr,
   repo,
   repoId,
-  backend,
 }: {
   cfg: AppConfig;
   addr: string;
   repo: string;
-  repoId: string | null;
-  backend: "evm" | "cosmwasm";
+  repoId: Hex | null;
 }) {
   const { connected, walletModalOpen, openWalletModal, closeWalletModal, refreshBalance } = useWallet();
   const [amount, setAmount] = useState("0.1");
@@ -38,23 +37,10 @@ export default function SponsorForm({
       setErr("");
       setTxhash("");
       try {
-        let hash: string;
-        if (backend === "evm") {
-          if (!repoId) throw new Error("EVM repository has no stable repository ID");
-          if (connected.kind !== "evm") {
-            throw new Error("Connect an EVM wallet to sponsor this V2 repository");
-          }
-          const provider = getEvmProvider(connected.id);
-          if (!provider) throw new Error(`${connected.label} not available`);
-          hash = await sponsorWithEconomicModule(provider, cfg, repoId, amount, message);
-        } else if (connected.kind === "cosmos") {
-          hash = await sponsorWithKeplr(connected.cosmos, cfg, addr, repo, amount, message.trim());
-        } else {
-          const provider = getEvmProvider(connected.id);
-          if (!provider) throw new Error(`${connected.label} not available`);
-          const mm = await import("../../lib/metamask");
-          hash = await mm.sponsorWithEvm(provider, cfg, addr, repo, amount, message.trim());
-        }
+        if (!repoId) throw new Error("EVM repository has no stable repository ID");
+        const provider = getEvmProvider(connected.id);
+        if (!provider) throw new Error(`${connected.label} not available`);
+        const hash = await sponsorWithEconomicModule(provider, cfg, repoId, amount, message);
         setTxhash(hash);
         setMessage("");
         await refreshBalance();
@@ -65,7 +51,7 @@ export default function SponsorForm({
         setBusy(false);
       }
     },
-    [connected, cfg, addr, repo, repoId, backend, amount, message, refreshBalance],
+    [connected, cfg, addr, repo, repoId, amount, message, refreshBalance],
   );
 
   return (

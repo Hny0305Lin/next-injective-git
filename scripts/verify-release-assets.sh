@@ -16,7 +16,6 @@ assets=(
   git-remote-igit-darwin-amd64
   git-remote-igit-darwin-arm64
   git-remote-igit-windows-amd64.exe
-  repo-registry.wasm
 )
 
 for asset in "${assets[@]}"; do
@@ -34,12 +33,6 @@ actual_version=$("$version_binary" version)
 expected_output="igit $expected_version"
 if [[ "$actual_version" != "$expected_output" ]]; then
   echo "version output = $actual_version; want $expected_output" >&2
-  exit 1
-fi
-
-wasm_magic=$(od -An -tx1 -N4 "$release_dir/repo-registry.wasm" | tr -d '[:space:]')
-if [[ "$wasm_magic" != "0061736d" ]]; then
-  echo "unexpected wasm magic: $wasm_magic" >&2
   exit 1
 fi
 

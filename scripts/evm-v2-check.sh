@@ -49,35 +49,48 @@ elif [[ ! -f "$CONTRACT_DIR/node_modules/solc/solc.js" ]]; then
   fi
   echo "SKIP: locked solc is not installed; run npm ci --prefix contracts/evm-v2"
 else
-  node "$ROOT/scripts/evm-v2-solc-check.mjs"
+  node "$ROOT/scripts/evm-suite-solc-check.mjs"
 fi
 for file in \
   foundry.toml \
-  src/RepoRegistryV2.sol \
-  src/RepoRegistryV2ImportController.sol \
-  src/RepoRegistryV2BadgeModule.sol \
-  src/RepoRegistryV2EconomicModule.sol \
-  src/RepoRegistryV2ModerationModule.sol \
-  test/RepoRegistryV2.t.sol \
-  test/RepoRegistryV2ImportController.t.sol \
-  test/RepoRegistryV2BadgeModule.t.sol \
-  test/RepoRegistryV2EconomicModule.t.sol \
-  test/RepoRegistryV2ModerationModule.t.sol \
-  test/RepoRegistryV2Invariant.t.sol \
-  test/RepoRegistryV2Gas.t.sol \
-  abi/RepoRegistryV2.json \
-  abi/RepoRegistryV2ImportController.json \
-  abi/RepoRegistryV2BadgeModule.json \
-  abi/RepoRegistryV2EconomicModule.json \
-  abi/RepoRegistryV2ModerationModule.json \
+  src/SuiteDirectory.sol \
+  src/BootstrapCoordinator.sol \
+  src/RepositoryCore.sol \
+  src/RecoveryModule.sol \
+  src/ModerationModule.sol \
+  src/EconomicModule.sol \
+  src/UsernameModule.sol \
+  src/BadgeModule.sol \
+  src/ReleaseModule.sol \
+  src/suite/ISuite.sol \
+  src/suite/SuiteModule.sol \
+  test/SuiteArchitecture.t.sol \
+  abi/SuiteDirectory.json \
+  abi/BootstrapCoordinator.json \
+  abi/RepositoryCore.json \
+  abi/RecoveryModule.json \
+  abi/ModerationModule.json \
+  abi/EconomicModule.json \
+  abi/UsernameModule.json \
+  abi/BadgeModule.json \
+  abi/ReleaseModule.json \
+  artifacts/SuiteDirectory.json \
+  artifacts/BootstrapCoordinator.json \
+  artifacts/RepositoryCore.json \
+  artifacts/RecoveryModule.json \
+  artifacts/ModerationModule.json \
+  artifacts/EconomicModule.json \
+  artifacts/UsernameModule.json \
+  artifacts/BadgeModule.json \
+  artifacts/ReleaseModule.json \
   README.md; do
   if [[ ! -s "$CONTRACT_DIR/$file" ]]; then
     echo "FAIL: missing or empty EVM V2 file: contracts/evm-v2/$file" >&2
     exit 1
   fi
 done
-if [[ ! -s "$ROOT/scripts/evm-v2-foundry-abi-check.mjs" ]]; then
-  echo "FAIL: missing or empty EVM V2 ABI comparison helper: scripts/evm-v2-foundry-abi-check.mjs" >&2
+if [[ ! -s "$ROOT/scripts/evm-suite-solc-check.mjs" ]]; then
+  echo "FAIL: missing or empty EVM suite compiler gate: scripts/evm-suite-solc-check.mjs" >&2
   exit 1
 fi
 if ! command -v forge >/dev/null 2>&1; then
@@ -99,16 +112,14 @@ pushd "$CONTRACT_DIR" >/dev/null
 forge build
 forge test -vvv
 listed_tests="$(forge test --list)"
-for required_contract in RepoRegistryV2InvariantTest RepoRegistryV2GasTest; do
+for required_contract in SuiteArchitectureTest; do
   if ! grep -Fq "$required_contract" <<< "$listed_tests"; then
     echo "FAIL: Foundry did not discover required test contract: $required_contract" >&2
     exit 1
   fi
 done
-forge test --match-contract '^RepoRegistryV2InvariantTest$' -vvv
-forge test --match-contract '^RepoRegistryV2GasTest$' -vvv
+forge test --match-contract '^SuiteArchitectureTest$' -vvv
 forge test --gas-report
-node "$ROOT/scripts/evm-v2-foundry-abi-check.mjs" "$CONTRACT_DIR"
 popd >/dev/null
 
-echo "PASS: EVM V2 build, checked ABIs, unit/fuzz/stateful invariant tests, executable gas ceilings, and gas report"
+echo "PASS: immutable EVM suite build, checked ABIs, unit/stateful invariant tests, executable gas ceilings, and gas report"

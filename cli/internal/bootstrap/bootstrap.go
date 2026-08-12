@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/config"
-	"github.com/klauspost/compress/zstd"
 )
 
 //go:embed deps.json
@@ -40,7 +39,6 @@ type Artifact struct {
 	URLs    []string          `json:"urls"`
 	SHA256  string            `json:"sha256"`
 	Archive string            `json:"archive"`
-	Payload string            `json:"payload,omitempty"`
 	Files   map[string]string `json:"files"`
 }
 
@@ -52,12 +50,11 @@ type Options struct {
 }
 
 type Result struct {
-	InjectivedBin string
-	IPFSBin       string
-	Installed     []string
-	Reused        []string
-	KuboStarted   bool
-	KuboPID       int
+	IPFSBin     string
+	Installed   []string
+	Reused      []string
+	KuboStarted bool
+	KuboPID     int
 }
 
 func LoadManifest() (Manifest, error) {
@@ -72,12 +69,10 @@ func LoadManifest() (Manifest, error) {
 }
 
 func ValidateManifest(manifest Manifest) error {
-	for _, name := range []string{"kubo", "injectived"} {
-		if err := validateDependency(name, manifest[name]); err != nil {
-			return err
-		}
+	if len(manifest) != 1 {
+		return fmt.Errorf("dependency manifest must contain only Kubo")
 	}
-	return nil
+	return validateDependency("kubo", manifest["kubo"])
 }
 
 func loadDependency(name string) (Dependency, error) {
@@ -111,11 +106,8 @@ func validateDependency(name string, dep Dependency) error {
 		if decoded, err := hex.DecodeString(artifact.SHA256); err != nil || len(decoded) != sha256.Size {
 			return fmt.Errorf("%s %s artifact has invalid SHA-256", name, platform)
 		}
-		if artifact.Archive != "zip" && artifact.Archive != "tar.gz" && artifact.Archive != "tar.gz+tar.zst" {
+		if artifact.Archive != "zip" && artifact.Archive != "tar.gz" {
 			return fmt.Errorf("%s %s artifact has unsupported archive %q", name, platform, artifact.Archive)
-		}
-		if artifact.Archive == "tar.gz+tar.zst" && strings.TrimSpace(artifact.Payload) == "" {
-			return fmt.Errorf("%s %s nested artifact has no payload", name, platform)
 		}
 		if len(artifact.Files) == 0 {
 			return fmt.Errorf("%s %s artifact has no files", name, platform)
@@ -124,54 +116,8 @@ func validateDependency(name string, dep Dependency) error {
 	return nil
 }
 
-// Prepare installs missing dependencies, preserves working user-managed tools,
-// and returns a config updated with absolute executable paths.
-func Prepare(ctx context.Context, cfg config.Config, opts Options) (config.Config, Result, error) {
-	manifest, err := LoadManifest()
-	if err != nil {
-		return cfg, Result{}, err
-	}
-	if opts.Progress == nil {
-		opts.Progress = io.Discard
-	}
-	if opts.HTTPClient == nil {
-		opts.HTTPClient = &http.Client{Timeout: 30 * time.Minute}
-	}
-	root, err := config.Dir()
-	if err != nil {
-		return cfg, Result{}, err
-	}
-	if err := os.MkdirAll(root, 0o700); err != nil {
-		return cfg, Result{}, err
-	}
-
-	result := Result{}
-	injectived, installed, err := ensureDependency(ctx, root, "injectived", cfg.InjectivedBin, []string{"version"}, manifest["injectived"], opts)
-	if err != nil {
-		return cfg, result, err
-	}
-	cfg.InjectivedBin = injectived
-	result.InjectivedBin = injectived
-	if installed {
-		result.Installed = append(result.Installed, "injectived "+manifest["injectived"].Version)
-	} else {
-		result.Reused = append(result.Reused, "injectived")
-	}
-
-	if !opts.SkipKubo {
-		if err := prepareKubo(ctx, root, &cfg, &result, manifest["kubo"], opts); err != nil {
-			return cfg, result, err
-		}
-	}
-	if cfg.ContractAddress == "" {
-		cfg.ContractAddress = config.DefaultContractAddress
-	}
-	return cfg, result, nil
-}
-
-// PrepareKubo installs or reuses Kubo and starts its daemon without loading,
-// checking, or installing injectived. It leaves all chain-specific config
-// fields unchanged.
+// PrepareKubo installs or reuses Kubo and starts its daemon. Ordinary setup
+// has no Cosmos signing or injectived dependency.
 func PrepareKubo(ctx context.Context, cfg config.Config, opts Options) (config.Config, Result, error) {
 	if opts.SkipKubo {
 		return cfg, Result{}, nil
@@ -283,7 +229,7 @@ func ensureDependency(ctx context.Context, root, name, configured string, versio
 	if err := activateManagedInstall(root, staging, installDir); err != nil {
 		return "", false, fmt.Errorf("activate %s %s: %w", name, dep.Version, err)
 	}
-	if err := writeWrapper(wrapper, rawBinary, installDir, name == "injectived"); err != nil {
+	if err := writeWrapper(wrapper, rawBinary); err != nil {
 		return "", false, err
 	}
 	if binary, ok := workingBinary(ctx, managedBinary, versionArgs); ok {
@@ -418,8 +364,6 @@ func extractArtifact(archivePath, destination string, artifact Artifact) error {
 		return extractZip(archivePath, destination, artifact.Files)
 	case "tar.gz":
 		return extractTarGz(archivePath, destination, artifact.Files)
-	case "tar.gz+tar.zst":
-		return extractNestedTarZst(archivePath, destination, artifact.Payload, artifact.Files)
 	default:
 		return fmt.Errorf("unsupported archive format %q", artifact.Archive)
 	}
@@ -465,40 +409,6 @@ func extractTarGz(path, destination string, wanted map[string]string) error {
 	return extractTarReader(tar.NewReader(gz), destination, wanted)
 }
 
-func extractNestedTarZst(path, destination, payload string, wanted map[string]string) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	gz, err := gzip.NewReader(f)
-	if err != nil {
-		return err
-	}
-	defer gz.Close()
-	outer := tar.NewReader(gz)
-	for {
-		header, err := outer.Next()
-		if err == io.EOF {
-			return fmt.Errorf("archive is missing nested payload %s", payload)
-		}
-		if err != nil {
-			return err
-		}
-		name := filepath.ToSlash(strings.TrimPrefix(header.Name, "./"))
-		if name != filepath.ToSlash(payload) || header.Typeflag != tar.TypeReg {
-			continue
-		}
-		decoder, err := zstd.NewReader(outer, zstd.WithDecoderConcurrency(1))
-		if err != nil {
-			return err
-		}
-		err = extractTarReader(tar.NewReader(decoder), destination, wanted)
-		decoder.Close()
-		return err
-	}
-}
-
 func extractTarReader(tr *tar.Reader, destination string, wanted map[string]string) error {
 	found := make(map[string]bool)
 	for {
@@ -533,7 +443,7 @@ func writeExtracted(destination, relative string, src io.Reader) error {
 	}
 	mode := os.FileMode(0o644)
 	base := filepath.Base(target)
-	if base == "ipfs" || base == "injectived" {
+	if base == "ipfs" {
 		mode = 0o755
 	}
 	out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
@@ -562,7 +472,7 @@ func ensureExtracted(wanted map[string]string, found map[string]bool) error {
 	return fmt.Errorf("archive is missing required files: %s", strings.Join(missing, ", "))
 }
 
-func writeWrapper(path, binary, libraryDir string, withLibraryPath bool) error {
+func writeWrapper(path, binary string) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
@@ -573,10 +483,6 @@ func writeWrapper(path, binary, libraryDir string, withLibraryPath bool) error {
 	} else {
 		var script strings.Builder
 		script.WriteString("#!/bin/sh\n")
-		if withLibraryPath {
-			fmt.Fprintf(&script, "export LD_LIBRARY_PATH=%q${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}\n", libraryDir)
-			fmt.Fprintf(&script, "export DYLD_FALLBACK_LIBRARY_PATH=%q${DYLD_FALLBACK_LIBRARY_PATH:+:$DYLD_FALLBACK_LIBRARY_PATH}\n", libraryDir)
-		}
 		fmt.Fprintf(&script, "exec %q \"$@\"\n", binary)
 		content = []byte(script.String())
 	}

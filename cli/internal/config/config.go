@@ -20,30 +20,22 @@ type Config struct {
 	// It is metadata for backend selection; explicit endpoint fields remain
 	// supported for backwards compatibility and offline deployments.
 	Network string `json:"network,omitempty"`
-	// ContractBackend selects the registry protocol (auto, cosmwasm, or evm).
-	// "auto" is intentionally the default during the V1 compatibility period.
-	ContractBackend string `json:"contract_backend,omitempty"`
-	// ContractVersion records the protocol version associated with the selected
-	// contract. Older config files may omit it and are treated as V1.
-	ContractVersion string `json:"contract_version,omitempty"`
-	// ContractAddress is the repo-registry contract on Injective.
-	ContractAddress string `json:"contract_address"`
-	// EVMRPC is the JSON-RPC endpoint for the inEVM network. It is derived from
+	// EVMSuiteDirectoryAddress is the sole contract trust root used by ordinary
+	// CLI and Git runtime paths. Core and module addresses are discovered and
+	// verified from this immutable directory before use.
+	EVMSuiteDirectoryAddress string `json:"evm_suite_directory_address,omitempty"`
+	// Deprecated compatibility fields are decoded only by Load, then cleared
+	// during the one-time upgrade to the immutable EVM suite profile.
+	ContractBackend string `json:"-"`
+	ContractVersion string `json:"-"`
+	ContractAddress string `json:"-"`
+	// EVMRPC is the JSON-RPC endpoint for Injective EVM. It is derived from
 	// Network when omitted; users should not need to edit it manually.
 	EVMRPC string `json:"evm_rpc,omitempty"`
-	// EVMContractAddress is the deployed Solidity V2 registry address. It is
-	// intentionally separate from ContractAddress, which remains the legacy
-	// CosmWasm address during the compatibility period.
-	EVMContractAddress string `json:"evm_contract_address,omitempty"`
-	// EVMBadgeModuleAddress is the independently deployed contribution badge
-	// module bound to the V2 registry's stable repo IDs.
-	EVMBadgeModuleAddress string `json:"evm_badge_module_address,omitempty"`
-	// EVMEconomicModuleAddress is the independently deployed sponsorship and
-	// revenue-split module bound to the V2 registry's stable repo IDs.
-	EVMEconomicModuleAddress string `json:"evm_economic_module_address,omitempty"`
-	// EVMModerationModuleAddress is the independently deployed report, appeal,
-	// and moderation-decision module bound to stable V2 repository IDs.
-	EVMModerationModuleAddress string `json:"evm_moderation_module_address,omitempty"`
+	EVMContractAddress string `json:"-"`
+	EVMBadgeModuleAddress string `json:"-"`
+	EVMEconomicModuleAddress string `json:"-"`
+	EVMModerationModuleAddress string `json:"-"`
 	// EVMChainID is checked against eth_chainId before signing a transaction.
 	EVMChainID uint64 `json:"evm_chain_id,omitempty"`
 	// EVMExplorer is the profile-provided transaction explorer base URL.
@@ -127,40 +119,34 @@ const (
 // details live here rather than in command code so CLI, Web, and migration
 // tooling can share one source of defaults.
 type NetworkProfile struct {
-	Name                string
-	CosmosChainID       string
-	EVMChainID          uint64
-	LCDEndpoint         string
-	CosmosRPC           string
-	EVMRPC              string
-	EVMExplorer         string
-	LegacyContract      string
-	EVMContract         string
-	EVMBadgeModule      string
-	EVMEconomicModule   string
-	EVMModerationModule string
+	Name              string
+	CosmosChainID     string
+	EVMChainID        uint64
+	LCDEndpoint       string
+	CosmosRPC         string
+	EVMRPC            string
+	EVMExplorer       string
+	EVMSuiteDirectory string
 }
 
 var networkProfiles = map[string]NetworkProfile{
 	"injective-testnet": {
-		Name:           "injective-testnet",
-		CosmosChainID:  "injective-888",
-		EVMChainID:     1439,
-		LCDEndpoint:    "https://k8s.testnet.lcd.injective.network",
-		CosmosRPC:      "https://k8s.testnet.tm.injective.network",
-		EVMRPC:         "https://k8s.testnet.json-rpc.injective.network",
-		EVMExplorer:    "https://testnet.blockscout.injective.network",
-		LegacyContract: DefaultContractAddress,
+		Name:          "injective-testnet",
+		CosmosChainID: "injective-888",
+		EVMChainID:    1439,
+		LCDEndpoint:   "https://k8s.testnet.lcd.injective.network",
+		CosmosRPC:     "https://k8s.testnet.tm.injective.network",
+		EVMRPC:        "https://k8s.testnet.json-rpc.injective.network",
+		EVMExplorer:   "https://testnet.blockscout.injective.network",
 	},
 	"injective-mainnet": {
-		Name:           "injective-mainnet",
-		CosmosChainID:  "injective-1",
-		EVMChainID:     1776,
-		LCDEndpoint:    "https://lcd.injective.network",
-		CosmosRPC:      "https://tm.injective.network",
-		EVMRPC:         "https://k8s.json-rpc.injective.network",
-		EVMExplorer:    "https://blockscout.injective.network",
-		LegacyContract: "",
+		Name:          "injective-mainnet",
+		CosmosChainID: "injective-1",
+		EVMChainID:    1776,
+		LCDEndpoint:   "https://lcd.injective.network",
+		CosmosRPC:     "https://tm.injective.network",
+		EVMRPC:        "https://k8s.json-rpc.injective.network",
+		EVMExplorer:   "https://blockscout.injective.network",
 	},
 }
 
@@ -170,13 +156,13 @@ func NetworkProfileFor(name string) (NetworkProfile, bool) {
 	return profile, ok
 }
 
-// ValidatePublishedProfilesV1Only is the release-time guard for the current
-// compatibility release. It deliberately walks the private source-of-truth
-// map so adding a profile cannot silently evade the tag workflow.
-func ValidatePublishedProfilesV1Only() error {
+// ValidatePublishedSuiteProfiles enforces the immutable EVM v3 profile shape
+// and rejects any embedded Directory address until deployment and cutover
+// evidence are verified by the release workflow.
+func ValidatePublishedSuiteProfiles() error {
 	cfg := Defaults()
-	if backend, version := cfg.EffectiveContractBackend(), cfg.EffectiveContractVersion(); backend != "auto" || version != "v1" {
-		return fmt.Errorf("published defaults select %s/%s, want auto/v1", backend, version)
+	if backend, version := cfg.EffectiveContractBackend(), cfg.EffectiveContractVersion(); backend != "evm" || version != "v3" {
+		return fmt.Errorf("published defaults select %s/%s, want evm/v3", backend, version)
 	}
 	if len(networkProfiles) == 0 {
 		return errors.New("no published network profiles are configured")
@@ -185,17 +171,8 @@ func ValidatePublishedProfilesV1Only() error {
 		if strings.TrimSpace(name) == "" || profile.Name != name {
 			return fmt.Errorf("published profile map key %q does not match profile name %q", name, profile.Name)
 		}
-		if strings.TrimSpace(profile.EVMContract) != "" {
-			return fmt.Errorf("published profile %q has V2 contract %q before reviewed cutover", name, profile.EVMContract)
-		}
-		if strings.TrimSpace(profile.EVMBadgeModule) != "" {
-			return fmt.Errorf("published profile %q has V2 badge module %q before reviewed cutover", name, profile.EVMBadgeModule)
-		}
-		if strings.TrimSpace(profile.EVMEconomicModule) != "" {
-			return fmt.Errorf("published profile %q has V2 economic module %q before reviewed cutover", name, profile.EVMEconomicModule)
-		}
-		if strings.TrimSpace(profile.EVMModerationModule) != "" {
-			return fmt.Errorf("published profile %q has V2 moderation module %q before reviewed cutover", name, profile.EVMModerationModule)
+		if value := strings.TrimSpace(profile.EVMSuiteDirectory); value != "" {
+			return fmt.Errorf("published profile %q has SuiteDirectory %q without deployment/cutover evidence verification", name, value)
 		}
 	}
 	return nil
@@ -218,11 +195,14 @@ func SelectNetworkProfile(cfg Config, name string) (Config, error) {
 	cfg.EVMRPC = profile.EVMRPC
 	cfg.EVMChainID = profile.EVMChainID
 	cfg.EVMExplorer = profile.EVMExplorer
-	cfg.ContractAddress = profile.LegacyContract
-	cfg.EVMContractAddress = profile.EVMContract
-	cfg.EVMBadgeModuleAddress = profile.EVMBadgeModule
-	cfg.EVMEconomicModuleAddress = profile.EVMEconomicModule
-	cfg.EVMModerationModuleAddress = profile.EVMModerationModule
+	cfg.EVMSuiteDirectoryAddress = profile.EVMSuiteDirectory
+	cfg.ContractBackend = "evm"
+	cfg.ContractVersion = "v3"
+	cfg.ContractAddress = ""
+	cfg.EVMContractAddress = ""
+	cfg.EVMBadgeModuleAddress = ""
+	cfg.EVMEconomicModuleAddress = ""
+	cfg.EVMModerationModuleAddress = ""
 	return cfg, nil
 }
 
@@ -257,21 +237,11 @@ func ApplyNetworkProfile(cfg Config) Config {
 	if cfg.EVMExplorer == "" {
 		cfg.EVMExplorer = profile.EVMExplorer
 	}
-	if cfg.EVMContractAddress == "" {
-		cfg.EVMContractAddress = profile.EVMContract
+	if cfg.EVMSuiteDirectoryAddress == "" {
+		cfg.EVMSuiteDirectoryAddress = profile.EVMSuiteDirectory
 	}
-	if cfg.EVMBadgeModuleAddress == "" {
-		cfg.EVMBadgeModuleAddress = profile.EVMBadgeModule
-	}
-	if cfg.EVMEconomicModuleAddress == "" {
-		cfg.EVMEconomicModuleAddress = profile.EVMEconomicModule
-	}
-	if cfg.EVMModerationModuleAddress == "" {
-		cfg.EVMModerationModuleAddress = profile.EVMModerationModule
-	}
-	if cfg.ContractAddress == "" && profile.LegacyContract != "" {
-		cfg.ContractAddress = profile.LegacyContract
-	}
+	cfg.ContractBackend = "evm"
+	cfg.ContractVersion = "v3"
 	return cfg
 }
 
@@ -292,8 +262,8 @@ type Tunnel struct {
 func Defaults() Config {
 	return ApplyNetworkProfile(Config{
 		Network:         "injective-testnet",
-		ContractBackend: "auto",
-		ContractVersion: "v1",
+		ContractBackend: "evm",
+		ContractVersion: "v3",
 		ChainID:         "injective-888",
 		LCDEndpoint:     "https://testnet.sentry.lcd.injective.network:443",
 		Node:            "https://testnet.sentry.tm.injective.network:443",
@@ -317,28 +287,17 @@ func Defaults() Config {
 	})
 }
 
-// EffectiveContractBackend returns the normalized backend selector. Empty
-// values are treated as auto so config files written before backend selection
-// was introduced remain valid.
+// EffectiveContractBackend is fixed after the one-time V1 config upgrade.
 func (c Config) EffectiveContractBackend() string {
-	backend := strings.ToLower(strings.TrimSpace(c.ContractBackend))
-	if backend == "" {
-		return "auto"
-	}
-	return backend
+	return "evm"
 }
 
-// EffectiveContractVersion returns the configured contract version, defaulting
-// to the legacy V1 protocol for old config files during migration.
+// EffectiveContractVersion is fixed to the immutable suite protocol.
 func (c Config) EffectiveContractVersion() string {
-	version := strings.ToLower(strings.TrimSpace(c.ContractVersion))
-	if version == "" {
-		return "v1"
-	}
-	return version
+	return "v3"
 }
 
-// EffectiveEVMRPC returns the profile-derived inEVM JSON-RPC endpoint.
+// EffectiveEVMRPC returns the profile-derived Injective EVM JSON-RPC endpoint.
 func (c Config) EffectiveEVMRPC() string {
 	if value := strings.TrimSpace(c.EVMRPC); value != "" {
 		return strings.TrimRight(value, "/")
@@ -353,6 +312,19 @@ func (c Config) EffectiveEVMRPC() string {
 // The legacy inj1 CosmWasm address is never guessed as an EVM address.
 func (c Config) EffectiveEVMContractAddress() string {
 	return strings.TrimSpace(c.EVMContractAddress)
+}
+
+// EffectiveEVMSuiteDirectoryAddress returns the only contract address trusted
+// by ordinary runtime paths. It intentionally never guesses an address from a
+// legacy Core/module field.
+func (c Config) EffectiveEVMSuiteDirectoryAddress() string {
+	if value := strings.TrimSpace(c.EVMSuiteDirectoryAddress); value != "" {
+		return value
+	}
+	if profile, ok := NetworkProfileFor(c.Network); ok {
+		return strings.TrimSpace(profile.EVMSuiteDirectory)
+	}
+	return ""
 }
 
 // EffectiveEVMBadgeModuleAddress returns the reviewed badge module address.
@@ -528,20 +500,32 @@ func Load() (Config, error) {
 		if _, ok := raw["evm_explorer"]; !ok {
 			cfg.EVMExplorer = profileBase.EVMExplorer
 		}
-		if _, ok := raw["evm_contract_address"]; !ok {
-			cfg.EVMContractAddress = profileBase.EVMContractAddress
+		if _, ok := raw["evm_suite_directory_address"]; !ok {
+			cfg.EVMSuiteDirectoryAddress = profileBase.EVMSuiteDirectoryAddress
 		}
-		if _, ok := raw["evm_badge_module_address"]; !ok {
-			cfg.EVMBadgeModuleAddress = profileBase.EVMBadgeModuleAddress
+	}
+	legacyKeys := []string{
+		"contract_backend", "contract_version", "contract_address",
+		"evm_contract_address", "evm_badge_module_address",
+		"evm_economic_module_address", "evm_moderation_module_address",
+	}
+	legacyConfig := false
+	for _, key := range legacyKeys {
+		if _, ok := raw[key]; ok {
+			legacyConfig = true
+			break
 		}
-		if _, ok := raw["evm_economic_module_address"]; !ok {
-			cfg.EVMEconomicModuleAddress = profileBase.EVMEconomicModuleAddress
-		}
-		if _, ok := raw["evm_moderation_module_address"]; !ok {
-			cfg.EVMModerationModuleAddress = profileBase.EVMModerationModuleAddress
-		}
-		if _, ok := raw["contract_address"]; !ok {
-			cfg.ContractAddress = profileBase.ContractAddress
+	}
+	cfg.ContractBackend = "evm"
+	cfg.ContractVersion = "v3"
+	cfg.ContractAddress = ""
+	cfg.EVMContractAddress = ""
+	cfg.EVMBadgeModuleAddress = ""
+	cfg.EVMEconomicModuleAddress = ""
+	cfg.EVMModerationModuleAddress = ""
+	if legacyConfig {
+		if err := Save(cfg); err != nil {
+			return cfg, fmt.Errorf("upgrade legacy config to EVM suite profile: %w", err)
 		}
 	}
 	return cfg, nil
@@ -581,61 +565,25 @@ func (c Config) Validate() error {
 // ValidateContract checks the fields needed by read-only contract queries.
 // Commands such as release verification must not require a signing key.
 func (c Config) ValidateContract() error {
-	backend := c.EffectiveContractBackend()
-	version := c.EffectiveContractVersion()
-	if backend != "auto" && backend != "cosmwasm" && backend != "evm" && backend != "v1" && backend != "v2" {
+	address := strings.TrimSpace(c.EffectiveEVMSuiteDirectoryAddress())
+	if address == "" {
 		return i18n.Errorf(
-			"invalid contract_backend %q (expected auto, cosmwasm, or evm)",
-			"contract_backend %q 无效（应为 auto、cosmwasm 或 evm）",
-			backend,
+			"missing EVM SuiteDirectory address (deployment and cutover evidence must be approved before the profile is updated)",
+			"缺少 EVM SuiteDirectory 地址（部署和切换证据获批后才能更新网络配置）",
 		)
 	}
-	if version != "v1" && version != "v2" {
+	if !validEVMAddress(address) {
 		return i18n.Errorf(
-			"invalid contract_version %q (expected v1 or v2)",
-			"contract_version %q 无效（应为 v1 或 v2）",
-			version,
+			"invalid EVM SuiteDirectory address %q (expected 0x followed by 40 hex characters)",
+			"EVM SuiteDirectory 地址 %q 无效（应为 0x 后跟 40 个十六进制字符）",
+			address,
 		)
 	}
-	usesEVM := backend == "evm" || backend == "v2" || (backend == "auto" && version == "v2")
-	if usesEVM {
-		address := strings.TrimSpace(c.EffectiveEVMContractAddress())
-		if address == "" {
-			return i18n.Errorf(
-				"missing EVM V2 contract address (complete the network deployment profile)",
-				"missing EVM V2 contract address (complete the network deployment profile)",
-			)
-		}
-		if !validEVMAddress(address) {
-			return i18n.Errorf(
-				"invalid EVM V2 contract address %q (expected 0x followed by 40 hex characters)",
-				"invalid EVM V2 contract address %q (expected 0x followed by 40 hex characters)",
-				address,
-			)
-		}
-		if c.EffectiveEVMRPC() == "" {
-			return i18n.Errorf(
-				"missing EVM RPC endpoint (complete the network profile)",
-				"missing EVM RPC endpoint (complete the network profile)",
-			)
-		}
-		if c.EffectiveEVMChainID() == 0 {
-			return i18n.Errorf(
-				"missing EVM chain ID (complete the network profile)",
-				"missing EVM chain ID (complete the network profile)",
-			)
-		}
+	if c.EffectiveEVMRPC() == "" {
+		return i18n.Errorf("missing EVM RPC endpoint", "缺少 EVM RPC 端点")
 	}
-	var missing []string
-	if c.ContractAddress == "" && !usesEVM {
-		missing = append(missing, "contract_address")
-	}
-	if len(missing) > 0 {
-		return i18n.Errorf(
-			"missing config: %s (run `igit config set <key> <value>`)",
-			"缺少配置：%s（运行 `igit config set <key> <value>`）",
-			strings.Join(missing, ", "),
-		)
+	if c.EffectiveEVMChainID() == 0 {
+		return i18n.Errorf("missing EVM chain ID", "缺少 EVM chain ID")
 	}
 	return nil
 }
@@ -643,88 +591,19 @@ func (c Config) ValidateContract() error {
 // ValidateBadgeModule checks the core V2 profile and the separately deployed
 // badge module. V1 needs no additional address because badges live in V1.
 func (c Config) ValidateBadgeModule() error {
-	if err := c.ValidateContract(); err != nil {
-		return err
-	}
-	backend := c.EffectiveContractBackend()
-	usesEVM := backend == "evm" || backend == "v2" ||
-		(backend == "auto" && c.EffectiveContractVersion() == "v2")
-	if !usesEVM {
-		return nil
-	}
-	address := c.EffectiveEVMBadgeModuleAddress()
-	if address == "" {
-		return i18n.Errorf(
-			"missing EVM V2 badge module address (complete the reviewed network deployment profile)",
-			"missing EVM V2 badge module address (complete the reviewed network deployment profile)",
-		)
-	}
-	if !validEVMAddress(address) {
-		return i18n.Errorf(
-			"invalid EVM V2 badge module address %q (expected 0x followed by 40 hex characters)",
-			"invalid EVM V2 badge module address %q (expected 0x followed by 40 hex characters)",
-			address,
-		)
-	}
-	return nil
+	return c.ValidateContract()
 }
 
 // ValidateEconomicModule checks the core V2 profile and the separately
 // deployed sponsorship/revenue module. V1 keeps using its legacy messages.
 func (c Config) ValidateEconomicModule() error {
-	if err := c.ValidateContract(); err != nil {
-		return err
-	}
-	backend := c.EffectiveContractBackend()
-	usesEVM := backend == "evm" || backend == "v2" ||
-		(backend == "auto" && c.EffectiveContractVersion() == "v2")
-	if !usesEVM {
-		return nil
-	}
-	address := c.EffectiveEVMEconomicModuleAddress()
-	if address == "" {
-		return i18n.Errorf(
-			"missing EVM V2 economic module address (complete the reviewed network deployment profile)",
-			"missing EVM V2 economic module address (complete the reviewed network deployment profile)",
-		)
-	}
-	if !validEVMAddress(address) {
-		return i18n.Errorf(
-			"invalid EVM V2 economic module address %q (expected 0x followed by 40 hex characters)",
-			"invalid EVM V2 economic module address %q (expected 0x followed by 40 hex characters)",
-			address,
-		)
-	}
-	return nil
+	return c.ValidateContract()
 }
 
 // ValidateModerationModule checks the core V2 profile and the independently
 // deployed moderation module. V1 keeps using its legacy messages and query.
 func (c Config) ValidateModerationModule() error {
-	if err := c.ValidateContract(); err != nil {
-		return err
-	}
-	backend := c.EffectiveContractBackend()
-	usesEVM := backend == "evm" || backend == "v2" ||
-		(backend == "auto" && c.EffectiveContractVersion() == "v2")
-	if !usesEVM {
-		return nil
-	}
-	address := c.EffectiveEVMModerationModuleAddress()
-	if address == "" {
-		return i18n.Errorf(
-			"missing EVM V2 moderation module address (complete the reviewed network deployment profile)",
-			"missing EVM V2 moderation module address (complete the reviewed network deployment profile)",
-		)
-	}
-	if !validEVMAddress(address) {
-		return i18n.Errorf(
-			"invalid EVM V2 moderation module address %q (expected 0x followed by 40 hex characters)",
-			"invalid EVM V2 moderation module address %q (expected 0x followed by 40 hex characters)",
-			address,
-		)
-	}
-	return nil
+	return c.ValidateContract()
 }
 
 func validEVMAddress(value string) bool {

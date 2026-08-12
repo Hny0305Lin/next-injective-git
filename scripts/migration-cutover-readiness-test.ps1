@@ -45,7 +45,7 @@ try {
   if (-not $failedClosed) { throw "empty evidence unexpectedly passed" }
 
   $required = @(
-    "deployment.json", "foundry-test.txt", "foundry-invariant.txt", "foundry-gas.txt",
+    "deployment.json", "suite-verification.json", "blockscout-verification.json", "foundry-test.txt", "foundry-invariant.txt", "foundry-gas.txt",
     "admin-dry-run-journal.tar", "migration-plan.json", "migration-manifest.json",
     "migration-receipt-journal.tar", "imported-state.json", "windows-clean-e2e.txt",
     "linux-clean-e2e.txt", "web-receipt-e2e.txt", "security-review.pdf",
@@ -54,11 +54,61 @@ try {
   foreach ($name in $required) {
     $content = if ($name -eq "cutover-approval.txt") {
       "decision=approved`nreviewer=$unicodeReviewer`nreviewed_commit=$expectedCommit`nreviewed_at=2026-08-12T00:00:00Z`n"
-    } else {
+    } elseif ($name -notin @("deployment.json", "suite-verification.json", "blockscout-verification.json")) {
       "fixture for $name`n"
+    } else {
+      $null
     }
-    [IO.File]::WriteAllText((Join-Path $temp $name), $content, $utf8)
+    if ($null -ne $content) {
+      [IO.File]::WriteAllText((Join-Path $temp $name), $content, $utf8)
+    }
   }
+  function Address([int]$value) { "0x" + $value.ToString("x40") }
+  function CodeHash([int]$value) { "0x" + $value.ToString("x64") }
+  $contractNames = @(
+    "SuiteDirectory", "BootstrapCoordinator", "RepositoryCore", "RecoveryModule", "ModerationModule",
+    "EconomicModule", "UsernameModule", "BadgeModule", "ReleaseModule"
+  )
+  $contracts = for ($index = 0; $index -lt $contractNames.Count; $index++) {
+    [ordered]@{
+      transaction_order = $index
+      contract_name = $contractNames[$index]
+      address = Address ($index + 1)
+      transaction_hash = CodeHash ($index + 100)
+      receipt = [ordered]@{ status = "0x1"; blockHash = CodeHash 900 }
+      runtime = [ordered]@{ code_hash_keccak256 = CodeHash ($index + 200); template_match_verified = $true }
+    }
+  }
+  $deployment = [ordered]@{
+    schema = "igit.evm-suite.deployment.v1"; status = "bootstrapping"
+    compiler = [ordered]@{ version = "0.8.24" }
+    source = [ordered]@{ commit = $expectedCommit }
+    chain = [ordered]@{ chain_id = 1439 }
+    snapshot_root = CodeHash 700
+    contracts = @($contracts)
+    directory_binding_verification = [ordered]@{ active = $false; registered_module_count = 7 }
+  }
+  $modules = for ($index = 2; $index -lt $contractNames.Count; $index++) {
+    [ordered]@{
+      contract_name = $contractNames[$index]; address = Address ($index + 1)
+      observed_code_hash = CodeHash ($index + 200); directory_code_hash = CodeHash ($index + 200)
+      directory_verified = $true; module_directory = Address 1; bootstrap_finalized = $true
+    }
+  }
+  $activation = [ordered]@{
+    schema = "igit.evm-suite.activation-verification.v1"; source_commit = $expectedCommit; chain_id = 1439
+    suite_version = 3; state = 1; active = $true; coordinator_activated = $true; registered_module_count = 7
+    block_number = "0x123"; block_hash = CodeHash 900; snapshot_root = CodeHash 700; directory = Address 1
+    modules = @($modules)
+  }
+  [IO.File]::WriteAllText((Join-Path $temp "deployment.json"), (($deployment | ConvertTo-Json -Depth 8 -Compress) + "`n"), $utf8)
+  [IO.File]::WriteAllText((Join-Path $temp "suite-verification.json"), (($activation | ConvertTo-Json -Depth 8 -Compress) + "`n"), $utf8)
+  $blockscout = [ordered]@{
+    schema = "igit.evm-suite.blockscout-verification.v1"; source_commit = $expectedCommit; chain_id = 1439
+    explorer = "https://fixture.invalid"
+    contracts = @($contracts | ForEach-Object { [ordered]@{ contract_name = $_.contract_name; address = $_.address; status = "verified" } })
+  }
+  [IO.File]::WriteAllText((Join-Path $temp "blockscout-verification.json"), (($blockscout | ConvertTo-Json -Depth 8 -Compress) + "`n"), $utf8)
   $records = foreach ($name in $required) {
     $hash = (Get-FileHash -LiteralPath (Join-Path $temp $name) -Algorithm SHA256).Hash.ToLowerInvariant()
     "$hash  $name"

@@ -200,6 +200,33 @@ func readEVMKeystorePassword(prompt string) ([]byte, error) {
 	return keyPassword(prompt, input, output)
 }
 
+func readEVMPrivateKey() ([]byte, error) {
+	input, output, closer, err := openPasswordTerminal()
+	if err != nil {
+		return nil, fmt.Errorf("open terminal for private key import: %w", err)
+	}
+	defer closer.Close()
+	file, ok := input.(*os.File)
+	if !ok || !term.IsTerminal(int(file.Fd())) {
+		return nil, fmt.Errorf("private key import requires an interactive terminal")
+	}
+	if _, err := fmt.Fprint(output, "EVM private key (64 hex characters): "); err != nil {
+		return nil, err
+	}
+	secret, err := term.ReadPassword(int(file.Fd()))
+	_, _ = fmt.Fprintln(output)
+	if err != nil {
+		return nil, fmt.Errorf("read EVM private key: %w", err)
+	}
+	return secret, nil
+}
+
+func clearSecret(value []byte) {
+	for index := range value {
+		value[index] = 0
+	}
+}
+
 func (s *EVMKeystoreSigner) CreateKey(name string) error {
 	if !validEVMKeyName(name) {
 		return fmt.Errorf("invalid EVM key name %q", name)
@@ -239,6 +266,79 @@ func (s *EVMKeystoreSigner) CreateKey(name string) error {
 	account, err := ks.NewAccount(string(password))
 	if err != nil {
 		return fmt.Errorf("create encrypted EVM key: %w", err)
+	}
+	index[name] = account.URL.Path
+	if err := writeEVMKeyIndex(indexPath, index); err != nil {
+		return fmt.Errorf("write EVM keystore index: %w", err)
+	}
+	return nil
+}
+
+// ImportKey reads a raw secp256k1 private key without terminal echo and stores
+// it only as a standard-scrypt encrypted geth keystore file. Plaintext key
+// material is never accepted through command arguments or configuration.
+func (s *EVMKeystoreSigner) ImportKey(name string) error {
+	secret, err := readEVMPrivateKey()
+	if err != nil {
+		return err
+	}
+	defer clearSecret(secret)
+	return s.importKey(name, secret)
+}
+
+func (s *EVMKeystoreSigner) importKey(name string, secret []byte) error {
+	if !validEVMKeyName(name) {
+		return fmt.Errorf("invalid EVM key name %q", name)
+	}
+	raw := strings.TrimSpace(string(secret))
+	raw = strings.TrimPrefix(strings.TrimPrefix(raw, "0x"), "0X")
+	if len(raw) != 64 {
+		return fmt.Errorf("EVM private key must contain exactly 64 hexadecimal characters")
+	}
+	privateKey, err := ethcrypto.HexToECDSA(raw)
+	if err != nil {
+		return fmt.Errorf("invalid EVM private key: %w", err)
+	}
+	defer privateKey.D.SetInt64(0)
+
+	dir, err := s.keyDir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create EVM keystore directory: %w", err)
+	}
+	indexPath, err := s.indexPath()
+	if err != nil {
+		return err
+	}
+	index, err := readEVMKeyIndex(indexPath)
+	if err != nil {
+		return err
+	}
+	if _, exists := index[name]; exists {
+		return fmt.Errorf("EVM key %q already exists", name)
+	}
+	password, err := readEVMKeystorePassword("New EVM keystore password: ")
+	if err != nil {
+		return err
+	}
+	defer clearSecret(password)
+	if os.Getenv("IGIT_EVM_KEY_PASSWORD") == "" {
+		confirm, confirmErr := readEVMKeystorePassword("Confirm EVM keystore password: ")
+		if confirmErr != nil {
+			return confirmErr
+		}
+		matches := string(password) == string(confirm)
+		clearSecret(confirm)
+		if !matches {
+			return fmt.Errorf("EVM keystore passwords do not match")
+		}
+	}
+	ks := keystore.NewKeyStore(dir, keystore.StandardScryptN, keystore.StandardScryptP)
+	account, err := ks.ImportECDSA(privateKey, string(password))
+	if err != nil {
+		return fmt.Errorf("import encrypted EVM key: %w", err)
 	}
 	index[name] = account.URL.Path
 	if err := writeEVMKeyIndex(indexPath, index); err != nil {
@@ -371,11 +471,15 @@ func (s *EVMKeystoreSigner) SignTransaction(ctx context.Context, tx EVMTransacti
 	if derivedAddress != expectedAddress {
 		return "", fmt.Errorf("EVM keystore private key does not match its address metadata")
 	}
-	toValue, err := normalizeEVMAddress(tx.To)
-	if err != nil {
-		return "", fmt.Errorf("invalid EVM transaction destination: %w", err)
+	var to *common.Address
+	if strings.TrimSpace(tx.To) != "" {
+		toValue, err := normalizeEVMAddress(tx.To)
+		if err != nil {
+			return "", fmt.Errorf("invalid EVM transaction destination: %w", err)
+		}
+		address := common.HexToAddress(strings.TrimPrefix(toValue, "0x"))
+		to = &address
 	}
-	to := common.HexToAddress(strings.TrimPrefix(toValue, "0x"))
 	dataBytes, err := decodeHexBytes(tx.Data)
 	if err != nil {
 		return "", err
@@ -398,7 +502,7 @@ func (s *EVMKeystoreSigner) SignTransaction(ctx context.Context, tx EVMTransacti
 	}
 	unsigned := types.NewTx(&types.LegacyTx{
 		Nonce:    tx.Nonce,
-		To:       &to,
+		To:       to,
 		Value:    value,
 		Gas:      tx.GasLimit,
 		GasPrice: new(big.Int).SetUint64(gasPrice),

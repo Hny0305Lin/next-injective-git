@@ -8,9 +8,9 @@ import (
 )
 
 func main() {
-	if err := config.ValidatePublishedProfilesV1Only(); err != nil {
+	if err := config.ValidatePublishedSuiteProfiles(); err != nil {
 		fmt.Fprintf(os.Stderr, "release profile check: fail: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Println("release profile check: pass (published CLI profiles remain auto/v1)")
+	fmt.Println("release profile check: pass (published CLI profiles use immutable evm/v3 SuiteDirectory trust roots)")
 }

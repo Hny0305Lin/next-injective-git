@@ -32,6 +32,8 @@ manifest="$EVIDENCE/cutover-evidence.sha256"
 approval="$EVIDENCE/cutover-approval.txt"
 required=(
   deployment.json
+  suite-verification.json
+  blockscout-verification.json
   foundry-test.txt
   foundry-invariant.txt
   foundry-gas.txt
@@ -148,6 +150,15 @@ for name in "${!checksums[@]}"; do
   fi
 done
 
+command -v node >/dev/null 2>&1 || {
+  echo "CUTOVER READINESS: FAIL (node is required for Suite evidence validation)" >&2
+  exit 1
+}
+node "$ROOT/scripts/validate-suite-cutover.mjs" "$EVIDENCE" "$EXPECTED_COMMIT" >/dev/null || {
+  echo "CUTOVER READINESS: FAIL (Suite deployment or activation evidence is invalid)" >&2
+  exit 1
+}
+
 echo "CUTOVER READINESS: PASS (reviewed, hash-bound evidence verified)"
 echo "evidence directory: $EVIDENCE"
-echo "source gate: $ROOT/scripts/migration-readiness.sh --required"
+echo "source gate: $ROOT/scripts/suite-readiness.sh --required"

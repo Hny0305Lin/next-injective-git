@@ -1,12 +1,15 @@
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { connectWallet, getEvmProvider, SUPPORTED_WALLETS, type Wallet } from "../lib/wallet";
-import { clearQueryCache, injBalanceOf, loadConfig, formatError } from "../lib/chain";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { toInjectiveAddress } from "./address";
+import { clearQueryCache, formatError, injBalanceOf, loadConfig, verifySuite } from "./chain";
+import { getEvmProvider, SUPPORTED_WALLETS } from "./wallet";
 
-// A connected wallet is either a Cosmos wallet (signs via CosmJS) or an EVM
-// wallet (MetaMask, signs via EIP-712). Both expose an inj1 address.
-export type Connected =
-  | { kind: "cosmos"; id: string; label: string; address: string; cosmos: Wallet }
-  | { kind: "evm"; id: string; label: string; address: string; ethAddress: string };
+export interface Connected {
+  kind: "evm";
+  id: string;
+  label: string;
+  address: string;
+  ethAddress: string;
+}
 
 interface WalletState {
   connected: Connected | null;
@@ -31,56 +34,49 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState("");
   const [walletModalOpen, setWalletModalOpen] = useState(false);
+  const connectedRef = useRef<Connected | null>(null);
+  connectedRef.current = connected;
 
   const refreshBalance = useCallback(async () => {
-    if (!connected) return;
+    const current = connectedRef.current;
+    if (!current) return;
     try {
-      setBalance(await injBalanceOf(loadConfig(), connected.address));
+      setBalance(await injBalanceOf(loadConfig(), current.ethAddress));
     } catch {
-      /* leave stale balance */
+      // Preserve the last confirmed balance while the RPC is unavailable.
     }
-  }, [connected]);
-
-  const openWalletModal = useCallback(() => setWalletModalOpen(true), []);
-  const closeWalletModal = useCallback(() => setWalletModalOpen(false), []);
+  }, []);
 
   const connect = useCallback(async (walletId: string) => {
     setConnecting(true);
     setError("");
     clearQueryCache();
     try {
-      const def = SUPPORTED_WALLETS.find((x) => x.id === walletId);
-      if (def?.kind === "evm") {
-        const provider = getEvmProvider(walletId);
-        if (!provider) throw new Error(`${def.label} not detected — install or enable it`);
-        // dynamic import keeps the heavy Injective SDK out of the main bundle
-        const mm = await import("../lib/metamask");
-        const { ethAddress, injectiveAddress } = await mm.connectEvm(provider);
-        setConnected({
-          kind: "evm",
-          id: walletId,
-          label: def.label,
-          address: injectiveAddress,
-          ethAddress,
-        });
-      } else {
-        const w = await connectWallet(walletId);
-        setConnected({
-          kind: "cosmos",
-          id: walletId,
-          label: w.providerLabel,
-          address: w.address,
-          cosmos: w,
-        });
+      const definition = SUPPORTED_WALLETS.find((wallet) => wallet.id === walletId);
+      if (!definition) throw new Error(`unsupported wallet ${walletId}`);
+      const provider = getEvmProvider(walletId);
+      if (!provider) throw new Error(`${definition.label} not detected; install or enable it`);
+      const cfg = loadConfig();
+      await verifySuite(cfg);
+      const accounts = await provider.request({ method: "eth_requestAccounts" });
+      const ethAddress = Array.isArray(accounts) ? accounts[0] : undefined;
+      if (typeof ethAddress !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(ethAddress)) {
+        throw new Error("EVM wallet returned no valid account");
       }
-      try {
-        localStorage.setItem(LS_PROVIDER, walletId);
-      } catch {
-        /* ignore */
-      }
-    } catch (e) {
-      console.error("[wallet] connect failed:", e);
-      setError(formatError(e));
+      const next: Connected = {
+        kind: "evm",
+        id: walletId,
+        label: definition.label,
+        address: toInjectiveAddress(ethAddress),
+        ethAddress,
+      };
+      setConnected(next);
+      connectedRef.current = next;
+      localStorage.setItem(LS_PROVIDER, walletId);
+    } catch (cause) {
+      console.error("[wallet] connect failed:", cause);
+      setConnected(null);
+      setError(formatError(cause));
     } finally {
       setConnecting(false);
     }
@@ -88,63 +84,59 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const disconnect = useCallback(() => {
     setConnected(null);
+    connectedRef.current = null;
     setBalance("");
     clearQueryCache();
-    try {
-      localStorage.removeItem(LS_PROVIDER);
-    } catch {
-      /* ignore */
-    }
+    localStorage.removeItem(LS_PROVIDER);
   }, []);
 
-  // reconnect on load with the previously used wallet (still authorized)
   useEffect(() => {
-    const prev = localStorage.getItem(LS_PROVIDER);
-    if (prev && !connected) connect(prev);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    const previous = localStorage.getItem(LS_PROVIDER);
+    if (previous) void connect(previous);
+  }, [connect]);
 
   useEffect(() => {
     void refreshBalance();
-  }, [refreshBalance]);
+  }, [connected, refreshBalance]);
 
-  // wallets fire this when the user switches account in the extension
   useEffect(() => {
-    const onChange = () => {
-      const prev = localStorage.getItem(LS_PROVIDER);
-      if (prev) connect(prev);
+    const current = connected;
+    if (!current) return;
+    const provider = getEvmProvider(current.id);
+    if (!provider?.on || !provider.removeListener) return;
+    const reconnect = () => {
+      clearQueryCache();
+      void connect(current.id);
     };
-    window.addEventListener("keplr_keystorechange", onChange);
-    window.addEventListener("leap_keystorechange", onChange);
+    provider.on("accountsChanged", reconnect);
+    provider.on("chainChanged", reconnect);
     return () => {
-      window.removeEventListener("keplr_keystorechange", onChange);
-      window.removeEventListener("leap_keystorechange", onChange);
+      provider.removeListener?.("accountsChanged", reconnect);
+      provider.removeListener?.("chainChanged", reconnect);
     };
-  }, [connect]);
+  }, [connected, connect]);
 
   return (
-    <Ctx.Provider
-      value={{
-        connected,
-        address: connected?.address ?? "",
-        balance,
-        connecting,
-        error,
-        connect,
-        disconnect,
-        refreshBalance,
-        walletModalOpen,
-        openWalletModal,
-        closeWalletModal,
-      }}
-    >
+    <Ctx.Provider value={{
+      connected,
+      address: connected?.address ?? "",
+      balance,
+      connecting,
+      error,
+      connect,
+      disconnect,
+      refreshBalance,
+      walletModalOpen,
+      openWalletModal: () => setWalletModalOpen(true),
+      closeWalletModal: () => setWalletModalOpen(false),
+    }}>
       {children}
     </Ctx.Provider>
   );
 }
 
 export function useWallet(): WalletState {
-  const ctx = useContext(Ctx);
-  if (!ctx) throw new Error("useWallet must be used inside WalletProvider");
-  return ctx;
+  const context = useContext(Ctx);
+  if (!context) throw new Error("useWallet must be used inside WalletProvider");
+  return context;
 }

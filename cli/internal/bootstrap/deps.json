@@ -33,23 +33,5 @@
         "files": { "kubo/ipfs.exe": "ipfs.exe" }
       }
     }
-  },
-  "injectived": {
-    "version": "1.17.2",
-    "artifacts": {
-      "linux-amd64": {
-        "urls": [
-          "https://registry.npmjs.org/injective-core-linux-x64/-/injective-core-linux-x64-1.17.2.tgz",
-          "https://registry.npmmirror.com/injective-core-linux-x64/-/injective-core-linux-x64-1.17.2.tgz"
-        ],
-        "sha256": "36d33db09f641024a6087b640b6f51d823175fb027844993645e03066bb1c19d",
-        "archive": "tar.gz+tar.zst",
-        "payload": "package/bin/injectived.tar.zst",
-        "files": {
-          "injectived-linux-x64": "injectived",
-          "libwasmvm.x86_64.so": "libwasmvm.x86_64.so"
-        }
-      }
-    }
   }
 }

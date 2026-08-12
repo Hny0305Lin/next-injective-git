@@ -27,6 +27,8 @@ $evidence = $evidenceItem.FullName
 
 $required = @(
   "deployment.json",
+  "suite-verification.json",
+  "blockscout-verification.json",
   "foundry-test.txt",
   "foundry-invariant.txt",
   "foundry-gas.txt",
@@ -156,7 +158,17 @@ if (-not $approvalValid -or
   exit 1
 }
 
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+  Write-Error "CUTOVER READINESS: FAIL (node is required for Suite evidence validation)"
+  exit 1
+}
+& node (Join-Path $root "scripts/validate-suite-cutover.mjs") $evidence $ExpectedCommit | Out-Null
+if ($LASTEXITCODE -ne 0) {
+  Write-Error "CUTOVER READINESS: FAIL (Suite deployment or activation evidence is invalid)"
+  exit 1
+}
+
 Write-Host "CUTOVER READINESS: PASS (reviewed, hash-bound evidence verified)"
 Write-Host "evidence directory: $evidence"
-Write-Host "source gate: $(Join-Path $root 'scripts/migration-readiness.ps1') -Required"
+Write-Host "source gate: $(Join-Path $root 'scripts/suite-readiness.sh') --required"
 exit 0

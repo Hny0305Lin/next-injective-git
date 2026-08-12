@@ -47,6 +47,8 @@ func TestEVMRPCMethodsAndReceiptPolling(t *testing.T) {
 			result = "0x5208"
 		case "eth_getTransactionCount":
 			result = "0x3"
+		case "eth_getBalance":
+			result = "0xde0b6b3a7640000"
 		case "eth_sendRawTransaction":
 			result = "0xabc123"
 		case "eth_getTransactionReceipt":
@@ -93,6 +95,10 @@ func TestEVMRPCMethodsAndReceiptPolling(t *testing.T) {
 	if err != nil || nonce != 3 {
 		t.Fatalf("nonce = %d, err=%v", nonce, err)
 	}
+	balance, err := rpc.Balance(context.Background(), "0x1111111111111111111111111111111111111111", "latest")
+	if err != nil || balance.String() != "1000000000000000000" {
+		t.Fatalf("balance = %v, err=%v", balance, err)
+	}
 	hash, err := rpc.SendRawTransaction(context.Background(), "1234")
 	if err != nil || hash != "0xabc123" {
 		t.Fatalf("hash = %q, err=%v", hash, err)
@@ -101,7 +107,7 @@ func TestEVMRPCMethodsAndReceiptPolling(t *testing.T) {
 	if err != nil || receipt == nil || receipt.Status != "0x1" {
 		t.Fatalf("receipt = %#v, err=%v", receipt, err)
 	}
-	if len(methods) != 9 || strings.Join(methods, ",") != "eth_chainId,eth_blockNumber,eth_call,eth_call,eth_estimateGas,eth_getTransactionCount,eth_sendRawTransaction,eth_getTransactionReceipt,eth_getTransactionReceipt" {
+	if len(methods) != 10 || strings.Join(methods, ",") != "eth_chainId,eth_blockNumber,eth_call,eth_call,eth_estimateGas,eth_getTransactionCount,eth_getBalance,eth_sendRawTransaction,eth_getTransactionReceipt,eth_getTransactionReceipt" {
 		t.Fatalf("RPC methods = %v", methods)
 	}
 	if strings.Join(callTags, ",") != "latest,0x1234" {

@@ -10,7 +10,7 @@ import {
 
 const TESTNET_WALLETS = [
   { label: "MetaMask Wallet", inj: "inj1w5v3vhwpk7v8csaqxv5pzzfzvgaqn8qfuh5p5d", evm: "0x7519165DC1B7987C43A03328110922623A099C09" },
-  { label: "Keplr Wallet", inj: "inj1ylxm0a96uxsfk5j7xza7jyycs6zvz9k4r9vkuc", evm: "0x27CDB7F4BAE1A09B525E30BBE910988684C116D5" },
+  { label: "Test Wallet 2", inj: "inj1ylxm0a96uxsfk5j7xza7jyycs6zvz9k4r9vkuc", evm: "0x27CDB7F4BAE1A09B525E30BBE910988684C116D5" },
   { label: "igit-dev", inj: "inj1sh4v00qgzjy25a73mqheew8q200punaglrzec5", evm: "0x85EAC7BC081488AA77D1D82F9CB8E053DE1E4FA8" },
   { label: "dev", inj: "inj1p6dn32ss5cxnfgcw8n4mu08x9vc2tskhnj7y3j", evm: "0x0E9B38AA10A60D34A30E3CEBBE3CE62B30A5C2D7" },
   { label: "collab-bob", inj: "inj1kwq44vsld7zk2l9d8vvgn7dkjh4jgvlffhqp3d", evm: "0xB3815AB21F6F85657CAD3B1889F9B695EB2433E9" },
@@ -26,7 +26,7 @@ export default function Settings() {
   };
 
   const setProfile = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setCfg(configForProfile(e.target.value as NetworkProfileId, cfg.contractVersion));
+    setCfg(configForProfile(e.target.value as NetworkProfileId));
     setSaved(false);
   };
 
@@ -49,7 +49,7 @@ export default function Settings() {
         </select>
 
         <div className="muted mono" style={{ fontSize: "0.76rem", lineHeight: 1.6, marginBottom: 16 }}>
-          {profile.chainId} · EVM {profile.evmChainId} · automatic profile-managed chain routing
+          EVM {profile.evmChainId} · SuiteDirectory {profile.suiteDirectory || "not configured"}
         </div>
 
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -100,8 +100,6 @@ export default function Settings() {
         </div>
         <p className="muted" style={{ fontSize: "0.82rem", marginTop: 10 }}>
           Links:{" "}
-          <a href={profile.explorer} target="_blank" rel="noreferrer">Injective Explorer ↗</a>
-          {" · "}
           <a href={profile.evmExplorer} target="_blank" rel="noreferrer">Blockscout ↗</a>
         </p>
       </div>

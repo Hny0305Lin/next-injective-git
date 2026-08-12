@@ -11,7 +11,7 @@ import {
   type ContractTx,
 } from "../lib/chain";
 
-const INJ_EXPLORER = "https://testnet.explorer.injective.network";
+const EVM_EXPLORER = "https://testnet-injective.cloud.blockscout.com";
 
 function shortAddr(s: string, n = 8) {
   return s.length > n * 2 ? `${s.slice(0, n)}…${s.slice(-4)}` : s;
@@ -175,8 +175,8 @@ export default function Home() {
       </div>
 
       <footer className="footer" style={{ marginTop: 24, borderTop: "1px solid var(--border)" }}>
-        Injective testnet · Contract: <code>{shortAddr(cfg.contract, 10)}</code> ·{" "}
-        <a href={`${INJ_EXPLORER}/contract/${cfg.contract}`} target="_blank" rel="noreferrer">
+        Injective testnet · SuiteDirectory: <code>{shortAddr(cfg.suiteDirectory, 10)}</code> ·{" "}
+        <a href={`${EVM_EXPLORER}/address/${cfg.suiteDirectory}`} target="_blank" rel="noreferrer">
           Explorer ↗
         </a>
       </footer>

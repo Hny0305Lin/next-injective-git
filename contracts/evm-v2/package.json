@@ -2,6 +2,11 @@
   "name": "igit-evm-v2-contracts",
   "private": true,
   "version": "0.0.0",
+  "scripts": {
+    "check": "node ../../scripts/evm-suite-solc-check.mjs",
+    "abi": "node ../../scripts/evm-suite-solc-check.mjs --write-abi",
+    "artifacts": "node ../../scripts/evm-suite-solc-check.mjs --write-artifacts"
+  },
   "devDependencies": {
     "solc": "0.8.24"
   }

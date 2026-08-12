@@ -17,7 +17,6 @@ import (
 	"testing"
 
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/config"
-	"github.com/klauspost/compress/zstd"
 )
 
 func TestEmbeddedManifestIsValid(t *testing.T) {
@@ -25,7 +24,7 @@ func TestEmbeddedManifestIsValid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest["kubo"].Version != "0.42.0" || manifest["injectived"].Version != "1.17.2" {
+	if manifest["kubo"].Version != "0.42.0" || len(manifest) != 1 {
 		t.Fatalf("unexpected dependency versions: %#v", manifest)
 	}
 }
@@ -114,9 +113,6 @@ func TestPrepareKuboDoesNotCheckInjectived(t *testing.T) {
 	if updated.ContractAddress != "" {
 		t.Fatalf("Kubo-only preparation changed contract config: %q", updated.ContractAddress)
 	}
-	if result.InjectivedBin != "" {
-		t.Fatalf("Kubo-only result unexpectedly contains injectived: %q", result.InjectivedBin)
-	}
 	if !result.KuboStarted || len(result.Reused) != 1 || result.Reused[0] != "Kubo" || len(result.Installed) != 0 {
 		t.Fatalf("unexpected Kubo-only result: %#v", result)
 	}
@@ -140,7 +136,7 @@ func TestPrepareKuboSkipIsNoOp(t *testing.T) {
 	if updated.ContractAddress != cfg.ContractAddress || updated.InjectivedBin != cfg.InjectivedBin || updated.IPFSBin != cfg.IPFSBin {
 		t.Fatalf("SkipKubo changed config: got %#v want %#v", updated, cfg)
 	}
-	if result.InjectivedBin != "" || result.IPFSBin != "" || len(result.Installed) != 0 || len(result.Reused) != 0 || result.KuboStarted {
+	if result.IPFSBin != "" || len(result.Installed) != 0 || len(result.Reused) != 0 || result.KuboStarted {
 		t.Fatalf("SkipKubo returned work result: %#v", result)
 	}
 	if _, err := os.Stat(home); !os.IsNotExist(err) {
@@ -203,60 +199,6 @@ func TestExtractTarGzRequiresEveryManifestFile(t *testing.T) {
 	err = extractTarGz(archive, t.TempDir(), map[string]string{"kubo/ipfs": "ipfs", "kubo/README.md": "README.md"})
 	if err == nil {
 		t.Fatal("expected missing required file error")
-	}
-}
-
-func TestExtractNestedTarZst(t *testing.T) {
-	var inner bytes.Buffer
-	zstdWriter, err := zstd.NewWriter(&inner)
-	if err != nil {
-		t.Fatal(err)
-	}
-	innerTar := tar.NewWriter(zstdWriter)
-	payload := []byte("injectived-binary")
-	if err := innerTar.WriteHeader(&tar.Header{Name: "injectived-linux-x64", Mode: 0o755, Size: int64(len(payload)), Typeflag: tar.TypeReg}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := innerTar.Write(payload); err != nil {
-		t.Fatal(err)
-	}
-	if err := innerTar.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := zstdWriter.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	archive := filepath.Join(t.TempDir(), "package.tgz")
-	f, err := os.Create(archive)
-	if err != nil {
-		t.Fatal(err)
-	}
-	gz := gzip.NewWriter(f)
-	outerTar := tar.NewWriter(gz)
-	if err := outerTar.WriteHeader(&tar.Header{Name: "package/bin/injectived.tar.zst", Mode: 0o644, Size: int64(inner.Len()), Typeflag: tar.TypeReg}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := io.Copy(outerTar, &inner); err != nil {
-		t.Fatal(err)
-	}
-	if err := outerTar.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := gz.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	dest := t.TempDir()
-	if err := extractNestedTarZst(archive, dest, "package/bin/injectived.tar.zst", map[string]string{"injectived-linux-x64": "injectived"}); err != nil {
-		t.Fatal(err)
-	}
-	got, err := os.ReadFile(filepath.Join(dest, "injectived"))
-	if err != nil || string(got) != string(payload) {
-		t.Fatalf("extracted data=%q err=%v", got, err)
 	}
 }
 

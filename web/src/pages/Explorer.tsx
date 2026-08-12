@@ -80,14 +80,14 @@ export default function Explorer() {
         <Link className="muted" to="/ipfs">IPFS explorer →</Link>
       </div>
       <p className="muted">
-        Activity on the repo-registry contract <code className="mono">{short(cfg.contract, 10)}</code> ·
-        chain <code className="mono">injective-888</code>
+        Activity across SuiteDirectory <code className="mono">{short(cfg.suiteDirectory, 10)}</code> ·
+        EVM chain <code className="mono">{cfg.evmChainId}</code>
       </p>
 
       {cc && (
         <div className="card explorer-config">
           <span>platform fee <b>{(cc.platform_fee_bps / 100).toFixed(2)}%</b></span>
-          <span>username deposit <b>{formatInj(cc.username_deposit.amount, cc.username_deposit.denom)} INJ</b></span>
+          <span>suite version <b>{cc.suite_version}</b></span>
           <span>treasury <code className="mono">{short(cc.treasury, 8)}</code></span>
           <span>admin <code className="mono">{short(cc.admin, 8)}</code></span>
         </div>
@@ -164,20 +164,20 @@ export default function Explorer() {
   );
 }
 
-// Pick the most meaningful wasm attributes per action for the feed summary.
+// Pick the most meaningful EVM event attributes per action for the feed summary.
 function summarize(r: ContractTx): string {
-  const w = r.wasm;
+  const attributes = r.attributes;
   switch (r.action) {
     case "sponsor":
-      return `${w.owner ?? ""}/${w.repo ?? ""} ${w.funds ? formatFundsShort(w.funds) : ""}`.trim();
+      return `${attributes.owner ?? ""}/${attributes.repo ?? ""} ${attributes.funds ? formatFundsShort(attributes.funds) : ""}`.trim();
     case "update_ref":
-      return `${w.repo ?? ""} ${w.ref ?? ""} ${w.sha ? w.sha.slice(0, 8) : ""}`.trim();
+      return `${attributes.repo ?? ""} ${attributes.ref ?? ""} ${attributes.sha ? attributes.sha.slice(0, 8) : ""}`.trim();
     case "create_repo":
-      return w.name ?? w.repo ?? "";
+      return attributes.name ?? attributes.repo ?? "";
     case "award_badge":
-      return `#${w.badge_id ?? ""} → ${w.recipient ? w.recipient.slice(0, 12) : ""}`;
+      return `#${attributes.badge_id ?? ""} → ${attributes.recipient ? attributes.recipient.slice(0, 12) : ""}`;
     default:
-      return Object.entries(w).filter(([k]) => k !== "action").slice(0, 2).map(([k, v]) => `${k}=${v}`).join(" ");
+      return Object.entries(attributes).filter(([k]) => k !== "action").slice(0, 2).map(([k, v]) => `${k}=${v}`).join(" ");
   }
 }
 function formatFundsShort(funds: string): string {
@@ -186,7 +186,6 @@ function formatFundsShort(funds: string): string {
 }
 
 function TxCard({ d }: { d: TxDetail }) {
-  const isWeb3 = d.extensionOptions.some((e) => e.includes("ExtensionOptionsWeb3Tx"));
   return (
     <div className="card tx-card">
       <div className="tx-card-top">
@@ -199,7 +198,6 @@ function TxCard({ d }: { d: TxDetail }) {
       <div className="tx-badges">
         <span className="kv">signMode <b>{d.signMode || "?"}</b></span>
         <span className="kv">pubkey <b className="mono">{d.pubkeyType.split(".").pop() || "?"}</b></span>
-        {isWeb3 && <span className="web3-tag">EIP-712 web3 tx 🦊</span>}
       </div>
       {d.messages.map((m, i) => (
         <div key={i} className="tx-msg">

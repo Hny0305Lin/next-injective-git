@@ -24,6 +24,7 @@ import {
 } from "../../lib/chain";
 import { useWallet } from "../../lib/WalletContext";
 import { getEvmProvider } from "../../lib/wallet";
+import type { Hex } from "viem";
 import { getRepoStore } from "../../lib/gitstore";
 import TreeView from "./TreeView";
 import BlobView from "./BlobView";
@@ -82,7 +83,7 @@ export default function Repo() {
     let cancelled = false;
     setTransferLoaded(false);
     setTransferError("");
-    if (!resolvedRepo?.repoId || resolvedRepo.backend !== "evm" || !cfg.evmContract) {
+    if (!resolvedRepo?.repoId) {
       setPendingTransfer(null);
       return () => { cancelled = true; };
     }
@@ -101,7 +102,7 @@ export default function Repo() {
         }
       });
     return () => { cancelled = true; };
-  }, [cfg, resolvedRepo?.repoId, resolvedRepo?.backend]);
+  }, [cfg, resolvedRepo?.repoId]);
 
   useEffect(() => {
     if (!editingMetadata) return;
@@ -145,22 +146,19 @@ export default function Repo() {
   const packfilesCount = current?.pack_uris?.length ?? 0;
   const canEditMetadata =
     resolvedRepo?.isCanonical === true &&
-    connected?.kind === "evm" &&
-    connected.address === addr &&
-    /^0x[0-9a-fA-F]{40}$/.test(cfg.evmContract);
+    connected != null &&
+    connected.address === addr;
   const canManageOwnership =
-    resolvedRepo.backend === "evm" &&
     resolvedRepo.isCanonical &&
-    connected?.kind === "evm" &&
-    /^0x[0-9a-fA-F]{40}$/.test(cfg.evmContract) &&
+    connected != null &&
     Boolean(resolvedRepo.repoId);
   const isCurrentOwner = canManageOwnership && connected?.address === resolvedRepo.canonical.owner;
   const badgeProvider =
-    isCurrentOwner && /^0x[0-9a-fA-F]{40}$/.test(cfg.evmBadgeModule) && connected?.kind === "evm"
+    isCurrentOwner && connected != null
       ? getEvmProvider(connected.id)
       : undefined;
   const economicProvider =
-    isCurrentOwner && /^0x[0-9a-fA-F]{40}$/.test(cfg.evmEconomicModule) && connected?.kind === "evm"
+    isCurrentOwner && connected != null
       ? getEvmProvider(connected.id)
       : undefined;
   const transferCapabilities = ownershipTransferCapabilities(
@@ -170,9 +168,9 @@ export default function Repo() {
   );
 
   const runOwnershipAction = async (
-    action: (provider: NonNullable<ReturnType<typeof getEvmProvider>>, repoId: string) => Promise<string>,
+    action: (provider: NonNullable<ReturnType<typeof getEvmProvider>>, repoId: Hex) => Promise<string>,
   ) => {
-    if (!canManageOwnership || !connected || connected.kind !== "evm" || !resolvedRepo.repoId) return;
+    if (!canManageOwnership || !connected || !resolvedRepo.repoId) return;
     const provider = getEvmProvider(connected.id);
     if (!provider) {
       setTransferError(`${connected.label} is no longer available`);
@@ -202,7 +200,7 @@ export default function Repo() {
   };
 
   const beginTransfer = async () => {
-    if (!canManageOwnership || !isCurrentOwner || !connected || connected.kind !== "evm" || !resolvedRepo.repoId) return;
+    if (!canManageOwnership || !isCurrentOwner || !connected || !resolvedRepo.repoId) return;
     const provider = getEvmProvider(connected.id);
     if (!provider) {
       setTransferError(`${connected.label} is no longer available`);
@@ -231,7 +229,7 @@ export default function Repo() {
   };
 
   const saveMetadata = async () => {
-    if (!canEditMetadata || !connected || connected.kind !== "evm") return;
+    if (!canEditMetadata || !connected) return;
     const descriptionChanged = draftDescription !== info.description;
     const branchChanged = draftBranch !== info.default_branch;
     if (!descriptionChanged && !branchChanged) {
@@ -246,7 +244,7 @@ export default function Repo() {
     setSavingMetadata(true);
     setMetadataError("");
     try {
-      await updateRepoInfoWithEvm(provider, cfg, repo, {
+      await updateRepoInfoWithEvm(provider, cfg, resolvedRepo.repoId, {
         ...(descriptionChanged ? { description: draftDescription } : {}),
         ...(branchChanged ? { defaultBranch: draftBranch } : {}),
       });
@@ -475,7 +473,6 @@ export default function Repo() {
           repo={resolvedRepo.canonical.name}
           owner={resolvedRepo.canonical.owner}
           repoId={resolvedRepo.repoId}
-          backend={resolvedRepo.backend}
           badgeProvider={badgeProvider}
           economicProvider={economicProvider}
         />

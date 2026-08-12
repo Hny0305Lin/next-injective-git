@@ -8,7 +8,7 @@ on:
     paths:
       - "README.md"
       - "cli/**"
-      - "contracts/**"
+      - "contracts/evm-v2/**"
       - "docs/**"
       - "scripts/**"
       - "web/**"
@@ -18,7 +18,7 @@ on:
     paths:
       - "README.md"
       - "cli/**"
-      - "contracts/**"
+      - "contracts/evm-v2/**"
       - "docs/**"
       - "scripts/**"
       - "web/**"
@@ -26,47 +26,6 @@ on:
       - ".github/workflows/release.yml"
 
 jobs:
-  contract:
-    name: contract (rust 1.81)
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: contracts/repo-registry
-    steps:
-      - uses: actions/checkout@v5
-
-      # 1.81.0 is mandatory: Injective's CosmWasm VM rejects wasm built by
-      # 1.82+ (reference-types) / 1.87+ (bulk-memory). Cargo.lock pins the
-      # matching dependency versions - do NOT run a bare `cargo update`.
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.81.0
-          targets: wasm32-unknown-unknown
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: contracts/repo-registry
-
-      - name: unit + integration tests
-        run: cargo test --locked
-
-      - name: build wasm artifact
-        run: cargo build --release --target wasm32-unknown-unknown --lib --locked
-
-      - name: verify Rust toolchain and wasm artifact
-        run: |
-          set -euo pipefail
-          rustc --version | grep -Eq '^rustc 1\.81\.'
-          f=target/wasm32-unknown-unknown/release/repo_registry.wasm
-          test -s "$f"
-          magic="$(od -An -tx1 -N4 "$f" | tr -d '[:space:]')"
-          test "$magic" = "0061736d"
-
-      - uses: actions/upload-artifact@v6
-        with:
-          name: repo_registry.wasm
-          path: contracts/repo-registry/target/wasm32-unknown-unknown/release/repo_registry.wasm
-
   cli:
     name: cli (go 1.22)
     runs-on: ubuntu-latest
@@ -87,7 +46,7 @@ jobs:
       - name: test
         run: go test ./...
 
-      - name: published profile release guard
+      - name: immutable Suite profile source guard
         run: go run ./cmd/igit-release-profile-check
 
       - name: pinned native Kubo download and daemon smoke
@@ -164,13 +123,6 @@ jobs:
         shell: pwsh
         run: go vet ./...
 
-      - name: native PowerShell readiness required-file regression
-        shell: pwsh
-        working-directory: .
-        run: |
-          Set-StrictMode -Version Latest
-          & .\scripts\migration-readiness-file-test.ps1
-
       - name: native PowerShell cutover evidence regression
         shell: pwsh
         working-directory: .
@@ -215,8 +167,8 @@ jobs:
       - name: production build
         run: npm run build
 
-  evm-v2:
-    name: EVM V2 (Foundry)
+  evm-suite:
+    name: immutable EVM Suite (Foundry)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -234,10 +186,10 @@ jobs:
         with:
           version: v1.7.1
 
-      - name: EVM V2 gate fail-closed regression
+      - name: immutable Suite gate fail-closed regression
         run: bash scripts/evm-v2-check-test.sh
 
-      - name: EVM V2 build and unit tests
+      - name: immutable Suite build and tests
         run: bash scripts/evm-v2-check.sh --required
 
   acceptance-fixtures:
@@ -258,11 +210,8 @@ jobs:
       - name: validate bootstrap shell script
         run: bash -n scripts/bootstrap-push.sh
 
-      - name: migration readiness source and documentation gate
-        run: bash scripts/migration-readiness.sh --source-only
-
-      - name: V1 snapshot export regression fixture
-        run: bash scripts/v1-export-snapshot-test.sh
+      - name: immutable Suite source readiness gate
+        run: bash scripts/suite-readiness.sh --source-only
 
       - name: validate bootstrap PowerShell script
         shell: pwsh
@@ -278,20 +227,6 @@ jobs:
             $errors | Format-List | Out-String | Write-Error
           }
 
-      - name: validate Windows migration readiness script
-        shell: pwsh
-        run: |
-          $tokens = $null
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path scripts/migration-readiness.ps1),
-            [ref]$tokens,
-            [ref]$errors
-          ) > $null
-          if ($errors.Count) {
-            $errors | Format-List | Out-String | Write-Error
-          }
-
       - uses: actions/setup-go@v6
         with:
           go-version: "1.22"
@@ -299,15 +234,6 @@ jobs:
 
       - name: migration and chain race gate
         run: bash scripts/race-check.sh --required
-
-      - name: feegrant policy gate regression tests
-        run: bash scripts/feegrant-policy-gate-test.sh
-
-      - name: feegrant issuer wrapper regression tests
-        run: bash scripts/feegrant-issue-test.sh
-
-      - name: feegrant push recording regression tests
-        run: bash scripts/feegrant-record-push-test.sh
 
       - name: gateway fallback acceptance fixture
         run: bash scripts/gateway-fallback-acceptance.sh
@@ -317,9 +243,3 @@ jobs:
 
       - name: replication config cutover guard fixture
         run: bash scripts/replication-config-check-test.sh
-
-      - name: contract upgrade scheduling fixture
-        run: bash scripts/schedule-upgrade-test.sh
-
-      - name: mainnet governance preflight fixture
-        run: bash scripts/mainnet-governance-check-test.sh
