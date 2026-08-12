@@ -130,12 +130,20 @@ export async function listRepos(
   owner: string,
   includeInactive = false,
 ): Promise<RepoInfo[]> {
-  const out = await smartQuery<{ repos: RepoInfo[] }>(cfg, {
-    list_repos: { owner, limit: 100 },
-  });
-  return includeInactive
-    ? out.repos
-    : out.repos.filter((repo) => repo.moderation_status === "active");
+  // The contract caps one page at 100. Paginate so an owner with more
+  // repositories is not silently truncated -- moderation filtering happens
+  // below, so a truncated page can otherwise hide every active repo.
+  const all: RepoInfo[] = [];
+  let startAfter: string | undefined;
+  for (;;) {
+    const out = await smartQuery<{ repos: RepoInfo[] }>(cfg, {
+      list_repos: { owner, start_after: startAfter, limit: 100 },
+    });
+    all.push(...out.repos);
+    if (out.repos.length < 100) break;
+    startAfter = out.repos[out.repos.length - 1].name;
+  }
+  return includeInactive ? all : all.filter((repo) => repo.moderation_status === "active");
 }
 
 export async function repoInfo(cfg: AppConfig, owner: string, repo: string): Promise<RepoInfo> {

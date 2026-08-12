@@ -90,7 +90,7 @@ export default function TreeView({
         <MemoizedRefSelect
           refs={refs}
           value={short}
-          onChange={(s) => nav(dirLink("").replace(encodeURIComponent(short), encodeURIComponent(s)))}
+          onChange={(s) => nav(`${base}/tree/${encodeURIComponent(s)}`)}
         />
         <span className="crumbs">
           <Link to={dirLink("")}>{base.split("/")[2]}</Link>
