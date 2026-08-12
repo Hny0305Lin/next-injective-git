@@ -225,6 +225,33 @@ func (c *Client) ListRefs(owner, repo string) ([]RefInfo, error) {
 	}
 }
 
+// ListRepos returns all repositories of an owner (handles pagination).
+func (c *Client) ListRepos(owner string) ([]RepoInfo, error) {
+	var all []RepoInfo
+	var startAfter *string
+	for {
+		query := map[string]any{
+			"list_repos": map[string]any{
+				"owner":       owner,
+				"start_after": startAfter,
+				"limit":       100,
+			},
+		}
+		var page struct {
+			Repos []RepoInfo `json:"repos"`
+		}
+		if err := c.SmartQuery(query, &page); err != nil {
+			return nil, err
+		}
+		all = append(all, page.Repos...)
+		if len(page.Repos) < 100 {
+			return all, nil
+		}
+		last := page.Repos[len(page.Repos)-1].Name
+		startAfter = &last
+	}
+}
+
 // ResolveRef resolves one ref to (sha, pack URIs).
 func (c *Client) ResolveRef(owner, repo, refName string) (string, []string, error) {
 	query := map[string]any{

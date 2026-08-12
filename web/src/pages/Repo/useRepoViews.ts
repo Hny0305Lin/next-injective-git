@@ -24,6 +24,22 @@ export interface View {
   path: string;
 }
 
+/**
+ * decodeURIComponent that tolerates a literal '%' in the segment.
+ *
+ * Tree/blob links embed file paths without encoding them, so a repository
+ * containing a file such as "50%.md" produces a URL whose segment is not valid
+ * percent-encoding. decodeURIComponent throws URIError on those, and because
+ * parseView runs during render that took down the whole route.
+ */
+function safeDecode(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
 export function parseView(splat: string, fallbackRef: string): View {
   const parts = splat.split("/").filter(Boolean);
   const kind = parts[0] ?? "";
@@ -32,11 +48,11 @@ export function parseView(splat: string, fallbackRef: string): View {
     case "blob":
       return {
         kind,
-        ref: decodeURIComponent(parts[1] ?? fallbackRef),
-        path: parts.slice(2).map(decodeURIComponent).join("/"),
+        ref: safeDecode(parts[1] ?? fallbackRef),
+        path: parts.slice(2).map(safeDecode).join("/"),
       };
     case "commits":
-      return { kind, ref: decodeURIComponent(parts[1] ?? fallbackRef), path: "" };
+      return { kind, ref: safeDecode(parts[1] ?? fallbackRef), path: "" };
     case "commit":
       return { kind, ref: parts[1] ?? "", path: "" };
     case "refs":
