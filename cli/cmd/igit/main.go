@@ -621,7 +621,7 @@ func cmdCollab(cfg config.Config, args []string) error {
 		if err := registry.SetCollaborator(owner, args[1], args[2], ""); err != nil {
 			return err
 		}
-		fmt.Printf(i18n.Text("collaborator %s removed from %s\n", "协作者 %s 已从 %s 移除\n"), args[2], args[1])
+		fmt.Printf(i18n.Text("collaborator %s removed from %s\n", "已将协作者 %s 从 %s 移除\n"), args[2], args[1])
 		return nil
 	case "list":
 		if len(args) != 3 {
@@ -1131,7 +1131,7 @@ func cmdSponsor(cfg config.Config, args []string) error {
 	if err := economic.Sponsor(owner, args[1], message, amount); err != nil {
 		return err
 	}
-	fmt.Printf(i18n.Text("sponsored %s/%s with %s INJ — thank you!\n", "已使用 %s/%s 的 %s INJ 赞助，谢谢！\n"), args[0], args[1], args[2])
+	fmt.Printf(i18n.Text("sponsored %s/%s with %s INJ — thank you!\n", "已向 %s/%s 赞助 %s INJ，谢谢！\n"), args[0], args[1], args[2])
 	return nil
 }
 
