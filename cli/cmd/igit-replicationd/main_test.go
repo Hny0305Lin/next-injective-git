@@ -258,6 +258,68 @@ func TestReplicationHashFailureRemovesPinAndDoesNotConsumeJTI(t *testing.T) {
 	}
 }
 
+// A client picks both the bytes behind a CID and the SHA-256 it declares. When
+// verification hashed a fixed maxBytes+1 prefix, a client could declare a tiny
+// size (charged against its quota), publish an arbitrarily large object whose
+// prefix hashed to the declared digest, and have all of it pinned durably.
+func TestReplicationRejectsContentLargerThanDeclaredSize(t *testing.T) {
+	const maxBytes = 16
+	const declaredSize = 8
+	// Far larger than the authorization admits; the old prefix-only check read
+	// exactly maxBytes+1 bytes, so that is the prefix the digest is taken over.
+	actual := strings.Repeat("A", 100)
+	state := filepath.Join(t.TempDir(), "issued.tsv")
+	pinned := false
+	removed := false
+	kubo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v0/pin/add":
+			pinned = true
+			w.WriteHeader(http.StatusOK)
+		case "/api/v0/cat":
+			_, _ = io.WriteString(w, actual)
+		case "/api/v0/pin/rm":
+			removed = true
+			pinned = false
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer kubo.Close()
+	s := &service{
+		secret: []byte("01234567890123456789012345678901"), kuboAPI: kubo.URL,
+		stateFile: state, audit: log.New(io.Discard, "", 0), maxBytes: maxBytes,
+		ratePerMin: 2, bytesPerMin: 1024, http: kubo.Client(),
+		used: map[string]string{}, window: map[string]*rateWindow{},
+	}
+	req := replicationRequest{
+		CID: "bafy-oversized", Owner: "inj1owner", Repo: "repo", Ref: "refs/heads/main",
+		PackSHA256: sha256Hex(actual[:maxBytes+1]), Size: declaredSize,
+	}
+	ticket, err := s.sign(claims{
+		Kind: "replication", Subject: "alice", CID: req.CID, Owner: req.Owner, Repo: req.Repo,
+		Ref: req.Ref, PackSHA256: req.PackSHA256, Size: req.Size,
+		ExpiresAt: time.Now().Add(time.Minute).Unix(), JTI: "jti-oversized",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rr := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/v1/replications", strings.NewReader(jsonBody(req)))
+	r.Header.Set("Authorization", "Bearer "+ticket)
+	s.replicate(rr, r)
+	if rr.Code != http.StatusBadGateway {
+		t.Fatalf("oversized content status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if pinned || !removed {
+		t.Fatalf("oversized content must be unpinned: pinned=%v removed=%v", pinned, removed)
+	}
+	if _, ok := s.used["jti-oversized"]; ok {
+		t.Fatal("rejected replication must not consume JTI")
+	}
+}
+
 func sha256Hex(value string) string {
 	h := sha256.Sum256([]byte(value))
 	return fmt.Sprintf("%x", h[:])
