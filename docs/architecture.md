@@ -78,4 +78,5 @@ written on-chain. Integrity must remain independently verifiable from stable
 object metadata or content digests. See
 [ADR 0002](adr/0002-pluggable-pack-storage.md).
 
-See [migration](evm-v2-migration.md) and [release](release.md).
+See [migration](evm-v2-migration.md), [release](release.md), and the active
+[delivery roadmap](delivery-roadmap.md).

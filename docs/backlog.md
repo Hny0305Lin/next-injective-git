@@ -1,5 +1,9 @@
 # Remaining Work
 
+This file is the granular task inventory. Phase ordering, dependency gates,
+current milestone status, and shared exit criteria are maintained in the
+[Delivery Roadmap](delivery-roadmap.md).
+
 The immutable Suite source path is implemented, but no checked-in profile may
 claim a live deployment until all real evidence exists.
 
@@ -11,6 +15,7 @@ claim a live deployment until all real evidence exists.
 | Git acceptance | Clean native Windows without WSL2 or injectived, and clean Linux without injectived: init/push/clone/fetch/pull/delete plus historical alias resolution |
 | Web acceptance | MetaMask receipts for supported writes with explicit legacy transaction parameters |
 | Storage portability | Successor URI/digest contract and Linux/Windows E2E for Amazon S3 and Cloudflare R2 without Kubo |
+| Isolated ZKP prototype | Approved statement/public inputs, pinned circuit/setup artifacts, native Windows proof generation, testnet valid/invalid/replay receipts, and gas/prover benchmarks; no Suite integration |
 | Security | Deep source review, operator-runner review, resolved findings, and hash-bound approval |
 | Production governance | New multisig/timelock design and deployment; the temporary testnet single EOA is not production-ready |
 

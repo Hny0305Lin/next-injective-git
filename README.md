@@ -16,6 +16,11 @@ or mixed backend mode.
 > fixed-block verification, and cutover evidence have passed. No deployment or
 > public testnet availability is claimed by this repository state.
 
+Delivery sequencing, current blockers, exit criteria, and implementation
+references are maintained in the [delivery roadmap](docs/delivery-roadmap.md).
+Architecture decisions and acceptance evidence remain authoritative in their
+dedicated documents.
+
 ## Why EVM V2
 
 The V1 control plane used CosmWasm. Its Push workflow ran natively on Linux,
