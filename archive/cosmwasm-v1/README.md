@@ -9,6 +9,11 @@ Ordinary V1 access is read-only through `igit archive`. The archived scripts
 are retained as historical evidence and are not supported deployment or write
 paths. The on-chain V1 contract is unchanged.
 
+The former Keplr/CosmJS and Cosmos EIP-712 wallet procedure is preserved as a
+clearly marked historical record in
+[`docs/keplr-acceptance.md`](../../docs/keplr-acceptance.md). It is not an EVM
+V2 acceptance guide.
+
 To validate the frozen source independently:
 
 ```sh

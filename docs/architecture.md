@@ -5,6 +5,11 @@ chain ID, and one `SuiteDirectory` address. CLI, Web, and `git-remote-igit`
 resolve all other contracts from that Directory and fail closed unless it is
 version 3, active, code-hash verified, and internally bound.
 
+This is the EVM V2 product generation because CosmWasm V1 required a WSL2-hosted
+Push toolchain on Windows while Linux ran natively. The EVM path removes WSL2
+and `injectived` from ordinary Windows and Linux prerequisites. See
+[ADR 0001](adr/0001-evm-v2-runtime-and-migration-scope.md).
+
 ```mermaid
 flowchart LR
   Git[Git] --> Helper[git-remote-igit]
@@ -19,8 +24,9 @@ flowchart LR
   Directory --> Username[UsernameModule]
   Directory --> Badge[BadgeModule]
   Directory --> Release[ReleaseModule]
-  Helper --> IPFS[IPFS replication + gateways]
-  Web --> IPFS
+  Helper --> Storage[Current IPFS adapter]
+  Web --> Storage
+  Storage -. planned successor .-> ObjectStorage[Amazon S3 / Cloudflare R2]
 ```
 
 `RepositoryCore` owns stable repo IDs, canonical and historical locators,
@@ -57,5 +63,19 @@ Historical chain access exists only under `archive/cosmwasm-v1` and the
 read-only `igit archive` command. Ordinary clients have no archive fallback or
 write path. Snapshot evidence is fixed-height, block-hash bound, inventory
 complete, and verified before it can become a Suite bootstrap plan.
+
+## Data Plane Direction
+
+Git pack storage is a replaceable data plane, not the control-plane trust root.
+The current Suite, CLI, and Web paths support only `ipfs://`, so Kubo/IPFS
+remains the implemented adapter for this release. Amazon S3 and Cloudflare R2
+are planned adapters, not aliases for the current gateway.
+
+Because Suite contracts are immutable and currently validate only `ipfs://`, a
+storage-neutral URI contract requires a reviewed successor Suite and explicit
+migration. Object-store credentials and expiring signed URLs must never be
+written on-chain. Integrity must remain independently verifiable from stable
+object metadata or content digests. See
+[ADR 0002](adr/0002-pluggable-pack-storage.md).
 
 See [migration](evm-v2-migration.md) and [release](release.md).

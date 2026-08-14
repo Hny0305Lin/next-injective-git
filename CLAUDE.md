@@ -5,6 +5,27 @@ non-upgradeable Injective EVM Suite. Ordinary clients trust only one configured
 `SuiteDirectory`; never add a direct module address, compatibility backend,
 legacy fallback, proxy, diamond, or `delegatecall` path.
 
+## Why EVM V2
+
+CosmWasm V1 Push ran natively on Linux, but the supported Windows workflow
+required a WSL2 compatibility environment for the Linux CLI, `injectived`, and
+Kubo. EVM V2 is specifically the second-generation control plane built on
+Injective EVM so ordinary Windows operation can use the native Windows CLI,
+encrypted EVM keystore, JSON-RPC, and native storage tooling. WSL2 and
+`injectived` are not prerequisites for the EVM V2 product path.
+
+The EVM V2 product-generation name is distinct from the on-chain Suite protocol
+version, which is currently 3. Completion requires clean native Windows and
+Linux acceptance; source code or CI configuration alone is not evidence. See
+[ADR 0001](docs/adr/0001-evm-v2-runtime-and-migration-scope.md).
+
+IPFS/Kubo is the currently implemented pack-storage adapter, not the permanent
+product core. Amazon S3 and Cloudflare R2 adapters are a planned direction, not
+current functionality. The existing immutable Suite accepts only `ipfs://`
+pack URIs, so storage neutrality requires a reviewed successor protocol and
+migration rather than a documentation-only endpoint switch. See
+[ADR 0002](docs/adr/0002-pluggable-pack-storage.md).
+
 ## Source Boundaries
 
 - `contracts/evm-v2`: nine Solidity contracts, fixed `solc 0.8.24`, checked ABI
@@ -60,7 +81,9 @@ contract-only validation and must not require a key. Git-compatible unknown
 commands may be forwarded to Git; inspect command dispatch before adding names.
 
 Use checked-in ABIs through go-ethereum or viem. Do not hand-code selectors or
-word decoders. Preserve the established Git pack and IPFS gateway behavior.
+word decoders. Preserve the established Git pack and current IPFS gateway
+behavior until a separately reviewed storage protocol is implemented. Do not
+claim S3 or R2 support from roadmap documentation alone.
 
 Deployment is restricted to rotated encrypted testnet keys. Production needs a
 separate multisig/timelock governance design. Never deploy or broadcast merely

@@ -12,5 +12,10 @@
   and migration signing.
 - Define the evidence retention location and independent reviewers authorized to
   sign the hash-bound cutover approval.
+- Define the successor pack URI and digest format that can represent Amazon S3
+  and Cloudflare R2 without storing credentials or expiring URLs on-chain.
+- Choose S3/R2 bucket versioning, retention, lifecycle, encryption,
+  least-privilege upload, deletion, and disaster-recovery policies before an
+  object-storage adapter is accepted.
 
 None of these decisions may be inferred from test fixtures or old deployments.

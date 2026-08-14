@@ -1,8 +1,9 @@
 # Next Injective Git (`igit`)
 
-Next Injective Git stores Git packfiles on IPFS and repository identity, refs,
-permissions, recovery, moderation, sponsorship, usernames, badges, and release
-checksums in a non-upgradeable Injective EVM Suite.
+Next Injective Git currently stores Git packfiles through an IPFS/Kubo data
+plane and stores repository identity, refs, permissions, recovery, moderation,
+sponsorship, usernames, badges, and release checksums in a non-upgradeable
+Injective EVM Suite.
 
 The ordinary CLI, Git remote helper, and Web app have one chain trust root: a
 `SuiteDirectory` address. Clients verify the EVM chain ID, suite version,
@@ -14,6 +15,28 @@ or mixed backend mode.
 > Commands that need the chain fail closed until reviewed deployment, migration,
 > fixed-block verification, and cutover evidence have passed. No deployment or
 > public testnet availability is claimed by this repository state.
+
+## Why EVM V2
+
+The V1 control plane used CosmWasm. Its Push workflow ran natively on Linux,
+while the supported Windows path required WSL2 to host the Linux CLI,
+`injectived`, and Kubo. This successor is called **EVM V2** because moving the
+control plane to Injective EVM is the mechanism used to remove that
+Windows-only compatibility environment. The target path uses native Windows or
+native Linux tooling; ordinary EVM V2 users do not install WSL2 or
+`injectived`.
+
+This remains an acceptance target, not a completed deployment claim. A clean
+Windows machine must complete `init`, `push`, `clone`, `fetch`, `pull`, and ref
+deletion without WSL2, and clean Linux must do the same without `injectived`.
+See [the runtime and migration ADR](docs/adr/0001-evm-v2-runtime-and-migration-scope.md).
+
+Kubo/IPFS is the current storage adapter, not the long-term product core. The
+roadmap calls for pluggable pack storage, including Amazon S3 and Cloudflare R2,
+so an object-storage profile can operate without a local Kubo daemon. That
+support is not implemented in this repository state: the current Suite and
+clients accept only `ipfs://` pack URIs. See
+[the storage ADR](docs/adr/0002-pluggable-pack-storage.md).
 
 ## Components
 
@@ -32,8 +55,11 @@ The Suite consists of `SuiteDirectory`, `BootstrapCoordinator`,
 
 ## User Setup
 
-Requirements are Git and Kubo for push. Clone and fetch use configured HTTPS
-IPFS gateways and do not require a local Kubo daemon.
+The currently implemented IPFS profile requires Git and native Kubo for push.
+It does not require WSL2 or `injectived`. Clone and fetch use configured HTTPS
+IPFS gateways and do not require a local Kubo daemon. Planned S3/R2 profiles
+will require separate implementation and acceptance before they can replace
+this setup.
 
 ```sh
 cd cli

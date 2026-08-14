@@ -8,8 +8,9 @@ claim a live deployment until all real evidence exists.
 | Testnet deployment | No-clobber manifest, nine successful receipts, runtime/template hashes, constructor arguments, and Blockscout results |
 | Historical import | Complete fixed-height inventory, snapshot/hash, deterministic plan/calldata, signed journal, receipts, and module count/root parity |
 | Activation | Fixed-block active Directory, version/chain checks, seven module code hashes/bindings, and imported-state comparison |
-| Git acceptance | Clean Linux and Windows init/push/clone/fetch/pull/delete plus historical alias resolution |
+| Git acceptance | Clean native Windows without WSL2 or injectived, and clean Linux without injectived: init/push/clone/fetch/pull/delete plus historical alias resolution |
 | Web acceptance | MetaMask receipts for supported writes with explicit legacy transaction parameters |
+| Storage portability | Successor URI/digest contract and Linux/Windows E2E for Amazon S3 and Cloudflare R2 without Kubo |
 | Security | Deep source review, operator-runner review, resolved findings, and hash-bound approval |
 | Production governance | New multisig/timelock design and deployment; the temporary testnet single EOA is not production-ready |
 
@@ -17,9 +18,11 @@ The public SuiteDirectory fields remain empty until the cutover gate passes.
 
 ## Engineering TODO
 
-- Install Foundry and execute the Suite unit, fuzz, stateful invariant, and gas
-  suites. The locked `solc 0.8.24` compile gate passes, but it does not execute
-  EVM runtime behavior.
+- Record and retain a passing, commit-bound immutable Suite CI run. CI already
+  pins Foundry v1.7.1 and invokes the unit, fuzz, stateful invariant, gas-ceiling,
+  and gas-report checks; workflow configuration alone is not evidence that the
+  reviewed migration commit passed. A retained local run is useful interim
+  verification, but final evidence must include the CI URL and exact commit.
 - Add an operator runner for the reviewed calldata manifest. It must use the
   encrypted keystore transactor, preserve an append-only signed journal and
   receipts, resume safely after uncertain receipts, and emit fixed-block
@@ -28,8 +31,16 @@ The public SuiteDirectory fields remain empty until the cutover gate passes.
 - Replace or archive the root `scripts/testnet-e2e.sh`, which is still an
   explicitly gated V1 script. Add pure-Suite clean-environment Git acceptance
   for Linux and Windows, including historical alias resolution.
-- Run the PowerShell cutover fixtures in Windows CI. The current development
-  environment has no `pwsh` binary.
+- Record and retain a passing native Windows CI run for Go/Kubo tests and the
+  PowerShell cutover fixture. The Windows job is already defined; local Windows
+  execution is useful interim verification, but neither the job definition nor
+  an unbound local result replaces a green run for the reviewed commit.
+- Design the successor pack-reference protocol and storage adapter boundary for
+  Amazon S3 and Cloudflare R2. The current immutable Suite and clients remain
+  `ipfs://`-only; do not claim object-storage support until upload, durable-write
+  confirmation, digest verification, credential isolation, fetch, migration,
+  and native Windows/Linux E2E all pass. See
+  [ADR 0002](adr/0002-pluggable-pack-storage.md).
 - Split and review this migration commit before cutover. No public profile may
   receive a SuiteDirectory address as part of source-readiness work.
 
@@ -44,6 +55,9 @@ The public SuiteDirectory fields remain empty until the cutover gate passes.
   finality handling, and an independent hash-bound cutover approval.
 - Only after the evidence gate passes, set the single SuiteDirectory address in
   the CLI and Web testnet profiles.
+
+The initial EVM V2 cutover may use the current IPFS adapter. S3/R2 are a
+separate successor-protocol milestone and must not be implied by that release.
 
 ## Policy TODO
 

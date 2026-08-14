@@ -1,8 +1,9 @@
 # Push Setup
 
-The normal Windows, Linux, and macOS path requires Git, `igit`,
-`git-remote-igit`, and Kubo. It never installs a chain daemon or a legacy
-signer.
+The currently implemented IPFS path requires Git, `igit`, `git-remote-igit`,
+and native Kubo. Windows, Linux, and macOS run their respective native binaries.
+The Windows and Linux paths do not install WSL2, `injectived`, a chain daemon,
+or a legacy signer.
 
 ```sh
 igit setup push
@@ -26,3 +27,8 @@ Suite fails before signing.
 
 Historical fixed-height queries are available only through `igit archive`; they
 are not a push configuration or fallback.
+
+Kubo is the current storage adapter, not a permanent product prerequisite.
+Amazon S3 and Cloudflare R2 profiles are planned so those users can push and
+fetch without a local Kubo daemon. They are not implemented by the current
+Suite or clients; see [ADR 0002](adr/0002-pluggable-pack-storage.md).

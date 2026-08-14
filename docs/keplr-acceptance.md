@@ -1,7 +1,13 @@
-# Keplr 网页赞助 — 手动验收指南
+# 历史验收记录：CosmWasm V1 钱包赞助
 
-> Web 已接入 Keplr：可在浏览器里连接钱包、直接发赞助交易（合约即时拆分）。
-> 自动化测试装不了钱包扩展，这一步需要人工完成。
+> [!WARNING]
+> 本文只保留 2026-07 CosmWasm V1 Web、Keplr/CosmJS 和 Cosmos EIP-712
+> 赞助路径的历史验收证据。当前 EVM V2 Web 使用 viem 和 EVM wallet，不包含
+> 这里描述的 Keplr、CosmJS、LCD 查询或 `MsgExecuteContract` 交易路径。
+> 不要按本文验收当前产品，也不要把下方旧交易当作 EVM Suite 回执。当前验收
+> 要求见 [release.md](release.md) 和 [acceptance-evidence.md](acceptance-evidence.md)。
+
+以下步骤保持原样，供审计历史部署与迁移输入使用。
 
 ## 技术选型说明
 - 用**经过审计的 CosmJS**（`@cosmjs/cosmwasm-stargate`）+ Keplr 原生 signer，**不用** `@injectivelabs/sdk-ts`（该包 2026-07 曾被供应链投毒 v1.20.21 窃取私钥）。
@@ -40,7 +46,7 @@
 
 ---
 
-# MetaMask 网页赞助 — 手动验收（EIP-712）
+# 历史验收记录：MetaMask Cosmos EIP-712 赞助
 
 > MetaMask 走的是完全不同的路径（EIP-712，不是 Cosmos 签名），**这部分我无法自动验证**，
 > 只能靠你手动测。用 `@injectivelabs/sdk-ts@1.20.27`（投毒事件后的干净版；恶意版 1.20.21 已被 npm 弃用）
@@ -60,7 +66,7 @@
 4. MetaMask 弹出 **签名请求（Signature request，EIP-712 类型数据）**，确认签名。
 5. 期望：出现 `✅ sponsored! tx …`；刷新后赞助墙出现该笔。
 
-## 状态：✅ 已验证（VERIFIED on injective-888）
+## V1 历史状态：✅ 已验证（VERIFIED on injective-888）
 2026-07-29 实测打通，tx `3BD391ED289642723CA1D884D529D43857DA8190512D0004A715B65778F18002`（code=0）。
 链上铁证：
 - `extension_options` = `/injective.types.v1beta1.ExtensionOptionsWeb3Tx` —— 只有 EIP-712/MetaMask 交易才有

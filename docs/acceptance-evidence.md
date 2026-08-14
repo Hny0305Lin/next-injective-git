@@ -19,3 +19,8 @@ clean Linux/Windows Git E2E, Web receipts, security review, and finality runbook
 
 No real evidence is checked into this repository. The public SuiteDirectory
 profile remains empty until the complete evidence set is reviewed and passes.
+
+The current evidence schema covers the IPFS-backed Suite cutover. It contains
+no evidence for Amazon S3 or Cloudflare R2 support; those adapters remain a
+successor-protocol roadmap item under
+[ADR 0002](adr/0002-pluggable-pack-storage.md).

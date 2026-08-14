@@ -46,6 +46,14 @@ Directory code hashes, and module-to-directory bindings.
 Fixture output and source readiness never prove a deployment. The default
 profile must not change unless this gate and human hash-bound approval pass.
 
+## Storage Scope
+
+This cutover covers the currently implemented IPFS adapter only. It does not
+claim Amazon S3 or Cloudflare R2 support. Object-storage profiles require the
+successor URI protocol, client adapters, credential and integrity controls,
+migration evidence, and their own native Windows/Linux acceptance described in
+[ADR 0002](adr/0002-pluggable-pack-storage.md).
+
 ## Assets
 
 Release binaries are version-injected and checked by
