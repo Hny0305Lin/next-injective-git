@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/fileprotection"
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/i18n"
 )
 
 func TestEffectiveGatewaysUsesProfileNameForLegacyDefault(t *testing.T) {
@@ -97,16 +100,101 @@ func TestLegacyMetadataCannotChangeEffectiveRuntime(t *testing.T) {
 
 func TestValidateContractRequiresSuiteDirectory(t *testing.T) {
 	cfg := Defaults()
-	if err := cfg.ValidateContract(); err == nil {
-		t.Fatal("missing SuiteDirectory was accepted")
+	if err := cfg.ValidateContract(); !i18n.HasCode(err, ErrorCodeMissingEVMSuiteDirectory) {
+		t.Fatalf("missing SuiteDirectory error = %v, want code %q", err, ErrorCodeMissingEVMSuiteDirectory)
 	}
 	cfg.EVMSuiteDirectoryAddress = "inj1notanevmaddress"
-	if err := cfg.ValidateContract(); err == nil {
-		t.Fatal("malformed SuiteDirectory was accepted")
+	if err := cfg.ValidateContract(); !i18n.HasCode(err, ErrorCodeInvalidEVMSuiteDirectory) {
+		t.Fatalf("malformed SuiteDirectory error = %v, want code %q", err, ErrorCodeInvalidEVMSuiteDirectory)
 	}
 	cfg.EVMSuiteDirectoryAddress = "0x1111111111111111111111111111111111111111"
 	if err := cfg.ValidateContract(); err != nil {
 		t.Fatalf("valid SuiteDirectory profile rejected: %v", err)
+	}
+}
+
+func TestValidateContractUsesStableTransportErrorCodes(t *testing.T) {
+	const directory = "0x1111111111111111111111111111111111111111"
+	withoutRPC := Config{EVMSuiteDirectoryAddress: directory, EVMChainID: 1439}
+	if err := withoutRPC.ValidateContract(); !i18n.HasCode(err, ErrorCodeMissingEVMRPC) {
+		t.Fatalf("missing RPC error = %v, want code %q", err, ErrorCodeMissingEVMRPC)
+	}
+	withoutChainID := Config{EVMSuiteDirectoryAddress: directory, EVMRPC: "https://rpc.example.invalid"}
+	if err := withoutChainID.ValidateContract(); !i18n.HasCode(err, ErrorCodeMissingEVMChainID) {
+		t.Fatalf("missing chain ID error = %v, want code %q", err, ErrorCodeMissingEVMChainID)
+	}
+}
+
+func TestSaveProtectsConfigFile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("IGIT_HOME", home)
+	path := filepath.Join(home, "config.json")
+	if err := os.WriteFile(path, []byte("legacy permissive config\n"), 0o666); err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(Defaults()); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := Path()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != path {
+		t.Fatalf("config path = %q, want %q", resolved, path)
+	}
+	if err := fileprotection.ValidateFile(resolved); err != nil {
+		t.Fatalf("saved config does not satisfy sensitive-file policy: %v", err)
+	}
+}
+
+func TestLoadRepairsLegacyConfigProtectionBeforeReading(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("IGIT_HOME", home)
+	path := filepath.Join(home, "config.json")
+	if err := os.WriteFile(path, []byte(`{"upload":{"authorization":"legacy-secret"}}`), 0o666); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Upload.Authorization != "legacy-secret" {
+		t.Fatalf("loaded authorization = %q", cfg.Upload.Authorization)
+	}
+	if err := fileprotection.ValidateDirectory(home); err != nil {
+		t.Fatalf("legacy config directory was not repaired: %v", err)
+	}
+	if err := fileprotection.ValidateFile(path); err != nil {
+		t.Fatalf("legacy config file was not repaired: %v", err)
+	}
+}
+
+func TestValidateContractErrorRendering(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		locale string
+		want   string
+	}{
+		{
+			name:   "english",
+			locale: "en-US",
+			want:   `invalid EVM SuiteDirectory address "inj1notanevmaddress" (expected 0x followed by 40 hex characters)`,
+		},
+		{
+			name:   "chinese",
+			locale: "zh-CN",
+			want:   `EVM SuiteDirectory 地址 "inj1notanevmaddress" 无效（应为 0x 后跟 40 个十六进制字符）`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("LC_ALL", test.locale)
+			cfg := Defaults()
+			cfg.EVMSuiteDirectoryAddress = "inj1notanevmaddress"
+			err := cfg.ValidateContract()
+			if err == nil || err.Error() != test.want {
+				t.Fatalf("validation error = %q, want %q", err, test.want)
+			}
+		})
 	}
 }
 
@@ -163,7 +251,7 @@ func TestSelectNetworkProfileReplacesAllProfileOwnedFields(t *testing.T) {
 	if selected.Network != "injective-mainnet" || selected.ChainID != "injective-1" || selected.EVMChainID != 1776 {
 		t.Fatalf("selected profile identity = %#v", selected)
 	}
-	if selected.LCDEndpoint != "https://lcd.injective.network" || selected.Node != "https://tm.injective.network" || selected.EVMRPC != "https://k8s.json-rpc.injective.network" {
+	if selected.LCDEndpoint != "https://lcd.injective.network" || selected.Node != "https://tm.injective.network" || selected.EVMRPC != "https://sentry.evm-rpc.injective.network/" {
 		t.Fatalf("selected transport fields = %#v", selected)
 	}
 	if selected.EVMSuiteDirectoryAddress != "" || selected.ContractAddress != "" || selected.EVMContractAddress != "" || selected.EVMBadgeModuleAddress != "" || selected.EVMEconomicModuleAddress != "" || selected.EVMModerationModuleAddress != "" {
@@ -237,7 +325,7 @@ func TestLoadAppliesSelectedProfileWithoutOverwritingExplicitEndpoints(t *testin
 	if cfg.ChainID != "injective-1" || cfg.LCDEndpoint != "https://lcd.injective.network" || cfg.Node != "https://tm.injective.network" {
 		t.Fatalf("mainnet profile endpoints = %#v", cfg)
 	}
-	if cfg.EffectiveEVMRPC() != "https://k8s.json-rpc.injective.network" || cfg.EffectiveEVMChainID() != 1776 {
+	if cfg.EffectiveEVMRPC() != "https://sentry.evm-rpc.injective.network" || cfg.EffectiveEVMChainID() != 1776 {
 		t.Fatalf("mainnet EVM profile = rpc %q chain %d", cfg.EffectiveEVMRPC(), cfg.EffectiveEVMChainID())
 	}
 

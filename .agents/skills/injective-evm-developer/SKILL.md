@@ -163,9 +163,15 @@ Do NOT use `mainnet.rpc.inevm.com` or any inEVM endpoints. inEVM has been replac
 | Chain ID | 2525 | 1776 (`0x6f0`) |
 | Explorer | `explorer.inevm.com` | `blockscout.injective.network` |
 
-### EVM Transaction Quirks
+### EVM transaction policy
 
-- **No EIP-1559**: Injective EVM does not support EIP-1559 (type 2) transactions. Always use `type: 0` (legacy) with explicit `gasPrice`.
+- **EIP-1559 is supported by the current Injective EVM documentation and
+  London is enabled from genesis.** Do not infer production write readiness
+  from read-only fee data or successful type-2 gas estimation alone.
+- Existing applications with a tested legacy path may keep `type: 0` and an
+  explicit `gasPrice`. Migrate a production sender to type 2 only after a
+  funded, signed canary is mined on the target network and its receipt and fee
+  fields are retained as evidence.
 - **`eth_getTransactionReceipt` unreliable**: The EVM RPC sometimes returns internal errors on receipt queries. For non-critical operations (like faucet sends), fire-and-forget — don't call `tx.wait()`.
 - **Cosmos SDK `MsgBroadcasterWithPk` fails for fresh accounts**: The Cosmos ante handler panics with `invalid secp256k1 public key` when broadcasting from an account that has never sent a transaction. Use ethers.js + EVM RPC instead for programmatic sends from fresh wallets.
 

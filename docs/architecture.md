@@ -47,7 +47,9 @@ gas estimate, legacy type-0 signing, minimum `160000000 wei` gas price,
 broadcast, and bounded two-minute receipt polling. A broadcast whose final
 receipt is unknown returns a typed error containing the transaction hash and
 invalidates local nonce state. Web uses viem with the same explicit gas/type
-rules and checks receipt success.
+rules and checks receipt success. Injective EVM supports EIP-1559, but this
+project does not switch either sender to type 2 until a funded signed canary is
+mined and its receipt is retained.
 
 ## Bootstrap
 

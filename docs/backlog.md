@@ -24,7 +24,7 @@ The public SuiteDirectory fields remain empty until the cutover gate passes.
 ## Engineering TODO
 
 - Record and retain a passing, commit-bound immutable Suite CI run. CI already
-  pins Foundry v1.7.1 and invokes the unit, fuzz, stateful invariant, gas-ceiling,
+  pins Foundry v1.7.1 and invokes the unit, stateful invariant, gas-ceiling,
   and gas-report checks; workflow configuration alone is not evidence that the
   reviewed migration commit passed. A retained local run is useful interim
   verification, but final evidence must include the CI URL and exact commit.

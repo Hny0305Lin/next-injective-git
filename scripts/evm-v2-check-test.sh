@@ -10,23 +10,36 @@ trap 'rm -rf -- "$TEMP_ROOT"' EXIT
 
 required_files=(
   foundry.toml
-  src/RepoRegistryV2.sol
-  src/RepoRegistryV2ImportController.sol
-  src/RepoRegistryV2BadgeModule.sol
-  src/RepoRegistryV2EconomicModule.sol
-  src/RepoRegistryV2ModerationModule.sol
-  test/RepoRegistryV2.t.sol
-  test/RepoRegistryV2ImportController.t.sol
-  test/RepoRegistryV2BadgeModule.t.sol
-  test/RepoRegistryV2EconomicModule.t.sol
-  test/RepoRegistryV2ModerationModule.t.sol
-  test/RepoRegistryV2Invariant.t.sol
-  test/RepoRegistryV2Gas.t.sol
-  abi/RepoRegistryV2.json
-  abi/RepoRegistryV2ImportController.json
-  abi/RepoRegistryV2BadgeModule.json
-  abi/RepoRegistryV2EconomicModule.json
-  abi/RepoRegistryV2ModerationModule.json
+  src/SuiteDirectory.sol
+  src/BootstrapCoordinator.sol
+  src/RepositoryCore.sol
+  src/RecoveryModule.sol
+  src/ModerationModule.sol
+  src/EconomicModule.sol
+  src/UsernameModule.sol
+  src/BadgeModule.sol
+  src/ReleaseModule.sol
+  src/suite/ISuite.sol
+  src/suite/SuiteModule.sol
+  test/SuiteArchitecture.t.sol
+  abi/SuiteDirectory.json
+  abi/BootstrapCoordinator.json
+  abi/RepositoryCore.json
+  abi/RecoveryModule.json
+  abi/ModerationModule.json
+  abi/EconomicModule.json
+  abi/UsernameModule.json
+  abi/BadgeModule.json
+  abi/ReleaseModule.json
+  artifacts/SuiteDirectory.json
+  artifacts/BootstrapCoordinator.json
+  artifacts/RepositoryCore.json
+  artifacts/RecoveryModule.json
+  artifacts/ModerationModule.json
+  artifacts/EconomicModule.json
+  artifacts/UsernameModule.json
+  artifacts/BadgeModule.json
+  artifacts/ReleaseModule.json
   README.md
 )
 
@@ -61,33 +74,8 @@ run_required_file_failure() {
   fi
 }
 
-run_required_file_failure economic-abi-empty abi/RepoRegistryV2EconomicModule.json empty
-run_required_file_failure invariant-test-missing test/RepoRegistryV2Invariant.t.sol missing
-run_required_file_failure gas-test-missing test/RepoRegistryV2Gas.t.sol missing
-
-abi_fixture="$TEMP_ROOT/abi-compare"
-mkdir -p \
-  "$abi_fixture/out/RepoRegistryV2.sol" \
-  "$abi_fixture/out/RepoRegistryV2ImportController.sol" \
-  "$abi_fixture/out/RepoRegistryV2BadgeModule.sol" \
-  "$abi_fixture/out/RepoRegistryV2EconomicModule.sol" \
-  "$abi_fixture/out/RepoRegistryV2ModerationModule.sol" \
-  "$abi_fixture/abi"
-for name in RepoRegistryV2 RepoRegistryV2ImportController RepoRegistryV2BadgeModule RepoRegistryV2EconomicModule RepoRegistryV2ModerationModule; do
-  artifact_dir="$abi_fixture/out/$name.sol"
-  printf '{"abi":[{"type":"function","name":"probe","inputs":[],"outputs":[]}]}' > "$artifact_dir/$name.json"
-  printf '[{"type":"function","name":"probe","inputs":[],"outputs":[]}]' > "$abi_fixture/abi/$name.json"
-done
-node "$ROOT/scripts/evm-v2-foundry-abi-check.mjs" "$abi_fixture" >/dev/null
-printf '[]' > "$abi_fixture/abi/RepoRegistryV2EconomicModule.json"
-if abi_output="$(node "$ROOT/scripts/evm-v2-foundry-abi-check.mjs" "$abi_fixture" 2>&1)"; then
-  echo "stale ABI fixture unexpectedly passed" >&2
-  exit 1
-fi
-if ! grep -Fq 'contracts/evm-v2/abi/RepoRegistryV2EconomicModule.json is stale' <<< "$abi_output"; then
-  echo "stale ABI fixture failed for the wrong reason" >&2
-  printf '%s\n' "$abi_output" >&2
-  exit 1
-fi
+run_required_file_failure economic-abi-empty abi/EconomicModule.json empty
+run_required_file_failure architecture-test-missing test/SuiteArchitecture.t.sol missing
+run_required_file_failure repository-artifact-missing artifacts/RepositoryCore.json missing
 
 echo "EVM V2 gate fail-closed regression: pass"

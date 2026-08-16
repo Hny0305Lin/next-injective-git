@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/config"
 )
@@ -43,6 +44,22 @@ func TestEmbeddedWindowsKuboArtifactExtractsIPFSExecutable(t *testing.T) {
 	}
 	if artifact.SHA256 != "f24e4d24445c8abf7bd26bd034cb9f14dac77e30452731a617d2e8e2f2ceb150" {
 		t.Fatalf("unexpected Windows Kubo SHA-256: %s", artifact.SHA256)
+	}
+	const cid = "QmWmvYCTA74ise9EYx5PRMBCdwo4SMjERgWtTjBBEqWBHn"
+	wantURLs := []string{
+		"https://gateway.pinata.cloud/ipfs/" + cid + "/kubo/v0.42.0/kubo_v0.42.0_windows-amd64.zip",
+		"https://igit-hk.haohanyh.ovh/ipfs/" + cid + "/kubo/v0.42.0/kubo_v0.42.0_windows-amd64.zip",
+		"https://igit-us.haohanyh.ovh/ipfs/" + cid + "/kubo/v0.42.0/kubo_v0.42.0_windows-amd64.zip",
+		"https://dist.ipfs.tech/kubo/v0.42.0/kubo_v0.42.0_windows-amd64.zip",
+		"https://github.com/ipfs/kubo/releases/download/v0.42.0/kubo_v0.42.0_windows-amd64.zip",
+	}
+	if len(artifact.URLs) != len(wantURLs) {
+		t.Fatalf("Windows Kubo URLs = %#v, want %#v", artifact.URLs, wantURLs)
+	}
+	for index := range wantURLs {
+		if artifact.URLs[index] != wantURLs[index] {
+			t.Fatalf("Windows Kubo URL %d = %q, want %q", index, artifact.URLs[index], wantURLs[index])
+		}
 	}
 
 	archive := filepath.Join(t.TempDir(), "kubo.zip")
@@ -229,6 +246,132 @@ func TestDownloadArtifactUsesNextPinnedSourceAndVerifiesHash(t *testing.T) {
 	artifact.SHA256 = fmt.Sprintf("%064d", 0)
 	if _, err := downloadArtifact(context.Background(), root, "dependency", "1.0.0", artifact, Options{Progress: io.Discard, HTTPClient: succeeded.Client()}); err == nil {
 		t.Fatal("expected checksum mismatch")
+	}
+}
+
+func TestDownloadArtifactBoundsAStalledSourceAndFallsBack(t *testing.T) {
+	payload := []byte("fallback dependency")
+	sum := sha256.Sum256(payload)
+	stalled := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		<-r.Context().Done()
+	}))
+	defer stalled.Close()
+	succeeded := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(payload)
+	}))
+	defer succeeded.Close()
+
+	timeouts := downloadTimeouts{
+		connect: 250 * time.Millisecond, tlsHandshake: 250 * time.Millisecond,
+		responseHeader: 250 * time.Millisecond, idle: 75 * time.Millisecond, total: time.Second,
+	}
+	artifact := Artifact{URLs: []string{stalled.URL, succeeded.URL}, SHA256: fmt.Sprintf("%x", sum)}
+	started := time.Now()
+	path, err := downloadArtifact(context.Background(), t.TempDir(), "dependency", "1.0.0", artifact, Options{
+		Progress: io.Discard,
+		timeouts: &timeouts,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(path)
+	if elapsed := time.Since(started); elapsed < 50*time.Millisecond || elapsed > 3*time.Second {
+		t.Fatalf("stalled source delayed fallback for %s", elapsed)
+	}
+}
+
+func TestDownloadArtifactBoundsStalledHeadersAndFallsBack(t *testing.T) {
+	payload := []byte("header-timeout fallback")
+	sum := sha256.Sum256(payload)
+	stalled := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer stalled.Close()
+	succeeded := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(payload)
+	}))
+	defer succeeded.Close()
+
+	timeouts := downloadTimeouts{
+		connect: 250 * time.Millisecond, tlsHandshake: 250 * time.Millisecond,
+		responseHeader: 75 * time.Millisecond, idle: 250 * time.Millisecond, total: time.Second,
+	}
+	artifact := Artifact{URLs: []string{stalled.URL, succeeded.URL}, SHA256: fmt.Sprintf("%x", sum)}
+	path, err := downloadArtifact(context.Background(), t.TempDir(), "dependency", "1.0.0", artifact, Options{
+		Progress: io.Discard,
+		timeouts: &timeouts,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(path)
+}
+
+func TestDownloadArtifactBoundsAnActiveSourceByTotalTimeout(t *testing.T) {
+	payload := []byte("total-timeout fallback")
+	sum := sha256.Sum256(payload)
+	trickling := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Error("test response does not support flushing")
+			return
+		}
+		ticker := time.NewTicker(5 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-r.Context().Done():
+				return
+			case <-ticker.C:
+				_, _ = w.Write([]byte("x"))
+				flusher.Flush()
+			}
+		}
+	}))
+	defer trickling.Close()
+	succeeded := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(payload)
+	}))
+	defer succeeded.Close()
+
+	timeouts := downloadTimeouts{
+		connect: 250 * time.Millisecond, tlsHandshake: 250 * time.Millisecond,
+		responseHeader: 250 * time.Millisecond, idle: time.Second, total: 250 * time.Millisecond,
+	}
+	artifact := Artifact{URLs: []string{trickling.URL, succeeded.URL}, SHA256: fmt.Sprintf("%x", sum)}
+	started := time.Now()
+	path, err := downloadArtifact(context.Background(), t.TempDir(), "dependency", "1.0.0", artifact, Options{
+		Progress: io.Discard,
+		timeouts: &timeouts,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(path)
+	if elapsed := time.Since(started); elapsed < 200*time.Millisecond || elapsed > 3*time.Second {
+		t.Fatalf("active source total timeout and fallback took %s", elapsed)
+	}
+}
+
+func TestDownloadHTTPClientBoundsConnectAndHeaders(t *testing.T) {
+	timeouts := downloadTimeouts{
+		connect: 11 * time.Millisecond, tlsHandshake: 12 * time.Millisecond,
+		responseHeader: 13 * time.Millisecond, idle: 14 * time.Millisecond, total: 15 * time.Millisecond,
+	}
+	client := newDownloadHTTPClient(timeouts)
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("download transport = %T", client.Transport)
+	}
+	if transport.TLSHandshakeTimeout != timeouts.tlsHandshake || transport.ResponseHeaderTimeout != timeouts.responseHeader {
+		t.Fatalf("download transport timeouts = TLS %s header %s", transport.TLSHandshakeTimeout, transport.ResponseHeaderTimeout)
+	}
+	if transport.ForceAttemptHTTP2 {
+		t.Fatal("dependency downloads must not force HTTP/2 for long IPFS gateway streams")
 	}
 }
 

@@ -64,7 +64,7 @@ const faucetWallet = new ethers.Wallet(FAUCET_PRIVATE_KEY, provider)
 const tx = await faucetWallet.sendTransaction({
   to: ADMIN_WALLET_ETH_ADDRESS,
   value: ethers.parseEther('0.1'),
-  type: 0, // Legacy tx — Injective EVM doesn't support EIP-1559
+  type: 0, // Retain the tested legacy path until a funded type-2 canary is evidenced
   gasLimit: 21000,
   gasPrice: ethers.parseUnits('500', 'gwei'),
 })
@@ -134,9 +134,12 @@ Use this recovered pubkey in `createTransaction` instead of a zero-byte placehol
 
 The Injective SDK's `MsgBroadcasterWithPk.broadcast()` fails for fresh faucet wallets with `invalid secp256k1 public key`. This is because the Cosmos ante handler panics when the pubkey isn't registered. **Always use ethers.js + Injective EVM RPC** (`https://sentry.evm-rpc.injective.network/`) for faucet operations.
 
-### Legacy Transaction Type Required
+### Legacy Transaction Policy
 
-Injective EVM does not support EIP-1559 transactions. Always use `type: 0` (legacy) with explicit `gasPrice`.
+Injective EVM supports EIP-1559 and enables London from genesis. This faucet
+keeps its tested `type: 0` path with an explicit `gasPrice` until a funded,
+signed type-2 canary is mined on the target network and its receipt and fee
+fields are retained as evidence.
 
 ### inEVM is Deprecated
 

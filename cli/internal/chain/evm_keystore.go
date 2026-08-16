@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/config"
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/fileprotection"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -69,10 +70,15 @@ func (s *EVMKeystoreSigner) indexPath() (string, error) {
 }
 
 func readEVMKeyIndex(path string) (map[string]string, error) {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
 		return map[string]string{}, nil
+	} else if err != nil {
+		return nil, err
 	}
+	if err := fileprotection.ProtectFile(path); err != nil {
+		return nil, fmt.Errorf("protect EVM keystore index before read: %w", err)
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -91,28 +97,7 @@ func writeEVMKeyIndex(path string, index map[string]string) error {
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		// Windows does not replace an existing destination atomically. The index
-		// contains no secret material, so retry after removing only that file.
-		if removeErr := os.Remove(path); removeErr != nil {
-			_ = os.Remove(tmp)
-			return err
-		}
-		if retryErr := os.Rename(tmp, path); retryErr != nil {
-			_ = os.Remove(tmp)
-			return retryErr
-		}
-	}
-	// Keep the index private even when an older, permissive file existed before
-	// the atomic replacement. It reveals local key names and file locations.
-	if err := os.Chmod(path, 0o600); err != nil {
-		return err
-	}
-	return nil
+	return fileprotection.WriteFile(path, data)
 }
 
 func validEVMKeyName(name string) bool {
@@ -238,6 +223,9 @@ func (s *EVMKeystoreSigner) CreateKey(name string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create EVM keystore directory: %w", err)
 	}
+	if err := fileprotection.ProtectDirectory(dir); err != nil {
+		return fmt.Errorf("protect EVM keystore directory: %w", err)
+	}
 	indexPath, err := s.indexPath()
 	if err != nil {
 		return err
@@ -266,6 +254,10 @@ func (s *EVMKeystoreSigner) CreateKey(name string) error {
 	account, err := ks.NewAccount(string(password))
 	if err != nil {
 		return fmt.Errorf("create encrypted EVM key: %w", err)
+	}
+	if err := fileprotection.ProtectFile(account.URL.Path); err != nil {
+		_ = os.Remove(account.URL.Path)
+		return fmt.Errorf("protect encrypted EVM key: %w", err)
 	}
 	index[name] = account.URL.Path
 	if err := writeEVMKeyIndex(indexPath, index); err != nil {
@@ -308,6 +300,9 @@ func (s *EVMKeystoreSigner) importKey(name string, secret []byte) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create EVM keystore directory: %w", err)
 	}
+	if err := fileprotection.ProtectDirectory(dir); err != nil {
+		return fmt.Errorf("protect EVM keystore directory: %w", err)
+	}
 	indexPath, err := s.indexPath()
 	if err != nil {
 		return err
@@ -340,6 +335,10 @@ func (s *EVMKeystoreSigner) importKey(name string, secret []byte) error {
 	if err != nil {
 		return fmt.Errorf("import encrypted EVM key: %w", err)
 	}
+	if err := fileprotection.ProtectFile(account.URL.Path); err != nil {
+		_ = os.Remove(account.URL.Path)
+		return fmt.Errorf("protect encrypted EVM key: %w", err)
+	}
 	index[name] = account.URL.Path
 	if err := writeEVMKeyIndex(indexPath, index); err != nil {
 		return fmt.Errorf("write EVM keystore index: %w", err)
@@ -351,10 +350,14 @@ func (s *EVMKeystoreSigner) keyPath() (string, error) {
 	if !validEVMKeyName(s.cfg.KeyName) {
 		return "", fmt.Errorf("invalid or missing EVM key_name %q", s.cfg.KeyName)
 	}
-	indexPath, err := s.indexPath()
+	dir, err := s.keyDir()
 	if err != nil {
 		return "", err
 	}
+	if err := fileprotection.ProtectDirectory(dir); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("protect EVM keystore directory before read: %w", err)
+	}
+	indexPath := filepath.Join(dir, evmKeyIndexFile)
 	index, err := readEVMKeyIndex(indexPath)
 	if err != nil {
 		return "", err
@@ -362,10 +365,6 @@ func (s *EVMKeystoreSigner) keyPath() (string, error) {
 	path, ok := index[s.cfg.KeyName]
 	if !ok || strings.TrimSpace(path) == "" {
 		return "", fmt.Errorf("EVM key %q was not found; run `igit key new %s`", s.cfg.KeyName, s.cfg.KeyName)
-	}
-	dir, err := s.keyDir()
-	if err != nil {
-		return "", err
 	}
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(dir, path)
@@ -378,8 +377,16 @@ func (s *EVMKeystoreSigner) keyPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !strings.HasPrefix(strings.ToLower(abs), strings.ToLower(dirAbs+string(os.PathSeparator))) {
-		return "", fmt.Errorf("EVM keystore index points outside the keystore directory")
+	keyDirectory := filepath.Dir(abs)
+	sameDirectory := keyDirectory == dirAbs
+	if runtime.GOOS == "windows" {
+		sameDirectory = strings.EqualFold(keyDirectory, dirAbs)
+	}
+	if !sameDirectory {
+		return "", fmt.Errorf("EVM keystore index points outside or below the keystore directory; key files must be directly inside")
+	}
+	if err := fileprotection.ProtectFile(abs); err != nil {
+		return "", fmt.Errorf("protect encrypted EVM key before read: %w", err)
 	}
 	return abs, nil
 }

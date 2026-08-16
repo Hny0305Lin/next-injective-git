@@ -5,6 +5,17 @@ and native Kubo. Windows, Linux, and macOS run their respective native binaries.
 The Windows and Linux paths do not install WSL2, `injectived`, a chain daemon,
 or a legacy signer.
 
+Sensitive local state is owner-only on POSIX (`0600` files and `0700`
+directories). Native Windows uses a protected DACL that grants full access
+only to the current user and `SYSTEM`; POSIX mode bits are not used as Windows
+acceptance evidence. Config and keystore-index writes are staged under that
+policy before any bytes are written and are then atomically published. EVM key
+files are created directly inside the protected keystore directory. Existing
+config and EVM keystore files are re-protected before reads; final-path
+symbolic links and Windows reparse points fail closed, and indexed key files
+outside or below the keystore directory are rejected. Protected replacement
+does not write through an existing symbolic-link or hard-link destination.
+
 ```sh
 igit setup push
 igit key import dev
@@ -14,6 +25,11 @@ igit suite verify
 ```
 
 Kubo downloads and checksums are pinned in `cli/internal/bootstrap/deps.json`.
+Each source has separate connect, response-header, body-idle, and total
+timeouts, so a stalled mirror advances to the next pinned URL. The Windows
+artifact list uses the fixed IPFS distribution CID through Pinata and the
+project HK/US gateways before the upstream distribution and GitHub origins;
+all downloaded bytes must still match the pinned SHA-256.
 The API must be loopback-only. Clone and fetch do not need Kubo: the helper
 reads refs from the verified Suite and downloads packs from HTTPS gateways.
 

@@ -3,12 +3,12 @@ package main
 import (
 	"context"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/bootstrap"
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/config"
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/environment"
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/i18n"
 )
 
 func TestCmdSetupDefaultsToPushBootstrap(t *testing.T) {
@@ -17,7 +17,7 @@ func TestCmdSetupDefaultsToPushBootstrap(t *testing.T) {
 	cfg.EVMSuiteDirectoryAddress = ""
 
 	err := cmdSetup(cfg, nil)
-	if err == nil || !strings.Contains(err.Error(), "SuiteDirectory") {
+	if !i18n.HasCode(err, config.ErrorCodeMissingEVMSuiteDirectory) {
 		t.Fatalf("cmdSetup without subcommand error = %v, want guarded suite deployment error", err)
 	}
 }
@@ -109,7 +109,7 @@ func TestSetupPushEVMRejectsInvalidDeploymentBeforeKubo(t *testing.T) {
 	}
 
 	err := setupPushWithServices(cfg, setupOptions{yes: true}, services)
-	if err == nil || !strings.Contains(err.Error(), "invalid EVM SuiteDirectory address") {
+	if !i18n.HasCode(err, config.ErrorCodeInvalidEVMSuiteDirectory) {
 		t.Fatalf("invalid deployment error = %v", err)
 	}
 	if kuboCalled {

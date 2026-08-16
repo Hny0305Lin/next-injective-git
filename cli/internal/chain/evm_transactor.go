@@ -71,7 +71,8 @@ func NewEVMTransactor(cfg config.Config, rpc *EVMRPC, signer EVMSigner) *EVMTran
 }
 
 // Send signs, broadcasts, and confirms one replay-protected legacy
-// transaction. Injective currently requires legacy type-0 transactions.
+// transaction. The Suite keeps its tested type-0 policy until a funded type-2
+// canary has produced a retained receipt on the target Injective EVM network.
 func (t *EVMTransactor) Send(ctx context.Context, target string, data []byte, value string) (*EVMTransactionResult, error) {
 	contract, err := normalizeEVMAddress(target)
 	if err != nil {

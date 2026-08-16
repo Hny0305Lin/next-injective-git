@@ -4,7 +4,6 @@ package bootstrap
 
 import (
 	"context"
-	"io"
 	"net"
 	"net/http"
 	"os"
@@ -47,7 +46,9 @@ func TestNativeKuboLifecycleIntegration(t *testing.T) {
 	cfg.IPFSAPI = "http://127.0.0.1:5001"
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
 	defer cancel()
-	updated, result, prepareErr := PrepareKubo(ctx, cfg, Options{Force: true, Progress: io.Discard})
+	updated, result, prepareErr := PrepareKubo(ctx, cfg, Options{
+		Force: true, Progress: integrationProgressWriter{t: t},
+	})
 	if strings.TrimSpace(updated.IPFSBin) != "" && result.KuboPID > 0 {
 		defer shutdownIntegrationKubo(t, updated.IPFSBin, cfg.IPFSAPI, result.KuboPID)
 	}
@@ -72,6 +73,15 @@ func TestNativeKuboLifecycleIntegration(t *testing.T) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		t.Fatalf("Kubo version probe returned HTTP %d", resp.StatusCode)
 	}
+}
+
+type integrationProgressWriter struct {
+	t *testing.T
+}
+
+func (w integrationProgressWriter) Write(p []byte) (int, error) {
+	w.t.Log(strings.TrimSpace(string(p)))
+	return len(p), nil
 }
 
 func shutdownIntegrationKubo(t *testing.T, binary, api string, pid int) {

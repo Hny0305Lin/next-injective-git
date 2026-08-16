@@ -10,6 +10,7 @@ import (
 
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/chain"
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/config"
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/i18n"
 )
 
 func TestVersionLinkerInjection(t *testing.T) {
@@ -55,9 +56,30 @@ func TestVisibleReposHidesModeratedRepositoriesByDefault(t *testing.T) {
 
 func TestUpgradeCommandIsExplicitlyRemoved(t *testing.T) {
 	t.Setenv("IGIT_HOME", t.TempDir())
+	t.Setenv("LC_ALL", "zh-CN")
 	err := run([]string{"upgrade", "show"})
-	if err == nil || !strings.Contains(err.Error(), "immutable EVM suite") {
+	if !i18n.HasCode(err, errorCodeUpgradeRemoved) {
 		t.Fatalf("upgrade error = %v, want immutable-suite removal", err)
+	}
+}
+
+func TestUpgradeCommandErrorRendering(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		locale string
+		want   string
+	}{
+		{name: "english", locale: "en-US", want: "igit upgrade was removed with the immutable EVM suite; use `igit suite verify`"},
+		{name: "chinese", locale: "zh-CN", want: "不可升级 EVM suite 已移除 igit upgrade；请使用 `igit suite verify`"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("IGIT_HOME", t.TempDir())
+			t.Setenv("LC_ALL", test.locale)
+			err := run([]string{"upgrade", "show"})
+			if err == nil || err.Error() != test.want {
+				t.Fatalf("upgrade error = %q, want %q", err, test.want)
+			}
+		})
 	}
 }
 
@@ -94,7 +116,7 @@ func TestSetConfigNetworkCannotRetainPreviousProfileTrustRoot(t *testing.T) {
 	if cfg.Network != "injective-mainnet" || cfg.ChainID != "injective-1" || cfg.EVMChainID != 1776 {
 		t.Fatalf("network identity = %#v", cfg)
 	}
-	if cfg.EVMRPC != "https://k8s.json-rpc.injective.network" || cfg.EVMSuiteDirectoryAddress != "" {
+	if cfg.EVMRPC != "https://sentry.evm-rpc.injective.network/" || cfg.EVMSuiteDirectoryAddress != "" {
 		t.Fatalf("network switch retained stale profile values: %#v", cfg)
 	}
 }
@@ -149,7 +171,7 @@ func TestOrdinaryCommandsFailClosedWithoutSuiteDirectory(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.run()
-			if err == nil || !strings.Contains(err.Error(), "SuiteDirectory") {
+			if !i18n.HasCode(err, config.ErrorCodeMissingEVMSuiteDirectory) {
 				t.Fatalf("error = %v, want missing SuiteDirectory", err)
 			}
 		})

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/config"
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/i18n"
 )
 
 func TestRemoteHelperEntrypointKeepsGitProtocolOnStandardStreams(t *testing.T) {
@@ -26,7 +27,7 @@ func TestRemoteHelperEntrypointKeepsGitProtocolOnStandardStreams(t *testing.T) {
 
 func TestValidateContractSelectionRequiresSuiteDirectory(t *testing.T) {
 	cfg := config.Defaults()
-	if err := validateContractSelection(cfg); err == nil || !strings.Contains(err.Error(), "SuiteDirectory") {
+	if err := validateContractSelection(cfg); !i18n.HasCode(err, config.ErrorCodeMissingEVMSuiteDirectory) {
 		t.Fatalf("validation error = %v, want SuiteDirectory error", err)
 	}
 	cfg.EVMSuiteDirectoryAddress = "0x2222222222222222222222222222222222222222"
@@ -34,7 +35,7 @@ func TestValidateContractSelectionRequiresSuiteDirectory(t *testing.T) {
 		t.Fatalf("valid suite selection rejected: %v", err)
 	}
 	cfg.EVMSuiteDirectoryAddress = "inj1legacyaddress"
-	if err := validateContractSelection(cfg); err == nil || !strings.Contains(err.Error(), "invalid EVM SuiteDirectory address") {
+	if err := validateContractSelection(cfg); !i18n.HasCode(err, config.ErrorCodeInvalidEVMSuiteDirectory) {
 		t.Fatalf("validation error = %v, want invalid SuiteDirectory error", err)
 	}
 }
@@ -45,7 +46,7 @@ func TestValidateContractSelectionIgnoresLegacyBackendFields(t *testing.T) {
 	cfg.ContractVersion = "v1"
 	cfg.ContractAddress = config.DefaultContractAddress
 	cfg.EVMContractAddress = "0x3333333333333333333333333333333333333333"
-	if err := validateContractSelection(cfg); err == nil || !strings.Contains(err.Error(), "SuiteDirectory") {
+	if err := validateContractSelection(cfg); !i18n.HasCode(err, config.ErrorCodeMissingEVMSuiteDirectory) {
 		t.Fatalf("validation error = %v, want SuiteDirectory error despite legacy fields", err)
 	}
 }

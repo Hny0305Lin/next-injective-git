@@ -15,7 +15,7 @@ usage() {
 usage: evm-v2-check.sh [--required] [--verbose]
 
 Runs the offline Solidity source/ABI check and, when Foundry is installed,
-Foundry unit/fuzz/stateful-invariant tests plus representative executable gas
+Foundry unit/stateful-invariant tests plus representative executable gas
 ceilings and a gas report for contracts/evm-v2. Without --required, a missing Foundry
 installation is reported as SKIP and exits successfully. With --required, the
 same condition is a failure.

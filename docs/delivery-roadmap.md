@@ -429,7 +429,7 @@ Mainnet remains unscheduled until all of the following are explicit:
 | Layer | Every PR | Protected/manual | Release evidence |
 |---|---|---|---|
 | Go/CLI | Unit, race, vet, Windows/Linux build | Native Kubo and failure injection | Clean release-asset Git E2E |
-| Solidity | Locked solc, ABI/artifact parity, Foundry unit/fuzz/invariant/gas | Deployment dry run | Nine receipts, source/runtime verification |
+| Solidity | Locked solc, ABI/artifact parity, Foundry unit/invariant/gas | Deployment dry run | Nine receipts, source/runtime verification |
 | Web | API tests, typecheck, production build | Wallet/RPC error injection | Real MetaMask receipts |
 | Migration | Deterministic plan/manifest fixtures | Runner resume and uncertain receipt | Signed journal, receipts, fixed-block parity |
 | S3/R2 | Provider contract fixtures on Windows/Linux | Real AWS/R2 small and multipart canaries | No-Kubo full Git E2E and migration evidence |
@@ -512,7 +512,8 @@ security or release evidence:
 
 - The repository already contains
   [Injective EVM developer guidance](../.agents/skills/injective-evm-developer/SKILL.md).
-  Its EIP-1559 statement must be reconciled with current official documentation.
+  Its EIP-1559 guidance is reconciled with current official documentation and
+  retains the tested legacy type-0 application policy pending a funded canary.
 - The 2026-08-15 `$find-skills` snapshot found
   [Solidity Security](https://skills.sh/wshobson/agents/solidity-security)
   at 13.3K installs; `npx skills add wshobson/agents@solidity-security` can

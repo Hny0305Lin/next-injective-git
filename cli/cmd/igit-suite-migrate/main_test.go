@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/fileprotection"
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/suitemigration"
 )
 
@@ -38,8 +39,11 @@ func TestRunBuildAndVerifyOfflineEvidence(t *testing.T) {
 	}
 	for _, path := range []string{planPath, manifestPath} {
 		info, err := os.Stat(path)
-		if err != nil || info.Size() == 0 || info.Mode().Perm() != 0o600 {
+		if err != nil || info.Size() == 0 {
 			t.Fatalf("artifact %s info=%v err=%v", path, info, err)
+		}
+		if err := fileprotection.ValidateFile(path); err != nil {
+			t.Fatalf("artifact %s does not satisfy sensitive-file policy: %v", path, err)
 		}
 	}
 	stdout.Reset()

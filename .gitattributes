@@ -8,3 +8,10 @@ Cargo.lock text eol=lf
 
 # Documentation is UTF-8 and uses LF on every platform.
 *.md text eol=lf
+
+# Suite source and checked compiler outputs are byte-bound by deployment
+# artifacts, so Windows checkouts must not rewrite them to CRLF.
+contracts/evm-v2/**/*.sol text eol=lf
+contracts/evm-v2/abi/*.json text eol=lf
+contracts/evm-v2/artifacts/*.json text eol=lf
+cli/internal/chain/abi/*.json text eol=lf

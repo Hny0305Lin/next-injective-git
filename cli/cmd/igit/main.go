@@ -184,6 +184,8 @@ func usageText() string { return i18n.Text(usageEnglish, usageChinese) }
 
 // version is set at release build time with -ldflags. Keep a useful value for
 // local development builds that do not provide the linker override.
+const errorCodeUpgradeRemoved i18n.ErrorCode = "command.upgrade_removed"
+
 var version = "dev"
 
 func main() {
@@ -249,7 +251,8 @@ func run(args []string) error {
 	case "suite":
 		return cmdSuite(cfg, args[1:])
 	case "upgrade":
-		return i18n.Errorf(
+		return i18n.ErrorfCode(
+			errorCodeUpgradeRemoved,
 			"igit upgrade was removed with the immutable EVM suite; use `igit suite verify`",
 			"不可升级 EVM suite 已移除 igit upgrade；请使用 `igit suite verify`",
 		)

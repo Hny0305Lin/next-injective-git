@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/fileprotection"
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/i18n"
 )
 
@@ -31,10 +32,10 @@ type Config struct {
 	ContractAddress string `json:"-"`
 	// EVMRPC is the JSON-RPC endpoint for Injective EVM. It is derived from
 	// Network when omitted; users should not need to edit it manually.
-	EVMRPC string `json:"evm_rpc,omitempty"`
-	EVMContractAddress string `json:"-"`
-	EVMBadgeModuleAddress string `json:"-"`
-	EVMEconomicModuleAddress string `json:"-"`
+	EVMRPC                     string `json:"evm_rpc,omitempty"`
+	EVMContractAddress         string `json:"-"`
+	EVMBadgeModuleAddress      string `json:"-"`
+	EVMEconomicModuleAddress   string `json:"-"`
 	EVMModerationModuleAddress string `json:"-"`
 	// EVMChainID is checked against eth_chainId before signing a transaction.
 	EVMChainID uint64 `json:"evm_chain_id,omitempty"`
@@ -113,6 +114,11 @@ const (
 	DefaultContractAddress = "inj1mg6x7ht3zyyszed9aq67q6kd0y5rtq7wf756jh"
 	DefaultUSUploadPeer    = "/ip4/162.35.187.224/tcp/4001/p2p/12D3KooWBGyxqNM3q6nHvacFfqnwoXP2uXxP36uSPab2p16ywfFS"
 	DefaultHKUploadPeer    = "/dns4/igit-hk.haohanyh.ovh/tcp/4001/p2p/12D3KooWRfRoRqEyC4Qsb4ow2yfGsSAAymTFSxj6vr2SYQnxk55W"
+
+	ErrorCodeMissingEVMSuiteDirectory i18n.ErrorCode = "config.evm_suite_directory_missing"
+	ErrorCodeInvalidEVMSuiteDirectory i18n.ErrorCode = "config.evm_suite_directory_invalid"
+	ErrorCodeMissingEVMRPC            i18n.ErrorCode = "config.evm_rpc_missing"
+	ErrorCodeMissingEVMChainID        i18n.ErrorCode = "config.evm_chain_id_missing"
 )
 
 // NetworkProfile is the user-facing network descriptor. Endpoint and chain
@@ -145,7 +151,7 @@ var networkProfiles = map[string]NetworkProfile{
 		EVMChainID:    1776,
 		LCDEndpoint:   "https://lcd.injective.network",
 		CosmosRPC:     "https://tm.injective.network",
-		EVMRPC:        "https://k8s.json-rpc.injective.network",
+		EVMRPC:        "https://sentry.evm-rpc.injective.network/",
 		EVMExplorer:   "https://blockscout.injective.network",
 	},
 }
@@ -461,10 +467,18 @@ func Load() (Config, error) {
 	if err != nil {
 		return cfg, err
 	}
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
 		return cfg, nil
+	} else if err != nil {
+		return cfg, err
 	}
+	if err := fileprotection.ProtectDirectory(filepath.Dir(path)); err != nil {
+		return cfg, fmt.Errorf("protect config directory before read: %w", err)
+	}
+	if err := fileprotection.ProtectFile(path); err != nil {
+		return cfg, fmt.Errorf("protect config file before read: %w", err)
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return cfg, err
 	}
@@ -540,12 +554,18 @@ func Save(cfg Config) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
+	if err := fileprotection.ProtectDirectory(dir); err != nil {
+		return fmt.Errorf("protect config directory: %w", err)
+	}
 	path := filepath.Join(dir, "config.json")
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o600)
+	if err := fileprotection.WriteFile(path, data); err != nil {
+		return fmt.Errorf("write protected config file: %w", err)
+	}
+	return nil
 }
 
 // Validate checks the fields required for chain operations.
@@ -567,23 +587,25 @@ func (c Config) Validate() error {
 func (c Config) ValidateContract() error {
 	address := strings.TrimSpace(c.EffectiveEVMSuiteDirectoryAddress())
 	if address == "" {
-		return i18n.Errorf(
+		return i18n.ErrorfCode(
+			ErrorCodeMissingEVMSuiteDirectory,
 			"missing EVM SuiteDirectory address (deployment and cutover evidence must be approved before the profile is updated)",
 			"缺少 EVM SuiteDirectory 地址（部署和切换证据获批后才能更新网络配置）",
 		)
 	}
 	if !validEVMAddress(address) {
-		return i18n.Errorf(
+		return i18n.ErrorfCode(
+			ErrorCodeInvalidEVMSuiteDirectory,
 			"invalid EVM SuiteDirectory address %q (expected 0x followed by 40 hex characters)",
 			"EVM SuiteDirectory 地址 %q 无效（应为 0x 后跟 40 个十六进制字符）",
 			address,
 		)
 	}
 	if c.EffectiveEVMRPC() == "" {
-		return i18n.Errorf("missing EVM RPC endpoint", "缺少 EVM RPC 端点")
+		return i18n.ErrorfCode(ErrorCodeMissingEVMRPC, "missing EVM RPC endpoint", "缺少 EVM RPC 端点")
 	}
 	if c.EffectiveEVMChainID() == 0 {
-		return i18n.Errorf("missing EVM chain ID", "缺少 EVM chain ID")
+		return i18n.ErrorfCode(ErrorCodeMissingEVMChainID, "missing EVM chain ID", "缺少 EVM chain ID")
 	}
 	return nil
 }

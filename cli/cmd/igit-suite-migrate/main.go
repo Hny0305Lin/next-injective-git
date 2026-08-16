@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/fileprotection"
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/suitemigration"
 )
 
@@ -234,7 +235,15 @@ func writeExclusive(path string, raw []byte) error {
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return err
 	}
-	temporary, err := os.CreateTemp(directory, ".igit-suite-migrate-*")
+	stagingDirectory, err := os.MkdirTemp(directory, ".igit-suite-migrate-staging-*")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(stagingDirectory) }()
+	if err := fileprotection.ProtectDirectory(stagingDirectory); err != nil {
+		return fmt.Errorf("protect migration evidence staging directory: %w", err)
+	}
+	temporary, err := os.CreateTemp(stagingDirectory, "evidence-*")
 	if err != nil {
 		return err
 	}
@@ -242,6 +251,9 @@ func writeExclusive(path string, raw []byte) error {
 	defer func() { _ = temporary.Close(); _ = os.Remove(temporaryPath) }()
 	if err := temporary.Chmod(0o600); err != nil {
 		return err
+	}
+	if err := fileprotection.ProtectFile(temporaryPath); err != nil {
+		return fmt.Errorf("protect migration evidence staging file: %w", err)
 	}
 	if _, err := temporary.Write(raw); err != nil {
 		return err
@@ -254,6 +266,9 @@ func writeExclusive(path string, raw []byte) error {
 	}
 	if err := os.Link(temporaryPath, path); err != nil {
 		return err
+	}
+	if err := fileprotection.ProtectFile(path); err != nil {
+		return fmt.Errorf("protect published migration evidence: %w", err)
 	}
 	if runtime.GOOS == "windows" {
 		return nil

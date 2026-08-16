@@ -27,7 +27,7 @@
         "files": { "kubo/ipfs": "ipfs" }
       },
       "windows-amd64": {
-        "urls": ["https://dist.ipfs.tech/kubo/v0.42.0/kubo_v0.42.0_windows-amd64.zip", "https://github.com/ipfs/kubo/releases/download/v0.42.0/kubo_v0.42.0_windows-amd64.zip"],
+        "urls": ["https://gateway.pinata.cloud/ipfs/QmWmvYCTA74ise9EYx5PRMBCdwo4SMjERgWtTjBBEqWBHn/kubo/v0.42.0/kubo_v0.42.0_windows-amd64.zip", "https://igit-hk.haohanyh.ovh/ipfs/QmWmvYCTA74ise9EYx5PRMBCdwo4SMjERgWtTjBBEqWBHn/kubo/v0.42.0/kubo_v0.42.0_windows-amd64.zip", "https://igit-us.haohanyh.ovh/ipfs/QmWmvYCTA74ise9EYx5PRMBCdwo4SMjERgWtTjBBEqWBHn/kubo/v0.42.0/kubo_v0.42.0_windows-amd64.zip", "https://dist.ipfs.tech/kubo/v0.42.0/kubo_v0.42.0_windows-amd64.zip", "https://github.com/ipfs/kubo/releases/download/v0.42.0/kubo_v0.42.0_windows-amd64.zip"],
         "sha256": "f24e4d24445c8abf7bd26bd034cb9f14dac77e30452731a617d2e8e2f2ceb150",
         "archive": "zip",
         "files": { "kubo/ipfs.exe": "ipfs.exe" }

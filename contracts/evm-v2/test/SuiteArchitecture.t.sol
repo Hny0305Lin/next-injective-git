@@ -13,6 +13,11 @@ import {UsernameModule} from "../src/UsernameModule.sol";
 import {SuiteIds} from "../src/suite/ISuite.sol";
 import {SuiteModule} from "../src/suite/SuiteModule.sol";
 
+struct FuzzSelector {
+    address addr;
+    bytes4[] selectors;
+}
+
 interface SuiteVm {
     function deal(address account, uint256 newBalance) external;
     function prank(address sender) external;
@@ -213,6 +218,38 @@ abstract contract SuiteArchitectureTestBase {
 }
 
 contract SuiteArchitectureTest is SuiteArchitectureTestBase {
+    function targetContracts() public view returns (address[] memory targets) {
+        targets = new address[](1);
+        targets[0] = address(this);
+    }
+
+    function targetSelectors() public view returns (FuzzSelector[] memory targets) {
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = this.advanceInvariantState.selector;
+        targets = new FuzzSelector[](1);
+        targets[0] = FuzzSelector({addr: address(this), selectors: selectors});
+    }
+
+    function advanceInvariantState() external {
+        if (coordinator.activated()) return;
+        uint256 next = coordinator.nextModuleIndex();
+        if (next < SuiteIds.REQUIRED_MODULES) {
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    BootstrapCoordinator.ModulesIncomplete.selector, next, SuiteIds.REQUIRED_MODULES
+                )
+            );
+            coordinator.activateSuite();
+            bytes32 id = directory.requiredModuleAt(next);
+            if (id == SuiteIds.USERNAME && coordinator.usernameEscrowEvidenceHash() == bytes32(0)) {
+                coordinator.attestUsernameEscrowReleased(bytes32(uint256(0xE5C0)));
+            }
+            _finalizeEmpty(id);
+            return;
+        }
+        coordinator.activateSuite();
+    }
+
     function testDirectoryActivatesOnlyAfterOrderedModuleFinalization() public {
         require(uint8(directory.state()) == 0, "initial state");
         _activateEmptySuite();
@@ -314,6 +351,7 @@ contract SuiteArchitectureTest is SuiteArchitectureTestBase {
         );
 
         vm.expectRevert(abi.encodeWithSelector(ModerationModule.RepositoryFrozen.selector, repoId));
+        vm.deal(BOB, 1);
         vm.prank(BOB);
         economic.sponsor{value: 1}(repoId, "blocked");
 
@@ -440,15 +478,16 @@ contract SuiteArchitectureSecurityTest is SuiteArchitectureTestBase {
 
         coordinator.beginNextModule(SuiteIds.CORE, 0, 0, _emptyRoot(SuiteIds.CORE));
         bytes memory payload = hex"01";
+        uint256 maxBatchItems = core.MAX_IMPORT_BATCH_ITEMS();
         vm.expectRevert(
             abi.encodeWithSelector(
                 SuiteModule.ImportBatchTooLarge.selector,
-                core.MAX_IMPORT_BATCH_ITEMS() + 1,
-                core.MAX_IMPORT_BATCH_ITEMS()
+                maxBatchItems + 1,
+                maxBatchItems
             )
         );
         vm.prank(address(coordinator));
-        core.bootstrapImport(0, core.MAX_IMPORT_BATCH_ITEMS() + 1, keccak256(payload), payload);
+        core.bootstrapImport(0, maxBatchItems + 1, keccak256(payload), payload);
 
         payload = new bytes(core.MAX_IMPORT_PAYLOAD_BYTES() + 1);
         vm.expectRevert(

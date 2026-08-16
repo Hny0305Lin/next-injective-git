@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/config"
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/fileprotection"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/core/types"
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
@@ -111,6 +112,11 @@ func TestEVMKeystoreCreateAndSignKeepsIndexedKeyInsideDirectory(t *testing.T) {
 	if !strings.HasPrefix(strings.ToLower(keyAbs), strings.ToLower(dirAbs+string(os.PathSeparator))) {
 		t.Fatalf("indexed key path %q escapes directory %q", keyAbs, dirAbs)
 	}
+	for _, path := range []string{filepath.Join(dir, evmKeyIndexFile), keyPath} {
+		if err := fileprotection.ValidateFile(path); err != nil {
+			t.Fatalf("keystore file %s does not satisfy sensitive-file policy: %v", path, err)
+		}
+	}
 
 	raw, err := signer.SignTransaction(context.Background(), EVMTransaction{
 		ChainID:  31337,
@@ -169,6 +175,11 @@ func TestEVMKeystoreImportEncryptsStandardScryptKeyAndRebuildsAddress(t *testing
 		t.Fatal(err)
 	}
 	keyPath := index["rotated-testnet"]
+	for _, path := range []string{filepath.Join(dir, evmKeyIndexFile), keyPath} {
+		if err := fileprotection.ValidateFile(path); err != nil {
+			t.Fatalf("imported keystore file %s does not satisfy sensitive-file policy: %v", path, err)
+		}
+	}
 	keyData, err := os.ReadFile(keyPath)
 	if err != nil {
 		t.Fatal(err)
@@ -214,6 +225,50 @@ func TestEVMKeystoreImportEncryptsStandardScryptKeyAndRebuildsAddress(t *testing
 	}
 }
 
+func TestEVMKeystoreRepairsLegacyProtectionBeforeReading(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "legacy-keystore")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ks := keystore.NewKeyStore(dir, keystore.LightScryptN, keystore.LightScryptP)
+	account, err := ks.NewAccount("legacy-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexPath := filepath.Join(dir, evmKeyIndexFile)
+	indexData, err := json.Marshal(map[string]string{"legacy": account.URL.Path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(indexPath, indexData, 0o666); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(indexPath, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(account.URL.Path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Defaults()
+	cfg.EVMKeystoreDir = dir
+	cfg.KeyName = "legacy"
+	if _, err := NewEVMKeystoreSigner(cfg).OwnerAddress(); err != nil {
+		t.Fatal(err)
+	}
+	if err := fileprotection.ValidateDirectory(dir); err != nil {
+		t.Fatalf("legacy keystore directory was not repaired: %v", err)
+	}
+	for _, path := range []string{indexPath, account.URL.Path} {
+		if err := fileprotection.ValidateFile(path); err != nil {
+			t.Fatalf("legacy keystore file %s was not repaired: %v", path, err)
+		}
+	}
+}
+
 func TestEVMKeystoreRejectsIndexedPathOutsideDirectory(t *testing.T) {
 	dir := t.TempDir()
 	cfg := config.Defaults()
@@ -229,6 +284,31 @@ func TestEVMKeystoreRejectsIndexedPathOutsideDirectory(t *testing.T) {
 	}
 	if _, err := NewEVMKeystoreSigner(cfg).OwnerAddress(); err == nil || !strings.Contains(err.Error(), "outside") {
 		t.Fatalf("OwnerAddress error = %v, want outside-directory rejection", err)
+	}
+}
+
+func TestEVMKeystoreRejectsIndexedPathInNestedDirectory(t *testing.T) {
+	dir := t.TempDir()
+	nested := filepath.Join(dir, "nested")
+	if err := os.Mkdir(nested, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	keyPath := filepath.Join(nested, "key.json")
+	if err := os.WriteFile(keyPath, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	index, err := json.Marshal(map[string]string{"dev": keyPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, evmKeyIndexFile), index, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Defaults()
+	cfg.EVMKeystoreDir = dir
+	cfg.KeyName = "dev"
+	if _, err := NewEVMKeystoreSigner(cfg).OwnerAddress(); err == nil || !strings.Contains(err.Error(), "directly inside") {
+		t.Fatalf("OwnerAddress error = %v, want direct-child rejection", err)
 	}
 }
 

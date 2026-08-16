@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -47,6 +48,23 @@ type Options struct {
 	SkipKubo   bool
 	Progress   io.Writer
 	HTTPClient *http.Client
+	timeouts   *downloadTimeouts
+}
+
+type downloadTimeouts struct {
+	connect        time.Duration
+	tlsHandshake   time.Duration
+	responseHeader time.Duration
+	idle           time.Duration
+	total          time.Duration
+}
+
+var defaultDownloadTimeouts = downloadTimeouts{
+	connect:        10 * time.Second,
+	tlsHandshake:   10 * time.Second,
+	responseHeader: 20 * time.Second,
+	idle:           45 * time.Second,
+	total:          5 * time.Minute,
 }
 
 type Result struct {
@@ -129,9 +147,7 @@ func PrepareKubo(ctx context.Context, cfg config.Config, opts Options) (config.C
 	if opts.Progress == nil {
 		opts.Progress = io.Discard
 	}
-	if opts.HTTPClient == nil {
-		opts.HTTPClient = &http.Client{Timeout: 30 * time.Minute}
-	}
+	opts = withDownloadDefaults(opts)
 	root, err := config.Dir()
 	if err != nil {
 		return cfg, Result{}, err
@@ -261,6 +277,7 @@ func workingBinary(ctx context.Context, configured string, args []string) (strin
 }
 
 func downloadArtifact(ctx context.Context, root, name, version string, artifact Artifact, opts Options) (string, error) {
+	opts = withDownloadDefaults(opts)
 	downloadDir := filepath.Join(root, "downloads")
 	if err := os.MkdirAll(downloadDir, 0o700); err != nil {
 		return "", err
@@ -291,7 +308,7 @@ func downloadURL(ctx context.Context, downloadDir, name, version, artifactURL, e
 		}
 	}()
 
-	downloadCtx, cancel := context.WithCancel(ctx)
+	downloadCtx, cancel := context.WithTimeout(ctx, opts.timeouts.total)
 	defer cancel()
 	fmt.Fprintf(opts.Progress, "Downloading %s %s from %s\n", name, version, artifactURL)
 	req, err := http.NewRequestWithContext(downloadCtx, http.MethodGet, artifactURL, nil)
@@ -308,9 +325,9 @@ func downloadURL(ctx context.Context, downloadDir, name, version, artifactURL, e
 		return "", fmt.Errorf("download %s: HTTP %d", name, resp.StatusCode)
 	}
 	hash := sha256.New()
-	timer := time.AfterFunc(45*time.Second, cancel)
+	timer := time.AfterFunc(opts.timeouts.idle, cancel)
 	reader := &activityReader{
-		reader: resp.Body, timer: timer, timeout: 45 * time.Second,
+		reader: resp.Body, timer: timer, timeout: opts.timeouts.idle,
 		progress: opts.Progress, name: name, total: resp.ContentLength, nextReport: 8 << 20,
 	}
 	if _, err := io.Copy(io.MultiWriter(tmp, hash), reader); err != nil {
@@ -328,6 +345,33 @@ func downloadURL(ctx context.Context, downloadDir, name, version, artifactURL, e
 	fmt.Fprintf(opts.Progress, "Verified %s %s (%s)\n", name, version, got)
 	ok = true
 	return path, nil
+}
+
+func withDownloadDefaults(opts Options) Options {
+	if opts.timeouts == nil {
+		timeouts := defaultDownloadTimeouts
+		opts.timeouts = &timeouts
+	}
+	if opts.HTTPClient == nil {
+		opts.HTTPClient = newDownloadHTTPClient(*opts.timeouts)
+	}
+	return opts
+}
+
+func newDownloadHTTPClient(timeouts downloadTimeouts) *http.Client {
+	dialer := &net.Dialer{Timeout: timeouts.connect, KeepAlive: 30 * time.Second}
+	return &http.Client{Transport: &http.Transport{
+		Proxy:       http.ProxyFromEnvironment,
+		DialContext: dialer.DialContext,
+		// Some IPFS gateways reset long HTTP/2 streams while serving the same
+		// pinned archive correctly over HTTP/1.1.
+		ForceAttemptHTTP2:     false,
+		MaxIdleConns:          16,
+		IdleConnTimeout:       30 * time.Second,
+		TLSHandshakeTimeout:   timeouts.tlsHandshake,
+		ResponseHeaderTimeout: timeouts.responseHeader,
+		ExpectContinueTimeout: time.Second,
+	}}
 }
 
 type activityReader struct {
