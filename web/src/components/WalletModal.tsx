@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
-import { isWalletInstalled, SUPPORTED_WALLETS } from "../lib/wallet";
+import { CircleAlert, ExternalLink, X } from "lucide-react";
+import { isWalletInstalled, subscribeWalletProviders, SUPPORTED_WALLETS } from "../lib/wallet";
 import { useWallet } from "../lib/WalletContext";
 
-// A compact injected EVM wallet picker for legacy Suite transactions.
+// A compact injected EVM wallet picker for Suite transactions.
 export function WalletModal({ onClose }: { onClose: () => void }) {
   const { connect, connecting, error } = useWallet();
   const [installed, setInstalled] = useState<Record<string, boolean>>({});
+  const [scanComplete, setScanComplete] = useState(false);
 
   // extensions inject asynchronously; re-scan briefly after mount
   useEffect(() => {
@@ -14,11 +16,15 @@ export function WalletModal({ onClose }: { onClose: () => void }) {
       for (const w of SUPPORTED_WALLETS) map[w.id] = isWalletInstalled(w.id);
       setInstalled(map);
     };
+    const unsubscribe = subscribeWalletProviders(scan);
     scan();
     const t = setInterval(scan, 400);
+    const complete = setTimeout(() => setScanComplete(true), 700);
     const stop = setTimeout(() => clearInterval(t), 3000);
     return () => {
+      unsubscribe();
       clearInterval(t);
+      clearTimeout(complete);
       clearTimeout(stop);
     };
   }, []);
@@ -49,16 +55,22 @@ export function WalletModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="wallet-modal-title" onClick={(e) => e.stopPropagation()}>
+      <div className="modal wallet-modal" role="dialog" aria-modal="true" aria-labelledby="wallet-modal-title" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <b id="wallet-modal-title">Connect a wallet</b>
-          <button className="modal-x" onClick={onClose} aria-label="close">
-            ✕
+          <button className="modal-x" onClick={onClose} aria-label="Close wallet dialog" title="Close">
+            <X size={16} />
           </button>
         </div>
         <div className="modal-sub muted">
           Connect an EVM wallet on Injective testnet.
         </div>
+        {scanComplete && !Object.values(installed).some(Boolean) && (
+          <div className="wallet-empty" role="status">
+            <CircleAlert size={16} />
+            <span>No wallet extension was detected in this browser. Open iGit in Chrome or Brave where your wallet extension is installed and enabled.</span>
+          </div>
+        )}
         <div className="wallet-list">
           {SUPPORTED_WALLETS.map((w) => {
             const ok = installed[w.id];
@@ -74,15 +86,14 @@ export function WalletModal({ onClose }: { onClose: () => void }) {
                     className="wallet-connect"
                     disabled={connecting}
                     onClick={async () => {
-                      await connect(w.id);
-                      onClose();
+                      if (await connect(w.id)) onClose();
                     }}
                   >
                     {connecting ? "…" : "Connect"}
                   </button>
                 ) : (
                   <a className="wallet-install" href={w.installUrl} target="_blank" rel="noreferrer">
-                    Install ↗
+                    Install <ExternalLink size={13} />
                   </a>
                 )}
               </div>

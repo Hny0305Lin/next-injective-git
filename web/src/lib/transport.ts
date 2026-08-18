@@ -249,7 +249,7 @@ function rpcCode(error: unknown): number | undefined {
   return typeof value === "number" ? value : undefined;
 }
 
-async function switchChain(provider: Eip1193, cfg: AppConfig): Promise<void> {
+export async function ensureWalletChain(provider: Eip1193, cfg: AppConfig): Promise<void> {
   const chainId = `0x${cfg.evmChainId.toString(16)}`;
   try {
     await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId }] });
@@ -320,10 +320,10 @@ export async function writeModule(
   transactionLocks.add(identity);
   try {
     const suite = await verifySuite(cfg, true);
-    await switchChain(provider, cfg);
     const accounts = await provider.request({ method: "eth_requestAccounts" });
     const from = Array.isArray(accounts) ? accounts[0] : undefined;
     if (typeof from !== "string" || !isAddress(from)) throw new Error("EVM wallet returned no valid account");
+    await ensureWalletChain(provider, cfg);
     const data = encodeFunctionData({ abi: MODULE_ABIS[module], functionName, args } as never);
     const nodeGasPrice = quantity(await provider.request({ method: "eth_gasPrice" }), "gas price");
     const gasPrice = nodeGasPrice < MIN_INJECTIVE_GAS_PRICE ? MIN_INJECTIVE_GAS_PRICE : nodeGasPrice;
@@ -358,6 +358,5 @@ export async function writeModule(
 }
 
 export async function nativeBalance(cfg: AppConfig, address: Address): Promise<bigint> {
-  await verifySuite(cfg);
   return quantity(await rpcRequest<Hex>(cfg, "eth_getBalance", [address, "latest"]), "balance");
 }

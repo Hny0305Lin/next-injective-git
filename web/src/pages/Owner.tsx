@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Award } from "lucide-react";
+import { ContractTypeBadge } from "../components/ContractTypeBadge";
 import {
   addressUsername,
   badgesByRecipient,
@@ -117,6 +118,7 @@ export default function Owner() {
               <div className="repo-list-item" key={r.name}>
                 <h3>
                   <Link to={`/${owner}/${r.name}`}>{r.name}</Link>
+                  <ContractTypeBadge kind="evm-v2" />
                   <span className={`badge ${r.moderation_status}`}>{r.moderation_status}</span>
                   {r.forked_from && <span className="badge">fork</span>}
                 </h3>

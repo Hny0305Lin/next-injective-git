@@ -22,6 +22,8 @@ import {
 } from "../src/lib/errors.ts";
 import {
   clearSuiteCache,
+  ensureWalletChain,
+  nativeBalance,
   verifySuite,
 } from "../src/lib/transport.ts";
 import {
@@ -185,6 +187,74 @@ test("built-in profile has one empty SuiteDirectory and ignores legacy stored fi
   } finally {
     globalThis.localStorage = previous;
   }
+});
+
+test("an explicit local SuiteDirectory override round-trips without restoring legacy module fields", () => {
+  const previous = globalThis.localStorage;
+  const values = new Map([["igit-web-config", JSON.stringify({
+    profile: "injective-testnet",
+    suiteDirectory: DIRECTORY,
+    contractVersion: "v1",
+    evmContract: OWNER,
+  })]]);
+  globalThis.localStorage = {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: (key) => values.delete(key),
+  };
+  try {
+    const cfg = loadConfig();
+    assert.equal(cfg.suiteDirectory, DIRECTORY);
+    assert.deepEqual(Object.keys(cfg).sort(), ["evmChainId", "evmRpc", "ipfsGateway", "profile", "suiteDirectory"]);
+    saveConfig(cfg);
+    assert.deepEqual(JSON.parse(values.get("igit-web-config")), {
+      profile: "injective-testnet",
+      suiteDirectory: DIRECTORY,
+    });
+  } finally {
+    globalThis.localStorage = previous;
+  }
+});
+
+test("wallet chain setup adds Injective testnet when the wallet does not know it", async () => {
+  const requests = [];
+  let switchAttempts = 0;
+  const wallet = {
+    async request(request) {
+      requests.push(request);
+      if (request.method === "wallet_switchEthereumChain") {
+        switchAttempts += 1;
+        if (switchAttempts === 1) throw Object.assign(new Error("unknown chain"), { code: 4902 });
+        return null;
+      }
+      if (request.method === "wallet_addEthereumChain") return null;
+      if (request.method === "eth_chainId") return "0x59f";
+      throw new Error(`unexpected wallet method ${request.method}`);
+    },
+  };
+  await ensureWalletChain(wallet, configForProfile());
+  assert.deepEqual(requests.map((request) => request.method), [
+    "wallet_switchEthereumChain",
+    "wallet_addEthereumChain",
+    "wallet_switchEthereumChain",
+    "eth_chainId",
+  ]);
+  assert.equal(requests[1].params[0].chainId, "0x59f");
+  assert.equal(requests[1].params[0].nativeCurrency.symbol, "INJ");
+});
+
+test("native INJ balance does not depend on SuiteDirectory readiness", async () => {
+  const requests = [];
+  await withFetch(async (_url, init) => {
+    const request = JSON.parse(init.body);
+    requests.push(request);
+    assert.equal(request.method, "eth_getBalance");
+    assert.deepEqual(request.params, [OWNER, "latest"]);
+    return json("0x123");
+  }, async () => {
+    assert.equal(await nativeBalance(configForProfile(), OWNER), 0x123n);
+  });
+  assert.equal(requests.length, 1);
 });
 
 test("unconfigured Directory fails closed before any network or wallet request", async () => {
@@ -352,7 +422,7 @@ test("receipt transport failures return a typed uncertain error carrying the tx 
   });
 });
 
-test("Web runtime contains no V1/CosmWasm fallback or handwritten ABI selector table", async () => {
+test("ordinary Web runtime contains no V1 fallback or handwritten ABI selector table", async () => {
   const paths = [
     "../src/lib/chain.ts",
     "../src/lib/profile.ts",
@@ -366,4 +436,42 @@ test("Web runtime contains no V1/CosmWasm fallback or handwritten ABI selector t
   assert.doesNotMatch(source, /SELECTORS\s*=|abiWord\(|dynamicOffset\(/);
   assert.match(source, /encodeFunctionData/);
   assert.match(source, /decodeFunctionResult/);
+});
+
+test("wallet connect is independent from Suite verification and keeps failures visible", async () => {
+  const walletContext = await readFile(new URL("../src/lib/WalletContext.tsx", import.meta.url), "utf8");
+  const walletModal = await readFile(new URL("../src/components/WalletModal.tsx", import.meta.url), "utf8");
+  const requestAccounts = walletContext.indexOf('await provider.request({ method: "eth_requestAccounts" })');
+  const switchChain = walletContext.indexOf("await ensureWalletChain(provider, cfg)");
+  assert.ok(requestAccounts >= 0 && requestAccounts < switchChain);
+  assert.match(walletContext, /await ensureWalletChain\(provider, cfg\)/);
+  assert.doesNotMatch(walletContext, /await verifySuite\(cfg\)/);
+  assert.match(walletContext, /method: "eth_accounts"/);
+  assert.match(walletModal, /if \(await connect\(w\.id\)\) onClose\(\)/);
+});
+
+test("EIP-6963 announcements are matched by wallet RDNS", async () => {
+  const previous = globalThis.window;
+  const browserWindow = new EventTarget();
+  const provider = { request: async () => [] };
+  browserWindow.addEventListener("eip6963:requestProvider", () => {
+    const announcement = new Event("eip6963:announceProvider");
+    Object.defineProperty(announcement, "detail", { value: {
+      info: { uuid: "rabby-test", name: "Rabby", icon: "data:image/svg+xml,", rdns: "io.rabby" },
+      provider,
+    } });
+    browserWindow.dispatchEvent(announcement);
+  });
+  globalThis.window = browserWindow;
+  try {
+    const wallet = await import("../src/lib/wallet.ts");
+    let updates = 0;
+    const unsubscribe = wallet.subscribeWalletProviders(() => { updates += 1; });
+    assert.equal(wallet.getEvmProvider("rabby"), provider);
+    assert.equal(wallet.isWalletInstalled("rabby"), true);
+    assert.ok(updates >= 1);
+    unsubscribe();
+  } finally {
+    globalThis.window = previous;
+  }
 });

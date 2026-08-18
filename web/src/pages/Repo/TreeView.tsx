@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { FolderOpen, File, ChevronLeft } from "lucide-react";
-import { useLoadedRef, shortRef } from "./useRepoViews";
+import { useLoadedRef, repoNameFromBase, shortRef } from "./useRepoViews";
 import type { AppConfig, RefInfo } from "../../lib/chain";
 import type { RepoStore, TreeItem, CommitMeta } from "../../lib/gitstore";
 import { Markdown } from "../../components/Markdown";
@@ -82,7 +82,7 @@ export default function TreeView({
   const dirLink = (p: string) => `${base}/tree/${encodeURIComponent(short)}${p ? "/" + p : ""}`;
 
   const headMsg = head ? head.message.split("\n")[0] : "";
-  const headTime = head?.timestamp ? new Date(head.timestamp).toLocaleString() : "";
+  const headTime = head?.timestamp ? new Date(head.timestamp * 1000).toLocaleString() : "";
 
   return (
     <div>
@@ -93,7 +93,7 @@ export default function TreeView({
           onChange={(s) => nav(`${base}/tree/${encodeURIComponent(s)}`)}
         />
         <span className="crumbs">
-          <Link to={dirLink("")}>{base.split("/")[2]}</Link>
+          <Link to={dirLink("")}>{repoNameFromBase(base)}</Link>
           {crumbs.map((c, i) => (
             <span key={i}>
               {" / "}

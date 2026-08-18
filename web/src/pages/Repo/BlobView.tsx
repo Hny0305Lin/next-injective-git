@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { FileText } from "lucide-react";
-import { useLoadedRef, shortRef } from "./useRepoViews";
+import { useLoadedRef, repoNameFromBase, shortRef } from "./useRepoViews";
 import type { AppConfig, RefInfo } from "../../lib/chain";
 import type { RepoStore } from "../../lib/gitstore";
 import { Markdown } from "../../components/Markdown";
@@ -42,7 +42,7 @@ export default function BlobView({
     <div>
       <div className="toolbar">
         <span className="crumbs">
-          <Link to={dirLink("")}>{base.split("/")[2]}</Link>
+          <Link to={dirLink("")}>{repoNameFromBase(base)}</Link>
           {crumbs.slice(0, -1).map((c, i) => (
             <span key={i}>
               {" / "}

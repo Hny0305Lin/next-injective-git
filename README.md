@@ -148,8 +148,11 @@ evidence. See [release and cutover](docs/release.md).
 ## V1 Archive
 
 The old chain remains unchanged as an archival fact source. It has no ordinary
-CLI, Web, remote-helper, CI, release, or write path. Read and verify explicit
-fixed-height evidence with:
+CLI, remote-helper, CI, release, or write path. The Web exposes a separate
+`/archive/cosmwasm-v1` read-only viewer for historical repository previews;
+that route never signs or broadcasts CosmWasm messages and is not a fallback
+for EVM Suite verification. Read and verify explicit fixed-height evidence
+with:
 
 ```sh
 igit archive query --lcd URL --contract inj1... --height N '{"config":{}}'

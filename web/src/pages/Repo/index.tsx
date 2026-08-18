@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { FileCode2, GitCommit, GitBranch, Users, Copy, Check, Pencil, Save, X, ArrowRightLeft } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, Check, Copy, FileCode2, GitBranch, GitCommit, Pencil, Save, Users, X } from "lucide-react";
 import { loadConfig } from "../../lib/chain";
+import { ContractTypeBadge, type RepositoryContractKind } from "../../components/ContractTypeBadge";
 import { showToast } from "../../components/Toast";
 import {
   formatError,
@@ -21,11 +22,20 @@ import {
   acceptOwnershipWithEvm,
   ownershipTransferCapabilities,
   type PendingOwnershipTransfer,
+  SuiteConfigurationError,
+  EVMLocatorNotFoundError,
 } from "../../lib/chain";
 import { useWallet } from "../../lib/WalletContext";
 import { getEvmProvider } from "../../lib/wallet";
 import type { Hex } from "viem";
 import { getRepoStore } from "../../lib/gitstore";
+import {
+  cosmWasmV1RepoInfo,
+  formatCosmWasmV1Error,
+  getCosmWasmV1SnapshotHeight,
+  listCosmWasmV1Refs,
+  resolveCosmWasmV1Owner,
+} from "../../lib/cosmwasm-v1";
 import TreeView from "./TreeView";
 import BlobView from "./BlobView";
 import CommitsView from "./CommitsView";
@@ -34,18 +44,28 @@ import RefsTab from "./RefsTab";
 import SponsorsTab from "./SponsorsTab";
 import { findRef, parseView, shortRef } from "./useRepoViews";
 
-export default function Repo() {
+interface RepoProps {
+  contractKind?: RepositoryContractKind;
+}
+
+interface PageResolvedRepo extends Omit<ResolvedRepo, "repoId"> {
+  repoId: Hex | null;
+}
+
+export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
   const params = useParams();
   const owner = params.owner ?? "";
   const repo = params.repo ?? "";
   const splat = params["*"] ?? "";
+  const isLegacy = contractKind === "cosmwasm-v1";
   const cfg = useMemo(() => loadConfig(), []);
   const { connected } = useWallet();
   const [addr, setAddr] = useState("");
   const [info, setInfo] = useState<RepoInfo | null>(null);
-  const [resolvedRepo, setResolvedRepo] = useState<ResolvedRepo | null>(null);
+  const [resolvedRepo, setResolvedRepo] = useState<PageResolvedRepo | null>(null);
   const [refs, setRefs] = useState<RefInfo[]>([]);
   const [err, setErr] = useState("");
+  const [archiveDiscoveryAvailable, setArchiveDiscoveryAvailable] = useState(false);
   const [copied, setCopied] = useState(false);
   const [cloneProtocol, setCloneProtocol] = useState<"igit" | "https">("igit");
   const [editingMetadata, setEditingMetadata] = useState(false);
@@ -61,29 +81,57 @@ export default function Repo() {
 
   useEffect(() => {
     setErr("");
+    setArchiveDiscoveryAvailable(false);
     setInfo(null);
     setResolvedRepo(null);
+    let cancelled = false;
     (async () => {
       try {
-        const a = await resolveOwner(cfg, owner);
-        setAddr(a);
-        const identity = await resolveRepo(cfg, a, repo);
-        const rf = await listRefs(cfg, a, repo);
+        if (isLegacy) {
+          const address = await resolveCosmWasmV1Owner(owner);
+          const [legacyInfo, legacyRefs] = await Promise.all([
+            cosmWasmV1RepoInfo(address, repo),
+            listCosmWasmV1Refs(address, repo),
+          ]);
+          if (cancelled) return;
+          setResolvedRepo({
+            repoId: null,
+            requested: { owner: address, name: repo },
+            canonical: { owner: legacyInfo.owner, name: legacyInfo.name },
+            isCanonical: true,
+            info: legacyInfo,
+          });
+          setAddr(legacyInfo.owner);
+          setInfo(legacyInfo);
+          setRefs(legacyRefs);
+          return;
+        }
+
+        const address = await resolveOwner(cfg, owner);
+        const identity = await resolveRepo(cfg, address, repo);
+        const evmRefs = await listRefs(cfg, address, repo);
+        if (cancelled) return;
         setResolvedRepo(identity);
         setAddr(identity.canonical.owner);
         setInfo(identity.info);
-        setRefs(rf);
+        setRefs(evmRefs);
       } catch (e) {
-        setErr(formatResourceError(e, "repository"));
+        if (!cancelled) {
+          setArchiveDiscoveryAvailable(
+            !isLegacy && (e instanceof SuiteConfigurationError || e instanceof EVMLocatorNotFoundError),
+          );
+          setErr(isLegacy ? formatCosmWasmV1Error(e, "repository") : formatResourceError(e, "repository"));
+        }
       }
     })();
-  }, [owner, repo, cfg]);
+    return () => { cancelled = true; };
+  }, [owner, repo, cfg, isLegacy]);
 
   useEffect(() => {
     let cancelled = false;
     setTransferLoaded(false);
     setTransferError("");
-    if (!resolvedRepo?.repoId) {
+    if (isLegacy || !resolvedRepo?.repoId) {
       setPendingTransfer(null);
       return () => { cancelled = true; };
     }
@@ -102,7 +150,7 @@ export default function Repo() {
         }
       });
     return () => { cancelled = true; };
-  }, [cfg, resolvedRepo?.repoId]);
+  }, [cfg, isLegacy, resolvedRepo?.repoId]);
 
   useEffect(() => {
     if (!editingMetadata) return;
@@ -118,7 +166,21 @@ export default function Repo() {
     };
   }, [editingMetadata, savingMetadata]);
 
-  if (err) return <div className="error" role="alert">{err}</div>;
+  if (err) {
+    return (
+      <div className="repo-load-error">
+        <div className="error" role="alert">{err}</div>
+        {archiveDiscoveryAvailable && (
+          <Link
+            className="archive-discovery-link"
+            to={`/archive/cosmwasm-v1/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`}
+          >
+            Open this locator in the CosmWasm V1 Archive
+          </Link>
+        )}
+      </div>
+    );
+  }
   if (!info || !resolvedRepo) return <div className="spinner" aria-live="polite">querying chain…</div>;
 
   const fallbackRef =
@@ -128,9 +190,14 @@ export default function Repo() {
         "",
     ) || info.default_branch;
   const view = parseView(splat, fallbackRef);
-  const base = `/${owner}/${repo}`;
-  const canonicalBase = `/${resolvedRepo?.canonical.owner ?? addr}/${resolvedRepo?.canonical.name ?? repo}`;
-  const store = getRepoStore(resolvedRepo?.repoId ?? `${resolvedRepo?.canonical.owner ?? addr}/${repo}`);
+  const archivePrefix = "/archive/cosmwasm-v1";
+  const sourcePrefix = isLegacy ? archivePrefix : "";
+  const base = `${sourcePrefix}/${owner}/${repo}`;
+  const canonicalBase = `${sourcePrefix}/${resolvedRepo.canonical.owner}/${resolvedRepo.canonical.name}`;
+  const ownerBase = `${sourcePrefix}/${resolvedRepo.canonical.owner}`;
+  const store = getRepoStore(
+    resolvedRepo.repoId ?? `cosmwasm-v1:${getCosmWasmV1SnapshotHeight() ?? "latest"}:${resolvedRepo.canonical.owner}/${resolvedRepo.canonical.name}`,
+  );
   const current = view.kind === "commit" ? undefined : findRef(refs, view.ref);
 
   const tab =
@@ -145,10 +212,13 @@ export default function Repo() {
   const tagsCount = refs.filter((r) => r.ref_name.startsWith("refs/tags/")).length;
   const packfilesCount = current?.pack_uris?.length ?? 0;
   const canEditMetadata =
+    !isLegacy &&
     resolvedRepo?.isCanonical === true &&
+    resolvedRepo.repoId != null &&
     connected != null &&
     connected.address === addr;
   const canManageOwnership =
+    !isLegacy &&
     resolvedRepo.isCanonical &&
     connected != null &&
     Boolean(resolvedRepo.repoId);
@@ -229,7 +299,7 @@ export default function Repo() {
   };
 
   const saveMetadata = async () => {
-    if (!canEditMetadata || !connected) return;
+    if (!canEditMetadata || !connected || !resolvedRepo.repoId) return;
     const descriptionChanged = draftDescription !== info.description;
     const branchChanged = draftBranch !== info.default_branch;
     if (!descriptionChanged && !branchChanged) {
@@ -267,6 +337,21 @@ export default function Repo() {
           This repository has moved. <Link to={canonicalBase}>Open the current location</Link>.
         </div>
       )}
+      {isLegacy && (
+        <section className="legacy-migration-alert" role="status" aria-labelledby="legacy-migration-title">
+          <AlertTriangle size={18} aria-hidden="true" />
+          <div>
+            <strong id="legacy-migration-title">Migration to EVM V2 required</strong>
+            <span id="legacy-migration-copy">
+              This repository remains readable from the CosmWasm V1 archive. Editing and current
+              repository features require a future migration to the EVM Suite.
+            </span>
+          </div>
+          <button type="button" disabled aria-describedby="legacy-migration-copy" title="Repository migration is not available yet">
+            Migration unavailable
+          </button>
+        </section>
+      )}
       <div className="repo-head">
         <div className="repo-head-top">
           <span className="repo-icon">
@@ -276,11 +361,12 @@ export default function Repo() {
             </svg>
           </span>
           <h2>
-            <Link to={`/${resolvedRepo.canonical.owner}`} className="owner-link">
+            <Link to={ownerBase} className="owner-link">
               {resolvedRepo.canonical.owner.startsWith("inj1") ? `${resolvedRepo.canonical.owner.slice(0, 12)}…` : resolvedRepo.canonical.owner}
             </Link>
             {" / "}
-            <b>{repo}</b>
+            <b>{resolvedRepo.canonical.name}</b>
+            <ContractTypeBadge kind={contractKind} />
             {info.moderation_status !== "active" && (
               <span className={`badge ${info.moderation_status}`}>{info.moderation_status}</span>
             )}
@@ -291,7 +377,7 @@ export default function Repo() {
         )}
         {info.forked_from && (
           <p className="repo-forked muted">
-            forked from <Link to={`/${info.forked_from}`}>{info.forked_from}</Link>
+            forked from <Link to={`${sourcePrefix}/${info.forked_from}`}>{info.forked_from}</Link>
           </p>
         )}
         <div className="repo-stats">
@@ -300,8 +386,9 @@ export default function Repo() {
           <span><b>{tagsCount}</b> tags</span>
           <span><b>{packfilesCount}</b> packfiles</span>
         </div>
-        <div className="repo-actions">
-          <div className="clone-box">
+        {!isLegacy && (
+          <div className="repo-actions">
+            <div className="clone-box">
             <div className="clone-command">
               <select
                 className="clone-protocol-select"
@@ -337,19 +424,20 @@ export default function Repo() {
             >
               {copied ? <Check size={14} /> : <Copy size={14} />}
             </button>
+            </div>
+            {canEditMetadata && (
+              <button
+                className="repo-edit-trigger"
+                type="button"
+                onClick={openMetadataEditor}
+                title="edit repository metadata"
+                aria-label="edit repository metadata"
+              >
+                <Pencil size={15} />
+              </button>
+            )}
           </div>
-          {canEditMetadata && (
-            <button
-              className="repo-edit-trigger"
-              type="button"
-              onClick={openMetadataEditor}
-              title="edit repository metadata"
-              aria-label="edit repository metadata"
-            >
-              <Pencil size={15} />
-            </button>
-          )}
-        </div>
+        )}
       </div>
 
       {canManageOwnership && (isCurrentOwner || pendingTransfer != null) && (
@@ -449,9 +537,11 @@ export default function Repo() {
         <Link className={tab === "refs" ? "on" : ""} to={`${base}/refs`} role="tab">
           <GitBranch size={14} /> Refs
         </Link>
-        <Link className={tab === "sponsors" ? "on" : ""} to={`${base}/sponsors`} role="tab">
-          <Users size={14} /> Sponsors
-        </Link>
+        {!isLegacy && (
+          <Link className={tab === "sponsors" ? "on" : ""} to={`${base}/sponsors`} role="tab">
+            <Users size={14} /> Sponsors
+          </Link>
+        )}
       </div>
 
       {refs.length === 0 && tab === "code" ? (
@@ -466,7 +556,7 @@ export default function Repo() {
         <CommitView cfg={cfg} store={store} refs={refs} sha={view.ref} base={base} />
       ) : view.kind === "refs" ? (
         <RefsTab refs={refs} base={base} />
-      ) : view.kind === "sponsors" ? (
+      ) : view.kind === "sponsors" && !isLegacy && resolvedRepo.repoId ? (
         <SponsorsTab
           cfg={cfg}
           addr={resolvedRepo.canonical.owner}
@@ -476,6 +566,10 @@ export default function Repo() {
           badgeProvider={badgeProvider}
           economicProvider={economicProvider}
         />
+      ) : view.kind === "sponsors" && isLegacy ? (
+        <div className="archive-readonly-message" role="status">
+          Sponsorship is unavailable for archived CosmWasm V1 repositories.
+        </div>
       ) : (
         <div className="error" role="alert">ref not found: {view.ref}</div>
       )}

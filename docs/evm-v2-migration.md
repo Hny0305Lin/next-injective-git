@@ -19,10 +19,13 @@ the current immutable Suite.
 
 The initial EVM V2 foundation was superseded during the immutable Suite rewrite:
 
-- Ordinary CLI, Web, and remote-helper access is EVM-only. The narrowly scoped
-  V1 read fallback from the foundation plan is no longer a supported runtime.
-  V1 access is explicit, fixed-height archive evidence followed by verified
-  one-time import.
+- Ordinary CLI, Web repository, and remote-helper access is EVM-only. The
+  narrowly scoped V1 read fallback from the foundation plan is no longer a
+  supported runtime. The Web has an explicit `/archive/cosmwasm-v1` viewer for
+  historical read-only inspection; it is a separate GET-only archive surface,
+  not a fallback and not a write path. V1 access used for migration remains
+  explicit, fixed-height archive evidence followed by verified one-time
+  import.
 - The original monolithic EVM registry alpha was replaced by one
   `SuiteDirectory`, one `BootstrapCoordinator`, `RepositoryCore`, and six
   bounded business modules with immutable bindings.
@@ -48,7 +51,9 @@ is recorded separately in [ADR 0002](adr/0002-pluggable-pack-storage.md).
 ## Cutover Workflow
 
 Migration turns a complete fixed-height V1 archive snapshot into an immutable
-Suite bootstrap. It does not provide an ordinary V1 runtime path.
+Suite bootstrap. It does not provide an ordinary V1 runtime path. Until a
+reviewed migration runner exists, an archived repository is shown with a
+migration-required notice and remains read-only in the Web viewer.
 
 1. `igit archive inventory` reconstructs owners, reports, usernames, badge
    recipients, and release versions from successful transaction events.
@@ -87,8 +92,9 @@ escrow fail closed.
   future accepted object-storage profile runs without Kubo.
 - Users do not need to understand EVM/CosmWasm, RPC, ABI, nonce, or keyring
   internals for ordinary Git operations.
-- CLI, Web, and the remote helper enforce the same Suite behavior and use one
-  trust root; there is no V1 write fallback or double write.
+- CLI, the ordinary Web repository path, and the remote helper enforce the same
+  Suite behavior and use one trust root; the explicit Web archive viewer is
+  read-only and there is no V1 write fallback or double write.
 - Every V1 repository kept in the supported product is verified and imported
   before cutover; unimported V1 state is available only through archive tools.
 - Private keys and object-storage credentials never enter logs, Git config,

@@ -1,23 +1,33 @@
+import {
+  Activity,
+  ArrowUpRight,
+  Box,
+  CircleDot,
+  GitBranch,
+  Search,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { useWallet } from "../lib/WalletContext";
 import {
   contractActivity,
+  formatError,
+  isSuiteDirectoryConfigured,
+  listRepos,
   loadConfig,
   resolveOwner,
-  listRepos,
   timeAgo,
-  type RepoInfo,
   type ContractTx,
+  type RepoInfo,
 } from "../lib/chain";
+import { useWallet } from "../lib/WalletContext";
+import { ContractTypeBadge } from "../components/ContractTypeBadge";
 
 const EVM_EXPLORER = "https://testnet-injective.cloud.blockscout.com";
-
-function shortAddr(s: string, n = 8) {
-  return s.length > n * 2 ? `${s.slice(0, n)}…${s.slice(-4)}` : s;
-}
-
 const ACTIVITY_LIMIT = 100;
+
+function shortAddr(value: string, size = 8) {
+  return value.length > size * 2 ? `${value.slice(0, size)}...${value.slice(-4)}` : value;
+}
 
 export default function Home() {
   const cfg = useMemo(() => loadConfig(), []);
@@ -25,24 +35,35 @@ export default function Home() {
   const [repos, setRepos] = useState<RepoInfo[] | null>(null);
   const [activity, setActivity] = useState<ContractTx[]>([]);
   const [activityLoaded, setActivityLoaded] = useState(false);
+  const [activityError, setActivityError] = useState("");
   const [repoFilter, setRepoFilter] = useState("");
   const [err, setErr] = useState("");
   const sideRef = useRef<HTMLDivElement>(null);
+  const suiteConfigured = isSuiteDirectoryConfigured(cfg.suiteDirectory);
 
-  // Lazy-load activity only when the sidebar scrolls into view
   useEffect(() => {
-    const el = sideRef.current;
-    if (!el) return;
+    if (!suiteConfigured) {
+      setActivityLoaded(true);
+      setActivityError("SuiteDirectory is not configured");
+      return;
+    }
+    const element = sideRef.current;
+    if (!element) return;
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting && !activityLoaded) {
           setActivityLoaded(true);
-          contractActivity(cfg, ACTIVITY_LIMIT).then(setActivity).catch(() => setActivity([]));
+          setActivityError("");
+          contractActivity(cfg, ACTIVITY_LIMIT).then(setActivity).catch((error) => {
+            console.error("[activity] load failed:", error);
+            setActivity([]);
+            setActivityError(formatError(error));
+          });
         }
       },
       { rootMargin: "200px" },
     );
-    observer.observe(el);
+    observer.observe(element);
     return () => observer.disconnect();
   }, [cfg, activityLoaded]);
 
@@ -52,134 +73,208 @@ export default function Home() {
     (async () => {
       try {
         if (address) {
-          const a = await resolveOwner(cfg, address);
-          setRepos(await listRepos(cfg, a));
+          if (!suiteConfigured) {
+            setRepos([]);
+            return;
+          }
+          const owner = await resolveOwner(cfg, address);
+          setRepos(await listRepos(cfg, owner));
         } else {
           setRepos([]);
         }
-      } catch (e) {
-        setErr(String(e));
+      } catch (error) {
+        console.error("[repositories] load failed:", error);
+        setErr(formatError(error));
       }
     })();
-  }, [address, cfg]);
+  }, [address, cfg, suiteConfigured]);
 
-  const filtered = repoFilter.trim()
-    ? (repos ?? []).filter((r) =>
-        r.name.includes(repoFilter.trim()) ||
-        (r.description ?? "").toLowerCase().includes(repoFilter.trim().toLowerCase())
+  const normalizedFilter = repoFilter.trim().toLowerCase();
+  const filtered = normalizedFilter
+    ? (repos ?? []).filter((repo) =>
+        repo.name.toLowerCase().includes(normalizedFilter) ||
+        (repo.description ?? "").toLowerCase().includes(normalizedFilter),
       )
     : repos ?? [];
 
   return (
-    <div>
+    <div className="dashboard-page">
+      <div className="page-heading">
+        <div>
+          <h1>{address ? "Your repositories" : "Dashboard"}</h1>
+          <p>Browse repositories, inspect on-chain activity, and resolve IPFS objects.</p>
+        </div>
+        <Link to="/explorer" className="page-heading-action">
+          Explore activity <ArrowUpRight size={15} />
+        </Link>
+      </div>
+
+      <div className="overview-strip" aria-label="Workspace overview">
+        <div className="overview-item">
+          <span><GitBranch size={15} /> Repositories</span>
+          <strong>{repos ? repos.length : "-"}</strong>
+        </div>
+        <div className="overview-item">
+          <span><CircleDot size={15} /> Network</span>
+          <strong className={`status-value${suiteConfigured ? "" : " warning"}`}>
+            <i /> {suiteConfigured ? "Injective" : "Setup needed"}
+          </strong>
+        </div>
+        <div className="overview-item">
+          <span><Box size={15} /> Objects</span>
+          <strong>IPFS</strong>
+        </div>
+      </div>
+
       {err && <div className="error" role="alert">{err}</div>}
 
       <div className="dashboard">
-        {/* Left: repositories */}
-        <div className="dashboard-main">
-          <div className="dash-section-title">
-            {address ? "Your repositories" : "Dashboard"}
+        <section className="dashboard-main" aria-labelledby="repositories-title">
+          <div className="section-heading">
+            <div>
+              <h2 id="repositories-title">{address ? "Repositories" : "Workspace"}</h2>
+              <p>{address ? `${filtered.length} visible repositories` : "Connect a wallet to load your workspace."}</p>
+            </div>
           </div>
 
           {address && (
             <div className="dash-search">
+              <Search size={15} aria-hidden="true" />
               <input
                 className="field"
                 value={repoFilter}
-                onChange={(e) => setRepoFilter(e.target.value)}
-                placeholder="find a repository…"
+                onChange={(event) => setRepoFilter(event.target.value)}
+                placeholder="Find a repository..."
+                aria-label="Find a repository"
               />
             </div>
           )}
 
           {!repos && !err && (
-            <div className="spinner" aria-live="polite">loading repositories…</div>
+            <div className="surface-panel empty-state">
+              <div className="spinner" aria-live="polite">Loading repositories...</div>
+            </div>
           )}
 
           {repos && repos.length === 0 && !address && (
-            <div className="card" style={{ padding: "24px", textAlign: "center" }}>
-              <p className="muted" style={{ margin: "0 0 12px" }}>
-                Connect a wallet to see your repositories, or browse the chain.
-              </p>
-              <Link to="/explorer" className="btn">Explore repositories</Link>
+            <div className="surface-panel empty-state">
+              <GitBranch size={22} />
+              <h3>Connect your workspace</h3>
+              <p>Connect a wallet to see your repositories, or inspect public activity on the chain.</p>
+              <Link to="/explorer" className="btn primary">Explore repositories</Link>
             </div>
           )}
 
-          {repos && repos.length === 0 && address && (
-            <div className="card" style={{ padding: "24px", textAlign: "center" }}>
-              <p className="muted" style={{ margin: "0 0 12px" }}>
-                No repositories yet. Use the CLI to create one:
-              </p>
-              <code style={{ background: "var(--bg-inset)", padding: "8px 14px", borderRadius: "var(--radius)", fontSize: "0.82rem", display: "inline-block" }}>
-                igit init my-repo "hello chain"
-              </code>
+          {repos && repos.length === 0 && address && !suiteConfigured && (
+            <div className="surface-panel empty-state">
+              <GitBranch size={22} />
+              <h3>Repository data is not configured</h3>
+              <p>Connect remains available, but repository reads require a verified EVM Suite.</p>
+              <Link to="/settings" className="btn">Configure Suite</Link>
             </div>
           )}
 
-          {filtered.map((r) => (
-            <div className="repo-list-item" key={r.name}>
-              <h3>
-                <Link to={`/${address ?? "demo"}/${r.name}`}>{r.name}</Link>
-                <span className={`badge ${r.moderation_status}`}>{r.moderation_status}</span>
-                {r.forked_from && <span className="badge">fork</span>}
-              </h3>
-              <div className="meta muted">
-                {r.description || <i>no description</i>} · default <code>{r.default_branch}</code> · updated {timeAgo(r.updated_at)}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Right: recent activity (lazy-loaded on scroll) */}
-        <div className="dashboard-side" ref={sideRef}>
-          <div className="dash-section-title">Recent on-chain activity</div>
-
-          {!activityLoaded && (
-            <div className="card" style={{ padding: "16px", textAlign: "center" }}>
-              <div className="spinner" style={{ padding: 0 }}>loading activity…</div>
+          {repos && repos.length === 0 && address && suiteConfigured && (
+            <div className="surface-panel empty-state">
+              <GitBranch size={22} />
+              <h3>No repositories yet</h3>
+              <p>Create the first repository from your terminal.</p>
+              <code className="command-line">igit init my-repo "hello chain"</code>
             </div>
           )}
 
-          {activityLoaded && activity.length === 0 && (
-            <div className="card" style={{ padding: "16px" }}>
-              <div className="muted" style={{ fontSize: "0.84rem" }}>no recent activity.</div>
-            </div>
-          )}
-
-          {activityLoaded && activity.length > 0 && (
-            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-              {activity.slice(0, ACTIVITY_LIMIT).map((tx) => (
-                <div key={tx.txhash} style={{
-                  padding: "8px 14px",
-                  borderBottom: "1px solid var(--border)",
-                  fontSize: "0.82rem",
-                }}>
-                  <span className={`action-badge a-${tx.action || "unknown"}`}>{tx.action || "?"}</span>
-                  {" "}
-                  <span className="muted">
-                    {shortAddr(tx.sender, 6)} · {timeAgo(Date.parse(tx.timestamp) / 1000)}
-                  </span>
-                  {tx.code !== 0 && <span className="fail-tag">failed</span>}
+          {filtered.length > 0 && (
+            <div className="surface-panel repo-list">
+              {filtered.map((repo) => (
+                <div className="repo-list-item" key={repo.name}>
+                  <div className="repo-list-icon"><GitBranch size={15} /></div>
+                  <div className="repo-list-content">
+                    <h3>
+                      <Link to={`/${address ?? "demo"}/${repo.name}`}>{repo.name}</Link>
+                      <ContractTypeBadge kind="evm-v2" />
+                      <span className={`badge ${repo.moderation_status}`}>{repo.moderation_status}</span>
+                      {repo.forked_from && <span className="badge">fork</span>}
+                    </h3>
+                    <div className="meta muted">
+                      {repo.description || <i>No description</i>}
+                      <span>Default <code>{repo.default_branch}</code></span>
+                      <span>Updated {timeAgo(repo.updated_at)}</span>
+                    </div>
+                  </div>
                 </div>
               ))}
-              {activity.length >= ACTIVITY_LIMIT && (
-                <div style={{ padding: "8px 14px" }}>
-                  <Link to="/explorer" className="muted" style={{ fontSize: "0.8rem" }}>
-                    View all transactions →
-                  </Link>
-                </div>
-              )}
             </div>
           )}
-        </div>
+        </section>
+
+        <aside className="dashboard-side" ref={sideRef} aria-labelledby="activity-title">
+          <div className="section-heading compact">
+            <div>
+              <h2 id="activity-title">Recent activity</h2>
+              <p>Latest confirmed contract actions.</p>
+            </div>
+            <Activity size={16} />
+          </div>
+
+          <div className="surface-panel activity-panel">
+            {!activityLoaded && (
+              <div className="empty-state compact">
+                <div className="spinner">Loading activity...</div>
+              </div>
+            )}
+
+            {activityLoaded && activityError && (
+              <div className="empty-state compact activity-error">
+                <Activity size={20} />
+                <p>Activity is unavailable until the EVM Suite passes verification.</p>
+                <Link to="/settings">Review configuration</Link>
+              </div>
+            )}
+
+            {activityLoaded && !activityError && activity.length === 0 && (
+              <div className="empty-state compact">
+                <Activity size={20} />
+                <p>No recent activity.</p>
+              </div>
+            )}
+
+            {activityLoaded && !activityError && activity.length > 0 && (
+              <div className="activity-list">
+                {activity.slice(0, 10).map((transaction) => (
+                  <div className="activity-row" key={transaction.txhash}>
+                    <span className={`action-badge a-${transaction.action || "unknown"}`}>
+                      {transaction.action || "unknown"}
+                    </span>
+                    <span className="activity-meta">
+                      <code>{shortAddr(transaction.sender, 6)}</code>
+                      <span>{timeAgo(Date.parse(transaction.timestamp) / 1000)}</span>
+                    </span>
+                    {transaction.code !== 0 && <span className="fail-tag">failed</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {activityLoaded && !activityError && (
+              <Link to="/explorer" className="panel-link">
+                View all activity <ArrowUpRight size={14} />
+              </Link>
+            )}
+          </div>
+        </aside>
       </div>
 
-      <footer className="footer" style={{ marginTop: 24, borderTop: "1px solid var(--border)" }}>
-        Injective testnet · SuiteDirectory: <code>{shortAddr(cfg.suiteDirectory, 10)}</code> ·{" "}
-        <a href={`${EVM_EXPLORER}/address/${cfg.suiteDirectory}`} target="_blank" rel="noreferrer">
-          Explorer ↗
-        </a>
-      </footer>
+      <div className="page-note">
+        <span>Injective testnet</span>
+        <span>SuiteDirectory <code>{suiteConfigured ? shortAddr(cfg.suiteDirectory, 10) : "Not configured"}</code></span>
+        {suiteConfigured ? (
+          <a href={`${EVM_EXPLORER}/address/${cfg.suiteDirectory}`} target="_blank" rel="noreferrer">
+            Open in Blockscout <ArrowUpRight size={13} />
+          </a>
+        ) : (
+          <Link to="/settings">Configure EVM Suite <ArrowUpRight size={13} /></Link>
+        )}
+      </div>
     </div>
   );
 }

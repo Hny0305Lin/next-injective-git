@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { toInjectiveAddress } from "./address";
-import { clearQueryCache, formatError, injBalanceOf, loadConfig, verifySuite } from "./chain";
-import { getEvmProvider, SUPPORTED_WALLETS } from "./wallet";
+import { clearQueryCache, ensureWalletChain, formatError, injBalanceOf, loadConfig } from "./chain";
+import { getEvmProvider, subscribeWalletProviders, SUPPORTED_WALLETS } from "./wallet";
 
 export interface Connected {
   kind: "evm";
@@ -17,7 +17,7 @@ interface WalletState {
   balance: string;
   connecting: boolean;
   error: string;
-  connect: (walletId: string) => Promise<void>;
+  connect: (walletId: string) => Promise<boolean>;
   disconnect: () => void;
   refreshBalance: () => Promise<void>;
   walletModalOpen: boolean;
@@ -57,12 +57,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const provider = getEvmProvider(walletId);
       if (!provider) throw new Error(`${definition.label} not detected; install or enable it`);
       const cfg = loadConfig();
-      await verifySuite(cfg);
       const accounts = await provider.request({ method: "eth_requestAccounts" });
       const ethAddress = Array.isArray(accounts) ? accounts[0] : undefined;
       if (typeof ethAddress !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(ethAddress)) {
         throw new Error("EVM wallet returned no valid account");
       }
+      await ensureWalletChain(provider, cfg);
       const next: Connected = {
         kind: "evm",
         id: walletId,
@@ -73,12 +73,44 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setConnected(next);
       connectedRef.current = next;
       localStorage.setItem(LS_PROVIDER, walletId);
+      return true;
     } catch (cause) {
-      console.error("[wallet] connect failed:", cause);
       setConnected(null);
+      connectedRef.current = null;
+      setBalance("");
       setError(formatError(cause));
+      return false;
     } finally {
       setConnecting(false);
+    }
+  }, []);
+
+  const restoreConnection = useCallback(async (walletId: string) => {
+    const definition = SUPPORTED_WALLETS.find((wallet) => wallet.id === walletId);
+    const provider = definition ? getEvmProvider(walletId) : undefined;
+    if (!definition || !provider) return;
+    try {
+      const accounts = await provider.request({ method: "eth_accounts" });
+      const ethAddress = Array.isArray(accounts) ? accounts[0] : undefined;
+      if (typeof ethAddress !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(ethAddress)) {
+        setConnected(null);
+        connectedRef.current = null;
+        setBalance("");
+        localStorage.removeItem(LS_PROVIDER);
+        return;
+      }
+      const next: Connected = {
+        kind: "evm",
+        id: walletId,
+        label: definition.label,
+        address: toInjectiveAddress(ethAddress),
+        ethAddress,
+      };
+      setConnected(next);
+      connectedRef.current = next;
+      setError("");
+    } catch {
+      // Silent restore must never trigger a permission or chain-switch prompt.
     }
   }, []);
 
@@ -92,8 +124,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const previous = localStorage.getItem(LS_PROVIDER);
-    if (previous) void connect(previous);
-  }, [connect]);
+    if (!previous) return;
+    const isSupported = SUPPORTED_WALLETS.some((wallet) => wallet.id === previous);
+    if (!isSupported) {
+      localStorage.removeItem(LS_PROVIDER);
+      return;
+    }
+    const restore = () => void restoreConnection(previous);
+    const unsubscribe = subscribeWalletProviders(restore);
+    restore();
+    return unsubscribe;
+  }, [restoreConnection]);
 
   useEffect(() => {
     void refreshBalance();
@@ -104,17 +145,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     if (!current) return;
     const provider = getEvmProvider(current.id);
     if (!provider?.on || !provider.removeListener) return;
-    const reconnect = () => {
+    const refreshAccount = () => {
       clearQueryCache();
-      void connect(current.id);
+      void restoreConnection(current.id);
     };
-    provider.on("accountsChanged", reconnect);
-    provider.on("chainChanged", reconnect);
+    const refreshChain = () => clearQueryCache();
+    provider.on("accountsChanged", refreshAccount);
+    provider.on("chainChanged", refreshChain);
     return () => {
-      provider.removeListener?.("accountsChanged", reconnect);
-      provider.removeListener?.("chainChanged", reconnect);
+      provider.removeListener?.("accountsChanged", refreshAccount);
+      provider.removeListener?.("chainChanged", refreshChain);
     };
-  }, [connected, connect]);
+  }, [connected, restoreConnection]);
 
   return (
     <Ctx.Provider value={{

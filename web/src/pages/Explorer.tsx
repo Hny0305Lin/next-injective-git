@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { ArrowUpRight, Info } from "lucide-react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useWallet } from "../lib/WalletContext";
 import { WalletModal } from "../components/WalletModal";
@@ -14,8 +15,6 @@ import {
 } from "../lib/chain";
 
 const short = (s: string, n = 8) => (s.length > n * 2 ? `${s.slice(0, n)}…${s.slice(-4)}` : s);
-
-import { memo } from "react";
 
 // Colour per contract action for quick scanning.
 const ActionBadge = memo(function ActionBadge({ action }: { action: string }) {
@@ -76,8 +75,8 @@ export default function Explorer() {
   return (
     <div className="explorer">
       <div className="explorer-head">
-        <h1 style={{ fontSize: "1.15rem", margin: 0 }}>Block Explorer</h1>
-        <Link className="muted" to="/ipfs">IPFS explorer →</Link>
+        <h1>Block Explorer</h1>
+        <Link className="muted icon-link" to="/ipfs">IPFS explorer <ArrowUpRight size={14} /></Link>
       </div>
       <p className="muted">
         Activity across SuiteDirectory <code className="mono">{short(cfg.suiteDirectory, 10)}</code> ·
@@ -120,7 +119,7 @@ export default function Explorer() {
         </div>
       </div>
       <p className="muted small privacy-note">
-        ℹ️ On-chain data is public — “Mine” only filters this view to your address; it does not hide anything from others.
+        <Info size={14} /> On-chain data is public. “Mine” only filters this view to your address; it does not hide anything from others.
       </p>
       {err && <div className="error">{err}</div>}
       {needConnect ? (

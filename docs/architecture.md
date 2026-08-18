@@ -1,9 +1,12 @@
 # Immutable EVM Suite Architecture
 
-The public product path is EVM-only. A network profile contains endpoints,
-chain ID, and one `SuiteDirectory` address. CLI, Web, and `git-remote-igit`
-resolve all other contracts from that Directory and fail closed unless it is
-version 3, active, code-hash verified, and internally bound.
+The public product path is EVM V2. A network profile contains endpoints,
+chain ID, and one `SuiteDirectory` address. CLI, the ordinary Web repository
+path, and `git-remote-igit` resolve all current contracts from that Directory
+and fail closed unless it is version 3, active, code-hash verified, and
+internally bound. The Web also exposes a separate, explicit CosmWasm V1
+archive viewer for historical read-only inspection; that viewer is not an
+alternate SuiteDirectory and does not participate in ordinary Git operations.
 
 This is the EVM V2 product generation because CosmWasm V1 required a WSL2-hosted
 Push toolchain on Windows while Linux ran natively. The EVM path removes WSL2
@@ -61,10 +64,14 @@ Only then can the coordinator atomically activate the Directory.
 
 ## V1 Boundary
 
-Historical chain access exists only under `archive/cosmwasm-v1` and the
-read-only `igit archive` command. Ordinary clients have no archive fallback or
-write path. Snapshot evidence is fixed-height, block-hash bound, inventory
-complete, and verified before it can become a Suite bootstrap plan.
+Historical chain access exists under `archive/cosmwasm-v1`, the read-only
+`igit archive` command, and the explicit Web route `/archive/cosmwasm-v1`.
+The Web route uses a GET-only smart-query adapter and a per-session snapshot
+height. It never signs or broadcasts CosmWasm messages, and it is not an
+ordinary Web fallback when EVM Suite verification fails. EVM V2 remains the
+sole `SuiteDirectory` trust root and the only write-capable product path.
+Snapshot evidence is fixed-height, block-hash bound, inventory complete, and
+verified before it can become a Suite bootstrap plan.
 
 ## Data Plane Direction
 

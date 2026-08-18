@@ -4,6 +4,9 @@ import { toInjectiveAddress } from "./address";
 import { rpcRequest, verifySuite } from "./transport";
 import type { AppConfig } from "./profile";
 
+/** Number of recent EVM blocks sampled by the public activity view. */
+export const EVM_ACTIVITY_BLOCK_WINDOW = 100_000;
+
 export interface ContractTx {
   txhash: string;
   height: string;
@@ -133,7 +136,8 @@ export async function contractActivity(
 ): Promise<ContractTx[]> {
   const suite = await verifySuite(cfg);
   const latest = quantity(await rpcRequest<Hex>(cfg, "eth_blockNumber"));
-  const from = latest > 100_000n ? latest - 100_000n : 0n;
+  const window = BigInt(EVM_ACTIVITY_BLOCK_WINDOW);
+  const from = latest > window ? latest - window : 0n;
   const logs = await rpcRequest<RpcLog[]>(cfg, "eth_getLogs", [{
     address: Object.values(suite.modules),
     fromBlock: blockTag(from),

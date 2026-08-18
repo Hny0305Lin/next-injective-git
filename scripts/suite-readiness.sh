@@ -61,9 +61,20 @@ if grep -R -n -E 'cosmwasm/wasm/v1|"tx"[[:space:]]*,[[:space:]]*"wasm"[[:space:]
   exit 1
 fi
 
+web_v1_archive="$ROOT/web/src/lib/cosmwasm-v1.ts"
+mapfile -t web_runtime_sources < <(
+  find "$ROOT/web/src" -type f \( -name '*.ts' -o -name '*.tsx' \) ! -path "$web_v1_archive"
+)
 if grep -R -n -E 'legacyClient|cosmwasm/wasm/v1|MsgExecuteContract|SigningCosmWasmClient|contractVersion[[:space:]]*:[[:space:]]*"(auto|v1|v2)"' \
-  "$ROOT/web/src" --include='*.ts' --include='*.tsx'; then
-  echo "FAIL: Web runtime contains a V1 fallback or pre-Suite profile" >&2
+  "${web_runtime_sources[@]}"; then
+  echo "FAIL: ordinary Web runtime contains a V1 fallback or pre-Suite profile" >&2
+  exit 1
+fi
+
+if [[ ! -f "$web_v1_archive" ]] || \
+   ! grep -q 'method: "GET"' "$web_v1_archive" || \
+   grep -n -E 'MsgExecuteContract|SigningCosmWasmClient|eth_sendTransaction|wallet_|\.execute\s*\(|method:[[:space:]]*"(POST|PUT|PATCH|DELETE)"' "$web_v1_archive"; then
+  echo "FAIL: Web V1 archive adapter must remain an isolated GET-only read path" >&2
   exit 1
 fi
 

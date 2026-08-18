@@ -2,8 +2,9 @@ import { Buffer } from "buffer";
 import ReactDOM from "react-dom/client";
 import { HashRouter } from "react-router-dom";
 import App from "./App";
+import { TooltipProvider } from "./components/ui/tooltip";
 import { WalletProvider } from "./lib/WalletContext";
-import "./styles.css";
+import "./index.css";
 
 // isomorphic-git expects a Node-style Buffer global in the browser
 (globalThis as Record<string, unknown>).Buffer = Buffer;
@@ -13,7 +14,9 @@ import "./styles.css";
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <HashRouter>
     <WalletProvider>
-      <App />
+      <TooltipProvider>
+        <App />
+      </TooltipProvider>
     </WalletProvider>
   </HashRouter>,
 );

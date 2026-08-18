@@ -39,6 +39,68 @@ interface WalletWindow {
   coinbaseWalletExtension?: ProviderRecord;
 }
 
+interface Eip6963ProviderInfo {
+  uuid: string;
+  name: string;
+  icon: string;
+  rdns: string;
+}
+
+interface Eip6963ProviderDetail {
+  info: Eip6963ProviderInfo;
+  provider: ProviderRecord;
+}
+
+const EIP6963_RDNS: Record<string, readonly string[]> = {
+  metamask: ["io.metamask"],
+  rabby: ["io.rabby"],
+  okxevm: ["com.okex.wallet"],
+  bitget: ["com.bitget.web3", "com.bitkeep.wallet"],
+  trust: ["com.trustwallet.app"],
+  coinbase: ["com.coinbase.wallet"],
+  brave: ["com.brave.wallet"],
+};
+
+const announcedProviders = new Map<string, Eip6963ProviderDetail>();
+const providerSubscribers = new Set<() => void>();
+let discoveryStarted = false;
+
+function isProviderDetail(value: unknown): value is Eip6963ProviderDetail {
+  if (!value || typeof value !== "object") return false;
+  const detail = value as Partial<Eip6963ProviderDetail>;
+  return typeof detail.info?.uuid === "string"
+    && typeof detail.info.rdns === "string"
+    && typeof detail.provider?.request === "function";
+}
+
+function announceProvider(event: Event): void {
+  const detail = (event as CustomEvent<unknown>).detail;
+  if (!isProviderDetail(detail)) return;
+  const previous = announcedProviders.get(detail.info.uuid);
+  if (previous?.provider === detail.provider && previous.info.rdns === detail.info.rdns) return;
+  announcedProviders.set(detail.info.uuid, detail);
+  providerSubscribers.forEach((subscriber) => subscriber());
+}
+
+function startProviderDiscovery(): void {
+  if (discoveryStarted || typeof window === "undefined") return;
+  discoveryStarted = true;
+  window.addEventListener("eip6963:announceProvider", announceProvider as EventListener);
+}
+
+export function requestWalletProviders(): void {
+  if (typeof window === "undefined") return;
+  startProviderDiscovery();
+  window.dispatchEvent(new Event("eip6963:requestProvider"));
+}
+
+export function subscribeWalletProviders(subscriber: () => void): () => void {
+  startProviderDiscovery();
+  providerSubscribers.add(subscriber);
+  requestWalletProviders();
+  return () => providerSubscribers.delete(subscriber);
+}
+
 function walletWindow(): WalletWindow {
   return window as unknown as WalletWindow;
 }
@@ -50,7 +112,18 @@ function injectedByFlag(flag: keyof ProviderRecord): Eip1193 | undefined {
   return providers.find((provider) => provider[flag] === true);
 }
 
+function announcedByRdns(id: string): Eip1193 | undefined {
+  const accepted = EIP6963_RDNS[id];
+  if (!accepted) return undefined;
+  return Array.from(announcedProviders.values()).find(({ info }) => (
+    accepted.includes(info.rdns.toLowerCase())
+  ))?.provider;
+}
+
 export function getEvmProvider(id: string): Eip1193 | undefined {
+  startProviderDiscovery();
+  const announced = announcedByRdns(id);
+  if (announced) return announced;
   const wallet = walletWindow();
   switch (id) {
     case "metamask": return injectedByFlag("isMetaMask");

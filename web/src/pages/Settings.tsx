@@ -1,10 +1,14 @@
+import { CheckCircle2, ExternalLink, LoaderCircle, RotateCcw, Save } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  configForProfile,
-  loadConfig,
   NETWORK_PROFILES,
+  configForProfile,
+  formatError,
+  isSuiteDirectoryConfigured,
+  loadConfig,
   saveConfig,
+  verifySuite,
   type NetworkProfileId,
 } from "../lib/chain";
 
@@ -19,90 +23,158 @@ const TESTNET_WALLETS = [
 export default function Settings() {
   const [cfg, setCfg] = useState(loadConfig());
   const [saved, setSaved] = useState(false);
+  const [suiteInput, setSuiteInput] = useState(cfg.suiteDirectory);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [suiteVerified, setSuiteVerified] = useState(false);
 
   const restoreDefaults = () => {
-    setCfg(configForProfile());
+    const defaults = configForProfile();
+    setCfg(defaults);
+    setSuiteInput(defaults.suiteDirectory);
     setSaved(false);
+    setSaveError("");
+    setSuiteVerified(false);
   };
 
-  const setProfile = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setCfg(configForProfile(e.target.value as NetworkProfileId));
+  const setProfile = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    const next = configForProfile(event.target.value as NetworkProfileId);
+    setCfg(next);
+    setSuiteInput(next.suiteDirectory);
     setSaved(false);
+    setSaveError("");
+    setSuiteVerified(false);
+  };
+
+  const persist = async () => {
+    const suiteDirectory = suiteInput.trim();
+    const next = { ...cfg, suiteDirectory };
+    setSaving(true);
+    setSaved(false);
+    setSaveError("");
+    setSuiteVerified(false);
+    try {
+      if (suiteDirectory) {
+        if (!isSuiteDirectoryConfigured(suiteDirectory)) {
+          throw new Error("Enter a 0x-prefixed, 40-byte EVM contract address.");
+        }
+        await verifySuite(next, true);
+      }
+      saveConfig(next);
+      setCfg(next);
+      setSuiteVerified(Boolean(suiteDirectory));
+      setSaved(true);
+    } catch (error) {
+      setSaveError(formatError(error));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const profile = NETWORK_PROFILES[cfg.profile];
 
   return (
-    <div style={{ maxWidth: 640, margin: "0 auto" }}>
-      <div className="card settings" style={{ padding: "24px" }}>
-        <h2 style={{ margin: "0 0 6px", fontSize: "1.2rem" }}>Settings</h2>
-        <p className="muted" style={{ margin: "0 0 20px", fontSize: "0.88rem", lineHeight: 1.5 }}>
-          Stored in your browser only. Network endpoints, chain IDs, and contract addresses are
-          supplied by the selected profile.
+    <div className="settings-page">
+      <div className="page-heading">
+        <div>
+          <h1>Settings</h1>
+          <p>Configure the network profile and inspect local test wallets.</p>
+        </div>
+      </div>
+
+      <section className="card settings" aria-labelledby="network-settings-title">
+        <h2 id="network-settings-title" className="settings-section-title">Network profile</h2>
+        <p className="muted settings-section-copy">
+          Stored in your browser only. Endpoints, chain IDs, and contract addresses come from the selected profile.
         </p>
 
-        <label style={{ fontSize: "0.84rem", marginBottom: 6 }}>Network profile</label>
-        <select className="field" style={{ marginBottom: 14 }} value={cfg.profile} onChange={setProfile}>
+        <label htmlFor="network-profile">Profile</label>
+        <select id="network-profile" className="field" value={cfg.profile} onChange={setProfile}>
           {Object.values(NETWORK_PROFILES).map((option) => (
             <option key={option.id} value={option.id}>{option.label}</option>
           ))}
         </select>
 
-        <div className="muted mono" style={{ fontSize: "0.76rem", lineHeight: 1.6, marginBottom: 16 }}>
-          EVM {profile.evmChainId} · SuiteDirectory {profile.suiteDirectory || "not configured"}
+        <div className="settings-profile-meta mono">
+          <span>EVM chain <b>{profile.evmChainId}</b></span>
+          <span>RPC <b>{profile.evmRpc}</b></span>
         </div>
 
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <button
-            onClick={() => {
-              saveConfig(cfg);
-              setSaved(true);
-            }}
-            style={{ padding: "7px 18px", fontSize: "0.88rem" }}
-          >
-            save
-          </button>
-          <button
-            onClick={restoreDefaults}
-            style={{ padding: "7px 14px", fontSize: "0.88rem", color: "var(--fg-muted)" }}
-          >
-            restore defaults
-          </button>
-          {saved && <span className="muted" style={{ fontSize: "0.88rem" }}>saved ✓</span>}
-        </div>
-      </div>
+        <label htmlFor="suite-directory">SuiteDirectory address</label>
+        <input
+          id="suite-directory"
+          className="field mono settings-suite-input"
+          value={suiteInput}
+          onChange={(event) => {
+            setSuiteInput(event.target.value);
+            setSaved(false);
+            setSaveError("");
+            setSuiteVerified(false);
+          }}
+          placeholder="0x..."
+          spellCheck={false}
+          autoComplete="off"
+        />
+        <p className="muted settings-field-help">
+          The public testnet profile intentionally has no Directory yet. A local override is saved only after the active Suite, all seven modules, code hashes, and bindings verify successfully.
+        </p>
 
-      <div style={{ marginTop: 28 }}>
-        <div className="dash-section-title" style={{ fontSize: "0.82rem" }}>Testnet wallets</div>
-        <div className="card" style={{ padding: "16px 20px" }}>
+        <div className="settings-actions">
+          <button
+            className="primary"
+            onClick={persist}
+            disabled={saving}
+          >
+            {saving ? <LoaderCircle className="suite-alert-spinner" size={14} /> : <Save size={14} />}
+            {saving ? "Verifying Suite..." : suiteInput.trim() ? "Verify and save" : "Save profile"}
+          </button>
+          <button onClick={restoreDefaults} disabled={saving}>
+            <RotateCcw size={14} /> Restore defaults
+          </button>
+          {saved && (
+            <span className="success-message">
+              <CheckCircle2 size={14} /> {suiteVerified ? "Suite verified and saved" : "Saved without a Suite"}
+            </span>
+          )}
+        </div>
+        {saveError && <div className="error settings-save-error" role="alert">{saveError}</div>}
+      </section>
+
+      <section className="settings-wallet-section" aria-labelledby="testnet-wallets-title">
+        <div className="section-heading">
+          <div>
+            <h2 id="testnet-wallets-title">Testnet wallets</h2>
+            <p>Known development accounts for the active profile.</p>
+          </div>
+        </div>
+
+        <div className="card settings-wallet-card">
           <div className="settings-wallets-scroll">
-            <table style={{ width: "100%", minWidth: 640, borderCollapse: "collapse", fontSize: "0.88rem" }}>
-            <thead>
-              <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                <th style={{ textAlign: "left", padding: "0 0 10px", fontSize: "0.78rem", fontWeight: 500, color: "var(--fg-muted)", textTransform: "uppercase", letterSpacing: "0.04em", width: 140 }}>Name</th>
-                <th style={{ textAlign: "left", padding: "0 0 10px", fontSize: "0.78rem", fontWeight: 500, color: "var(--fg-muted)", textTransform: "uppercase", letterSpacing: "0.04em" }}>Injective</th>
-                <th style={{ textAlign: "left", padding: "0 0 10px", fontSize: "0.78rem", fontWeight: 500, color: "var(--fg-muted)", textTransform: "uppercase", letterSpacing: "0.04em" }}>EVM</th>
-              </tr>
-            </thead>
-            <tbody>
-              {TESTNET_WALLETS.map((w) => (
-                <tr key={w.inj} style={{ borderBottom: "1px solid var(--border)" }}>
-                  <td style={{ padding: "10px 0", fontWeight: 500 }}>{w.label}</td>
-                  <td className="mono" style={{ padding: "10px 12px 10px 0", fontSize: "0.82rem" }}>
-                    <Link to={`/${w.inj}`}>{w.inj}</Link>
-                  </td>
-                  <td className="mono muted" style={{ padding: "10px 0", fontSize: "0.82rem" }}>{w.evm}</td>
+            <table className="settings-wallet-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Injective</th>
+                  <th>EVM</th>
                 </tr>
-              ))}
-            </tbody>
+              </thead>
+              <tbody>
+                {TESTNET_WALLETS.map((wallet) => (
+                  <tr key={wallet.inj}>
+                    <td>{wallet.label}</td>
+                    <td className="mono"><Link to={`/${wallet.inj}`}>{wallet.inj}</Link></td>
+                    <td className="mono muted">{wallet.evm}</td>
+                  </tr>
+                ))}
+              </tbody>
             </table>
           </div>
         </div>
-        <p className="muted" style={{ fontSize: "0.82rem", marginTop: 10 }}>
-          Links:{" "}
-          <a href={profile.evmExplorer} target="_blank" rel="noreferrer">Blockscout ↗</a>
-        </p>
-      </div>
+
+        <a className="settings-external-link" href={profile.evmExplorer} target="_blank" rel="noreferrer">
+          Open Blockscout <ExternalLink size={13} />
+        </a>
+      </section>
     </div>
   );
 }

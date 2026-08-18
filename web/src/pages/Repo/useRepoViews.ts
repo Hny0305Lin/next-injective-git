@@ -10,6 +10,20 @@ export function shortRef(refName: string): string {
   return refName;
 }
 
+/** Return the repository segment from either an EVM or archive route base. */
+export function repoNameFromBase(base: string): string {
+  const segment = base.split("/").filter(Boolean).at(-1) ?? "";
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
+export function isCosmWasmV1ArchivePath(pathname: string): boolean {
+  return pathname === "/archive/cosmwasm-v1" || pathname.startsWith("/archive/cosmwasm-v1/");
+}
+
 export function findRef(refs: RefInfo[], short: string): RefInfo | undefined {
   return (
     refs.find((r) => r.ref_name === `refs/heads/${short}`) ??
