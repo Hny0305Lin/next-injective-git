@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -138,6 +139,215 @@ func TestSnapshotRejectsNonZeroEscrowAndBadgeIndexMismatch(t *testing.T) {
 	}
 }
 
+func TestSnapshotValidationMatchesV1IdentityAndPolicyRules(t *testing.T) {
+	var snapshot Snapshot
+	if err := json.Unmarshal(fixtureSnapshotJSON(t), &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	snapshot.Repositories[0].Name = "Demo.Repo_2"
+	snapshot.Refs[0].CommitSHA = strings.Repeat("A", 40)
+	if _, err := BuildPlan(mustJSON(t, snapshot), BuildOptions{TargetChainID: 1439, Directory: testDirectory, Coordinator: testCoordinator}); err != nil {
+		t.Fatalf("V1-compatible uppercase identity was rejected: %v", err)
+	}
+
+	for _, testCase := range []struct {
+		name   string
+		mutate func(*Snapshot)
+		want   string
+	}{
+		{name: "dangerous ref traversal", mutate: func(value *Snapshot) { value.Refs[0].RefName = "refs/heads/a..b" }, want: "ref 0"},
+		{name: "dangerous ref control", mutate: func(value *Snapshot) { value.Refs[0].RefName = "refs/heads/a~b" }, want: "ref 0"},
+		{name: "address-like username", mutate: func(value *Snapshot) { value.Username.OriginalOwners[0].Name = "inj1abc" }, want: "invalid original username"},
+		{name: "owner split recipient", mutate: func(value *Snapshot) { value.Economic.Splits[0].Splits[0].Recipient = testOwner }, want: "repository owner"},
+		{name: "owner badge recipient", mutate: func(value *Snapshot) { value.Badges[0].Recipient = testOwner }, want: "self-awards"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			var candidate Snapshot
+			if err := json.Unmarshal(fixtureSnapshotJSON(t), &candidate); err != nil {
+				t.Fatal(err)
+			}
+			testCase.mutate(&candidate)
+			if _, err := BuildPlan(mustJSON(t, candidate), BuildOptions{TargetChainID: 1439, Directory: testDirectory, Coordinator: testCoordinator}); err == nil || !strings.Contains(err.Error(), testCase.want) {
+				t.Fatalf("validation error = %v, want substring %q", err, testCase.want)
+			}
+		})
+	}
+}
+
+func TestSnapshotAllowsHistoricalBadgeRecipientAfterOwnershipTransfer(t *testing.T) {
+	var snapshot Snapshot
+	if err := json.Unmarshal(fixtureSnapshotJSON(t), &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	// The badge recipient became the current owner only after the award. The
+	// award-time owner is preserved in AwardedBy and remains the self-award
+	// authority check.
+	snapshot.Repositories[0].Owner = testRecipient
+	snapshot.GuardianConfigs[0].ConfiguredBy = testRecipient
+	snapshot.Economic.Splits[0].Splits[0].Recipient = testCollaborator
+	if _, err := BuildPlan(mustJSON(t, snapshot), BuildOptions{TargetChainID: 1439, Directory: testDirectory, Coordinator: testCoordinator}); err != nil {
+		t.Fatalf("historical badge was rejected after ownership transfer: %v", err)
+	}
+}
+
+func TestSnapshotAllowsHistoricalAppealAfterOwnershipTransfer(t *testing.T) {
+	var snapshot Snapshot
+	if err := json.Unmarshal(fixtureSnapshotJSON(t), &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	// Snapshot repository ownership is current state. The appeal was submitted
+	// before the transfer, so its actor is a valid historical owner rather than
+	// the current owner.
+	snapshot.Repositories[0].Owner = testRecipient
+	snapshot.GuardianConfigs[0].ConfiguredBy = testRecipient
+	snapshot.Economic.Splits[0].Splits[0].Recipient = testCollaborator
+	report := &snapshot.Moderation.Reports[0]
+	report.Status = "appealed"
+	report.UpdatedAt = 14
+	report.Trail = append(report.Trail, SnapshotReportTrail{
+		Action: "appealed", Actor: testOwner, Status: "frozen", ReasonHash: "appeal", Timestamp: 14,
+	})
+	if _, err := BuildPlan(mustJSON(t, snapshot), BuildOptions{TargetChainID: 1439, Directory: testDirectory, Coordinator: testCoordinator}); err != nil {
+		t.Fatalf("historical appeal was rejected after ownership transfer: %v", err)
+	}
+}
+
+func TestSnapshotRevenueSplitsMatchV1TwentyRecipientLimit(t *testing.T) {
+	var snapshot Snapshot
+	if err := json.Unmarshal(fixtureSnapshotJSON(t), &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	snapshot.Economic.Splits[0].Splits = make([]SnapshotSplit, MaxRevenueSplitRecipients)
+	for index := range snapshot.Economic.Splits[0].Splits {
+		snapshot.Economic.Splits[0].Splits[index] = SnapshotSplit{
+			Recipient: fmt.Sprintf("0x%040x", index+0x9000),
+			BPS:       1,
+		}
+	}
+	if _, err := BuildPlan(mustJSON(t, snapshot), BuildOptions{TargetChainID: 1439, Directory: testDirectory, Coordinator: testCoordinator}); err != nil {
+		t.Fatalf("%d V1-compatible split recipients were rejected: %v", MaxRevenueSplitRecipients, err)
+	}
+
+	snapshot.Economic.Splits[0].Splits = append(snapshot.Economic.Splits[0].Splits, SnapshotSplit{
+		Recipient: fmt.Sprintf("0x%040x", 0xA000),
+		BPS:       1,
+	})
+	if _, err := BuildPlan(mustJSON(t, snapshot), BuildOptions{TargetChainID: 1439, Directory: testDirectory, Coordinator: testCoordinator}); err == nil || !strings.Contains(err.Error(), "count invalid") {
+		t.Fatalf("%d split recipients validation error = %v", MaxRevenueSplitRecipients+1, err)
+	}
+
+	snapshot.Economic.Splits[0].Splits = nil
+	if _, err := BuildPlan(mustJSON(t, snapshot), BuildOptions{TargetChainID: 1439, Directory: testDirectory, Coordinator: testCoordinator}); err != nil {
+		t.Fatalf("empty V1 split record was rejected: %v", err)
+	}
+}
+
+func TestSnapshotReservedUsernamesMatchV1Limit(t *testing.T) {
+	var snapshot Snapshot
+	if err := json.Unmarshal(fixtureSnapshotJSON(t), &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	snapshot.Username.ReservedNames = make([]string, MaxReservedUsernames)
+	for index := range snapshot.Username.ReservedNames {
+		snapshot.Username.ReservedNames[index] = fmt.Sprintf("reserved-%03d", index)
+	}
+	if _, err := BuildPlan(mustJSON(t, snapshot), BuildOptions{TargetChainID: 1439, Directory: testDirectory, Coordinator: testCoordinator}); err != nil {
+		t.Fatalf("%d V1-compatible reserved usernames were rejected: %v", MaxReservedUsernames, err)
+	}
+
+	snapshot.Username.ReservedNames = append(snapshot.Username.ReservedNames, "reserved-128")
+	if _, err := BuildPlan(mustJSON(t, snapshot), BuildOptions{TargetChainID: 1439, Directory: testDirectory, Coordinator: testCoordinator}); err == nil || !strings.Contains(err.Error(), "exceed maximum of 128") {
+		t.Fatalf("%d reserved usernames validation error = %v", MaxReservedUsernames+1, err)
+	}
+}
+
+func TestSnapshotForkLineageIsAcyclicAndImportedParentFirst(t *testing.T) {
+	var snapshot Snapshot
+	if err := json.Unmarshal(fixtureSnapshotJSON(t), &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	parent := snapshot.Repositories[0]
+	child := parent
+	child.ID = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	child.Owner = testRecipient
+	child.Name = "child"
+	child.ForkedFrom = parent.ID
+	snapshot.Repositories = []SnapshotRepository{child, parent}
+	snapshot.Moderation.FinalStatuses = append(snapshot.Moderation.FinalStatuses, SnapshotFinalStatus{
+		RepoID: child.ID, Status: "active",
+	})
+	plan, err := BuildPlan(mustJSON(t, snapshot), BuildOptions{TargetChainID: 1439, Directory: testDirectory, Coordinator: testCoordinator})
+	if err != nil {
+		t.Fatalf("valid parent/child lineage was rejected: %v", err)
+	}
+	if got := plan.Modules[0].Batches[0].ItemKeys; len(got) != 2 || got[0] != parent.ID || got[1] != child.ID {
+		t.Fatalf("repository import order = %#v", got)
+	}
+
+	snapshot.Repositories[0].ForkedFrom = parent.ID
+	snapshot.Repositories[1].ForkedFrom = child.ID
+	if _, err := BuildPlan(mustJSON(t, snapshot), BuildOptions{TargetChainID: 1439, Directory: testDirectory, Coordinator: testCoordinator}); err == nil || !strings.Contains(err.Error(), "fork lineage contains a cycle") {
+		t.Fatalf("cycle validation error = %v", err)
+	}
+}
+
+func TestSnapshotRejectsMalformedModerationReportTrails(t *testing.T) {
+	for _, testCase := range []struct {
+		name   string
+		mutate func(*Snapshot)
+		want   string
+	}{
+		{
+			name: "wrong trail length",
+			mutate: func(value *Snapshot) {
+				value.Moderation.Reports[0].Trail = append(value.Moderation.Reports[0].Trail, SnapshotReportTrail{
+					Action: "appealed", Actor: testOwner, Status: "frozen", ReasonHash: "appeal", Timestamp: 14,
+				})
+			},
+			want: "has 3 trail entries",
+		},
+		{
+			name: "status set action",
+			mutate: func(value *Snapshot) {
+				value.Moderation.Reports[0].Trail[0].Action = "status_set"
+			},
+			want: "want \"submitted\"",
+		},
+		{
+			name: "empty decision reason",
+			mutate: func(value *Snapshot) {
+				value.Moderation.Reports[0].Trail[1].ReasonHash = ""
+			},
+			want: "trail invalid",
+		},
+		{
+			name: "updated timestamp mismatch",
+			mutate: func(value *Snapshot) {
+				value.Moderation.Reports[0].UpdatedAt = 14
+			},
+			want: "final trail timestamp",
+		},
+		{
+			name: "final status mismatch",
+			mutate: func(value *Snapshot) {
+				value.Moderation.Reports[0].Trail[1].Status = "active"
+			},
+			want: "final trail status",
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			var candidate Snapshot
+			if err := json.Unmarshal(fixtureSnapshotJSON(t), &candidate); err != nil {
+				t.Fatal(err)
+			}
+			testCase.mutate(&candidate)
+			if _, err := BuildPlan(mustJSON(t, candidate), BuildOptions{TargetChainID: 1439, Directory: testDirectory, Coordinator: testCoordinator}); err == nil || !strings.Contains(err.Error(), testCase.want) {
+				t.Fatalf("validation error = %v, want substring %q", err, testCase.want)
+			}
+		})
+	}
+}
+
 func TestPlannerSplitsBatchesByEncodedPayloadSize(t *testing.T) {
 	var snapshot Snapshot
 	if err := json.Unmarshal(fixtureSnapshotJSON(t), &snapshot); err != nil {
@@ -178,7 +388,7 @@ func fixtureSnapshotJSON(t *testing.T) []byte {
 		Refs:            []SnapshotRef{{RepoID: testRepoID, RefName: "refs/heads/main", CommitSHA: strings.Repeat("a", 40), PackURIs: []string{"ipfs://cid"}, UpdatedAt: 20, UpdatedBy: testOwner}},
 		Collaborators:   []SnapshotCollaborator{{RepoID: testRepoID, Account: testCollaborator, Role: "maintainer"}},
 		GuardianConfigs: []SnapshotGuardianConfig{{RepoID: testRepoID, ConfiguredBy: testOwner, Threshold: 1, Guardians: []string{testGuardian}}},
-		Moderation:      SnapshotModeration{FinalStatuses: []SnapshotFinalStatus{{RepoID: testRepoID, Status: "frozen"}}, Reports: []SnapshotReport{{ID: 7, RepoID: testRepoID, Reporter: testReporter, Status: "resolved", Resolution: "frozen", ReasonHash: "decision", CreatedAt: 11, UpdatedAt: 13, Trail: []SnapshotReportTrail{{Action: "submitted", Actor: testReporter, Status: "active", ReasonHash: "report", Timestamp: 11}, {Action: "resolved", Actor: testAdmin, Status: "frozen", ReasonHash: "decision", Timestamp: 13}}}}, StatusTrails: []SnapshotStatusTrail{{RepoID: testRepoID, Trail: []SnapshotRepositoryStatusLog{{Status: "frozen", Actor: testAdmin, ReasonHash: "decision", Timestamp: 13, ReportID: 7}}}}},
+		Moderation:      SnapshotModeration{FinalStatuses: []SnapshotFinalStatus{{RepoID: testRepoID, Status: "frozen"}}, Reports: []SnapshotReport{{ID: 7, RepoID: testRepoID, Reporter: testReporter, Status: "resolved", Resolution: "frozen", ReasonHash: "report", CreatedAt: 11, UpdatedAt: 13, Trail: []SnapshotReportTrail{{Action: "submitted", Actor: testReporter, Status: "active", ReasonHash: "report", Timestamp: 11}, {Action: "resolved", Actor: testAdmin, Status: "frozen", ReasonHash: "decision", Timestamp: 13}}}}, StatusTrails: []SnapshotStatusTrail{{RepoID: testRepoID, Trail: []SnapshotRepositoryStatusLog{{Status: "frozen", Actor: testAdmin, ReasonHash: "decision", Timestamp: 13, ReportID: 7}}}}},
 		Economic:        SnapshotEconomic{Splits: []SnapshotRevenueSplits{{RepoID: testRepoID, Splits: []SnapshotSplit{{Recipient: testRecipient, BPS: 1250}}}}, Totals: []SnapshotSponsorTotal{{RepoID: testRepoID, Denom: "inj", Amount: "100"}, {RepoID: testRepoID, Denom: "factory/old", Amount: "200"}}},
 		Username:        SnapshotUsername{OriginalOwners: []SnapshotOriginalUsername{{Name: "alice", Owner: testOwner}}, ReservedNames: []string{"admin"}, EscrowRelease: UsernameEscrowRelease{AllReleased: true, Contract: "inj1contract", Height: 101, BlockHash: strings.Repeat("6", 64), Denom: "inj", EscrowBalance: "0", EvidenceSHA256: strings.Repeat("7", 64)}},
 		Badges:          []SnapshotBadge{{ID: 9, RepoID: testRepoID, Recipient: testRecipient, AwardedBy: testOwner, Reason: "maintainer", AwardedAt: 14}},

@@ -11,6 +11,7 @@ import { nativeBalance, readModule, verifySuite, writeModule, type Eip1193 } fro
 import type { AppConfig } from "./profile";
 
 const PAGE_SIZE = 64n;
+const MAX_REVENUE_SPLIT_RECIPIENTS = 20;
 
 export interface SplitEntry {
   address: string;
@@ -181,7 +182,9 @@ export async function sponsorWithEconomicModule(
 export async function setRevenueSplitsWithEconomicModule(
   provider: Eip1193, cfg: AppConfig, repoId: Hex, splits: SplitEntry[],
 ): Promise<Hex> {
-  if (splits.length > 16) throw new Error("revenue splits support at most 16 recipients");
+  if (splits.length > MAX_REVENUE_SPLIT_RECIPIENTS) {
+    throw new Error(`revenue splits support at most ${MAX_REVENUE_SPLIT_RECIPIENTS} recipients`);
+  }
   const recipients = splits.map((split) => toEvmAddress(split.address));
   if (new Set(recipients.map((address) => address.toLowerCase())).size !== recipients.length) {
     throw new Error("revenue split recipients must be unique");

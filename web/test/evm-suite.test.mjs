@@ -29,10 +29,12 @@ import {
   verifySuite,
 } from "../src/lib/transport.ts";
 import {
+  cancelOwnershipTransferWithEvm,
+  rejectOwnershipTransferWithEvm,
   resolveRepo,
   updateRepoInfoWithEvm,
 } from "../src/lib/registry.ts";
-import { sponsorWithEconomicModule } from "../src/lib/modules.ts";
+import { setRevenueSplitsWithEconomicModule, sponsorWithEconomicModule } from "../src/lib/modules.ts";
 import {
   clearDiscoveredWalletProviders,
   getEvmProvider,
@@ -385,6 +387,30 @@ test("wallet writes estimate gas and broadcast an explicit legacy transaction at
   assert.deepEqual(decoded.args, [REPO_ID, "thanks"]);
 });
 
+test("revenue split writes accept the V1 twenty-recipient limit and reject twenty-one", async () => {
+  const fixture = suiteFixture();
+  const wallet = walletFixture();
+  const splits = Array.from({ length: 20 }, (_, index) => ({
+    address: `0x${(index + 0x9000).toString(16).padStart(40, "0")}`,
+    bps: 1,
+  }));
+  await withFetch(fixture.fetch, async () => {
+    await setRevenueSplitsWithEconomicModule(wallet, configured(), REPO_ID, splits);
+    await assert.rejects(
+      setRevenueSplitsWithEconomicModule(wallet, configured(), REPO_ID, [...splits, {
+        address: `0x${"a000".padStart(40, "0")}`,
+        bps: 1,
+      }]),
+      /at most 20 recipients/,
+    );
+  });
+  const sent = wallet.requests.find((request) => request.method === "eth_sendTransaction").params[0];
+  const decoded = decodeFunctionData({ abi: MODULE_ABIS.economic, data: sent.data });
+  assert.equal(decoded.functionName, "setRevenueSplits");
+  assert.equal(decoded.args[1].length, 20);
+  assert.equal(decoded.args[2].length, 20);
+});
+
 test("metadata writes encode V3 repoId patch flags instead of a locator", async () => {
   const fixture = suiteFixture();
   const wallet = walletFixture();
@@ -396,6 +422,24 @@ test("metadata writes encode V3 repoId patch flags instead of a locator", async 
   const decoded = decodeFunctionData({ abi: MODULE_ABIS.core, data: sent.data });
   assert.equal(decoded.functionName, "updateMetadata");
   assert.deepEqual(decoded.args, [REPO_ID, true, "changed", false, ""]);
+});
+
+test("ownership-transfer rejection uses RepositoryCore cancellation", async () => {
+  const fixture = suiteFixture();
+  const wallet = walletFixture();
+  await withFetch(fixture.fetch, async () => {
+    await cancelOwnershipTransferWithEvm(wallet, configured(), REPO_ID);
+    await rejectOwnershipTransferWithEvm(wallet, configured(), REPO_ID);
+  });
+  const sent = wallet.requests
+    .filter((request) => request.method === "eth_sendTransaction")
+    .map((request) => request.params[0]);
+  assert.equal(sent.length, 2);
+  assert.equal(sent[0].to, MODULE_ADDRESSES.core);
+  assert.equal(sent[0].data, sent[1].data);
+  const decoded = decodeFunctionData({ abi: MODULE_ABIS.core, data: sent[1].data });
+  assert.equal(decoded.functionName, "cancelOwnershipTransfer");
+  assert.deepEqual(decoded.args, [REPO_ID]);
 });
 
 test("a mined status zero receipt is a failure and never falls back", async () => {

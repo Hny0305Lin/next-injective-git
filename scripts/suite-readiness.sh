@@ -123,6 +123,7 @@ command -v npm >/dev/null 2>&1 || { echo "FAIL: npm is required" >&2; exit 1; }
 
 (cd "$ROOT/cli" && go vet ./... && go test ./...)
 (cd "$ROOT/web" && npm run test:api && npm run typecheck && npm run build)
+node "$ROOT/scripts/identity-readiness.mjs"
 bash "$ROOT/scripts/evm-v2-check.sh" --required
 
 echo "PASS: immutable Suite required test gate"

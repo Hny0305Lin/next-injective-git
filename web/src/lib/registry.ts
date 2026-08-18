@@ -293,7 +293,9 @@ export function cancelOwnershipTransferWithEvm(provider: Eip1193, cfg: AppConfig
 }
 
 export function rejectOwnershipTransferWithEvm(provider: Eip1193, cfg: AppConfig, repoId: Hex): Promise<Hex> {
-  return transfer(provider, cfg, "rejectOwnershipTransfer", repoId);
+  // The target's rejection is the same on-chain cancellation operation as an
+  // owner cancellation. RepositoryCore authorizes both parties.
+  return transfer(provider, cfg, "cancelOwnershipTransfer", repoId);
 }
 
 export function expireOwnershipTransferWithEvm(provider: Eip1193, cfg: AppConfig, repoId: Hex): Promise<Hex> {

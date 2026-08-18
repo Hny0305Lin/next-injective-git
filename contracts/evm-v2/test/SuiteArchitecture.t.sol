@@ -553,3 +553,693 @@ contract SuiteArchitectureSecurityTest is SuiteArchitectureTestBase {
     }
 
 }
+
+contract SuiteProtocolParityTest is SuiteArchitectureTestBase {
+    address internal constant CAROL = address(0xCA501);
+    address internal constant DAVE = address(0xDA7E);
+
+    function testOwnershipTransferAndRecoveryAreMutuallyExclusive() public {
+        _activateEmptySuite();
+        vm.prank(ALICE);
+        bytes32 repoId = core.createRepository("mutex", "", "main");
+
+        address[] memory guardians = new address[](1);
+        guardians[0] = BOB;
+        vm.prank(ALICE);
+        recovery.setGuardians(repoId, guardians, 1);
+
+        vm.prank(ALICE);
+        core.beginOwnershipTransfer(repoId, CAROL);
+        RepositoryCore.PendingOwnershipTransfer memory transfer = core.pendingOwnershipTransfer(repoId);
+        require(transfer.newOwner == CAROL, "transfer pending");
+        vm.expectRevert(abi.encodeWithSelector(RecoveryModule.OwnershipTransferPending.selector, repoId));
+        vm.prank(BOB);
+        recovery.proposeRecovery(repoId, DAVE);
+
+        vm.prank(ALICE);
+        core.cancelOwnershipTransfer(repoId);
+        vm.prank(BOB);
+        recovery.proposeRecovery(repoId, DAVE);
+        require(recovery.hasPendingRecovery(repoId), "recovery pending");
+        vm.expectRevert(abi.encodeWithSelector(RepositoryCore.RecoveryPending.selector, repoId));
+        vm.prank(ALICE);
+        core.beginOwnershipTransfer(repoId, CAROL);
+    }
+
+    function testOwnershipTransferPreservesTimestampAndClearsRecoveryState() public {
+        _activateEmptySuite();
+        vm.prank(ALICE);
+        bytes32 repoId = core.createRepository("ownership-state", "", "main");
+        RepositoryCore.Repository memory beforeTransfer = core.getRepository(repoId);
+
+        address[] memory guardians = new address[](1);
+        guardians[0] = BOB;
+        vm.prank(ALICE);
+        recovery.setGuardians(repoId, guardians, 1);
+
+        vm.prank(ALICE);
+        core.beginOwnershipTransfer(repoId, CAROL);
+        RepositoryCore.PendingOwnershipTransfer memory pending = core.pendingOwnershipTransfer(repoId);
+        vm.warp(pending.executeAfter);
+        vm.prank(CAROL);
+        core.acceptOwnershipTransfer(repoId);
+
+        RepositoryCore.Repository memory afterTransfer = core.getRepository(repoId);
+        require(afterTransfer.owner == CAROL, "owner moved");
+        require(afterTransfer.updatedAt == beforeTransfer.updatedAt, "ownership move preserves timestamp");
+        RecoveryModule.GuardianConfig memory config = recovery.guardianConfig(repoId);
+        require(config.threshold == 0 && config.guardians.length == 0, "recovery state cleared");
+        vm.expectRevert(abi.encodeWithSelector(RecoveryModule.InvalidGuardianThreshold.selector, 0, 0));
+        vm.prank(BOB);
+        recovery.proposeRecovery(repoId, DAVE);
+    }
+
+    function testModerationActionsAdvanceRepositoryTimestamp() public {
+        _activateEmptySuite();
+        vm.prank(ALICE);
+        bytes32 repoId = core.createRepository("moderation-timestamp", "", "main");
+        uint64 before = core.getRepository(repoId).updatedAt;
+
+        vm.warp(uint256(before) + 1);
+        moderation.setRepositoryStatus(repoId, ModerationModule.RepoStatus.Frozen, "sha256:frozen");
+        uint64 afterStatus = core.getRepository(repoId).updatedAt;
+        require(afterStatus == block.timestamp && afterStatus > before, "status updates repository timestamp");
+
+        vm.prank(BOB);
+        uint256 reportId = moderation.submitReport(repoId, "sha256:report");
+        vm.warp(uint256(afterStatus) + 1);
+        moderation.resolveReport(reportId, ModerationModule.RepoStatus.Frozen, "sha256:decision");
+        uint64 afterResolution = core.getRepository(repoId).updatedAt;
+        require(afterResolution == block.timestamp && afterResolution > afterStatus, "resolution timestamp");
+
+        vm.warp(uint256(afterResolution) + 1);
+        vm.prank(ALICE);
+        moderation.appealReport(reportId, "sha256:appeal");
+        uint64 afterAppeal = core.getRepository(repoId).updatedAt;
+        require(afterAppeal == block.timestamp && afterAppeal > afterResolution, "appeal timestamp");
+
+        vm.warp(uint256(afterAppeal) + 1);
+        moderation.resolveAppeal(reportId, ModerationModule.RepoStatus.Active, "sha256:appeal-decision");
+        uint64 afterAppealResolution = core.getRepository(repoId).updatedAt;
+        require(
+            afterAppealResolution == block.timestamp && afterAppealResolution > afterAppeal,
+            "appeal resolution timestamp"
+        );
+    }
+
+    function testBadgeAndForkRequireActiveWhileDelistedRefsAndSponsorshipRemainAvailable() public {
+        _activateEmptySuite();
+        vm.prank(ALICE);
+        bytes32 repoId = core.createRepository("policy", "", "main");
+
+        vm.expectRevert(abi.encodeWithSelector(BadgeModule.OwnerCannotReceiveBadge.selector, ALICE));
+        vm.prank(ALICE);
+        badges.awardBadge(repoId, ALICE, "self award");
+
+        moderation.setRepositoryStatus(repoId, ModerationModule.RepoStatus.Frozen, "sha256:frozen");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ModerationModule.RepositoryNotActive.selector,
+                repoId,
+                ModerationModule.RepoStatus.Frozen
+            )
+        );
+        vm.prank(ALICE);
+        badges.awardBadge(repoId, BOB, "blocked while frozen");
+
+        moderation.setRepositoryStatus(repoId, ModerationModule.RepoStatus.Delisted, "sha256:delisted");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ModerationModule.RepositoryNotActive.selector,
+                repoId,
+                ModerationModule.RepoStatus.Delisted
+            )
+        );
+        vm.prank(BOB);
+        core.forkRepository(repoId, "blocked-fork");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ModerationModule.RepositoryNotActive.selector,
+                repoId,
+                ModerationModule.RepoStatus.Delisted
+            )
+        );
+        vm.prank(ALICE);
+        badges.awardBadge(repoId, BOB, "blocked while delisted");
+
+        string[] memory uris = _singleUri();
+        vm.prank(ALICE);
+        core.updateRef(
+            repoId,
+            "refs/heads/main",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            uris,
+            "",
+            false
+        );
+        vm.deal(BOB, 100);
+        vm.prank(BOB);
+        economic.sponsor{value: 100}(repoId, "delisted but payable");
+        require(economic.sponsorTotal(repoId, "inj") == 100, "delisted sponsor total");
+    }
+
+    function testRepositoryAndRefValidationMatchesV1ArchiveRules() public {
+        _activateEmptySuite();
+        vm.prank(ALICE);
+        bytes32 repoId = core.createRepository("Repo.Release-1", "", "main");
+        string memory uppercaseSha = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+        vm.prank(ALICE);
+        core.updateRef(repoId, "refs/heads/Feature@1", uppercaseSha, _singleUri(), "", false);
+        RepositoryCore.GitRef memory gitRef = core.getRef(repoId, "refs/heads/Feature@1");
+        require(keccak256(bytes(gitRef.commitSha)) == keccak256(bytes(uppercaseSha)), "uppercase SHA retained");
+
+        vm.expectRevert(
+            abi.encodeWithSelector(RepositoryCore.InvalidRefName.selector, "refs/heads/../main")
+        );
+        vm.prank(ALICE);
+        core.updateRef(repoId, "refs/heads/../main", uppercaseSha, _singleUri(), "", false);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(RepositoryCore.InvalidRefName.selector, "refs/heads/main~1")
+        );
+        vm.prank(ALICE);
+        core.updateRef(repoId, "refs/heads/main~1", uppercaseSha, _singleUri(), "", false);
+    }
+
+    function testUsernameRejectsAddressLikeNamesAndReservedOriginalClaims() public {
+        _activateEmptySuite();
+        vm.expectRevert(abi.encodeWithSelector(UsernameModule.InvalidUsername.selector, "inj1alice"));
+        vm.prank(ALICE);
+        usernames.registerUsername("inj1alice");
+    }
+
+    function testReservedUsernameCountMatchesV1Limit() public {
+        _activateEmptySuite();
+        for (uint256 i; i < usernames.MAX_RESERVED_USERNAMES(); ++i) {
+            usernames.setReserved(_reservedTestName(i), true);
+        }
+        require(usernames.reservedUsernameCount() == 128, "128 reservations accepted");
+
+        vm.expectRevert(
+            abi.encodeWithSelector(UsernameModule.TooManyReservedUsernames.selector, 129, 128)
+        );
+        usernames.setReserved(_reservedTestName(128), true);
+    }
+
+    function testOriginalUsernameClaimCannotBypassReservation() public {
+        _finalizeEmpty(SuiteIds.CORE);
+        _finalizeEmpty(SuiteIds.RECOVERY);
+        _finalizeEmpty(SuiteIds.MODERATION);
+        _finalizeEmpty(SuiteIds.ECONOMIC);
+
+        UsernameModule.ImportOriginalOwner[] memory owners = new UsernameModule.ImportOriginalOwner[](1);
+        owners[0] = UsernameModule.ImportOriginalOwner("alice", ALICE);
+        bytes memory ownerPayload = abi.encode(uint8(0), abi.encode(owners));
+        string[] memory reserved = new string[](1);
+        reserved[0] = "alice";
+        bytes memory reservedPayload = abi.encode(uint8(1), abi.encode(reserved));
+        bytes32 rolling = _rootAfterBatch(
+            SuiteIds.USERNAME, _emptyRoot(SuiteIds.USERNAME), 0, 1, ownerPayload
+        );
+        rolling = _rootAfterBatch(SuiteIds.USERNAME, rolling, 1, 1, reservedPayload);
+        coordinator.beginNextModule(SuiteIds.USERNAME, 2, 2, rolling);
+        coordinator.importBatch(SuiteIds.USERNAME, 0, 1, keccak256(ownerPayload), ownerPayload);
+        coordinator.importBatch(SuiteIds.USERNAME, 1, 1, keccak256(reservedPayload), reservedPayload);
+        coordinator.attestUsernameEscrowReleased(bytes32(uint256(0xE5C0)));
+        coordinator.finalizeCurrentModule(SuiteIds.USERNAME);
+        _finalizeEmpty(SuiteIds.BADGE);
+        _finalizeEmpty(SuiteIds.RELEASE);
+        coordinator.activateSuite();
+
+        vm.expectRevert(abi.encodeWithSelector(UsernameModule.UsernameReserved.selector, "alice"));
+        vm.prank(ALICE);
+        usernames.claimOriginalUsername("alice");
+    }
+
+    function testRevenueSplitRejectsOwnerAndClearsOnOwnershipTransfer() public {
+        _activateEmptySuite();
+        vm.prank(ALICE);
+        bytes32 repoId = core.createRepository("split-owner", "", "main");
+        address payable[] memory recipients = new address payable[](1);
+        recipients[0] = payable(ALICE);
+        uint16[] memory bps = new uint16[](1);
+        bps[0] = 1_000;
+
+        vm.expectRevert(
+            abi.encodeWithSelector(EconomicModule.OwnerCannotReceiveRevenueSplit.selector, ALICE)
+        );
+        vm.prank(ALICE);
+        economic.setRevenueSplits(repoId, recipients, bps);
+
+        recipients[0] = payable(CAROL);
+        vm.prank(ALICE);
+        economic.setRevenueSplits(repoId, recipients, bps);
+        vm.prank(ALICE);
+        core.beginOwnershipTransfer(repoId, BOB);
+        RepositoryCore.PendingOwnershipTransfer memory pending = core.pendingOwnershipTransfer(repoId);
+        vm.warp(pending.executeAfter);
+        vm.prank(BOB);
+        core.acceptOwnershipTransfer(repoId);
+        require(economic.revenueSplits(repoId).length == 0, "splits cleared on owner change");
+    }
+
+    function testRevenueSplitMatchesV1TwentyRecipientLimit() public {
+        _activateEmptySuite();
+        vm.prank(ALICE);
+        bytes32 repoId = core.createRepository("split-limit", "", "main");
+
+        address payable[] memory recipients = new address payable[](20);
+        uint16[] memory bps = new uint16[](20);
+        for (uint256 i; i < recipients.length; ++i) {
+            recipients[i] = payable(address(uint160(0x9000 + i)));
+            bps[i] = 1;
+        }
+        vm.prank(ALICE);
+        economic.setRevenueSplits(repoId, recipients, bps);
+        require(economic.revenueSplits(repoId).length == 20, "twenty recipients accepted");
+
+        recipients = new address payable[](21);
+        bps = new uint16[](21);
+        for (uint256 i; i < recipients.length; ++i) {
+            recipients[i] = payable(address(uint160(0xA000 + i)));
+            bps[i] = 1;
+        }
+        vm.expectRevert(
+            abi.encodeWithSelector(EconomicModule.TooManySplitRecipients.selector, 21, 20)
+        );
+        vm.prank(ALICE);
+        economic.setRevenueSplits(repoId, recipients, bps);
+    }
+
+    function testModerationPreservesSubmissionResolutionAndAppealCommitments() public {
+        _activateEmptySuite();
+        vm.prank(ALICE);
+        bytes32 repoId = core.createRepository("report-fields", "", "main");
+        vm.prank(BOB);
+        uint256 reportId = moderation.submitReport(repoId, "sha256:submission");
+        moderation.resolveReport(reportId, ModerationModule.RepoStatus.Frozen, "sha256:decision");
+        vm.prank(ALICE);
+        moderation.appealReport(reportId, "sha256:appeal");
+        moderation.resolveAppeal(reportId, ModerationModule.RepoStatus.Active, "sha256:appeal-decision");
+
+        ModerationModule.Report memory report = moderation.getReport(reportId);
+        require(_same(report.reasonHash, "sha256:submission"), "submission reason preserved");
+        (string memory submission, string memory resolution, string memory appeal) =
+            moderation.reportCommitments(reportId);
+        require(_same(submission, "sha256:submission"), "submission commitment");
+        require(_same(resolution, "sha256:appeal-decision"), "latest resolution commitment");
+        require(_same(appeal, "sha256:appeal"), "appeal commitment");
+    }
+
+    function _singleUri() private pure returns (string[] memory uris) {
+        uris = new string[](1);
+        uris[0] = "ipfs://bafy-parity";
+    }
+
+    function _same(string memory left, string memory right) private pure returns (bool) {
+        return keccak256(bytes(left)) == keccak256(bytes(right));
+    }
+
+    function _reservedTestName(uint256 index) private pure returns (string memory) {
+        bytes memory raw = new bytes(5);
+        raw[0] = "r";
+        raw[1] = bytes1(uint8(97 + (index / 676) % 26));
+        raw[2] = bytes1(uint8(97 + (index / 26) % 26));
+        raw[3] = bytes1(uint8(97 + index % 26));
+        raw[4] = "x";
+        return string(raw);
+    }
+}
+
+contract SuiteImportValidationTest is SuiteArchitectureTestBase {
+    function testEconomicImportAllowsOneEmptySplitRecord() public {
+        bytes32 repoId = bytes32(uint256(0xEC00));
+        _importCoreRepository(repoId, ALICE);
+        _finalizeEmpty(SuiteIds.RECOVERY);
+        _finalizeEmpty(SuiteIds.MODERATION);
+
+        EconomicModule.Split[] memory splits = new EconomicModule.Split[](0);
+        EconomicModule.ImportSplits[] memory records = new EconomicModule.ImportSplits[](1);
+        records[0] = EconomicModule.ImportSplits(repoId, splits);
+        bytes memory payload = abi.encode(uint8(0), abi.encode(records));
+        bytes32 root = _rootAfterBatch(SuiteIds.ECONOMIC, _emptyRoot(SuiteIds.ECONOMIC), 0, 1, payload);
+        root = _rootAfterBatch(SuiteIds.ECONOMIC, root, 1, 1, payload);
+        coordinator.beginNextModule(SuiteIds.ECONOMIC, 2, 2, root);
+        coordinator.importBatch(SuiteIds.ECONOMIC, 0, 1, keccak256(payload), payload);
+        require(economic.revenueSplits(repoId).length == 0, "empty split record clears splits");
+        vm.expectRevert(EconomicModule.InvalidImportRecord.selector);
+        coordinator.importBatch(SuiteIds.ECONOMIC, 1, 1, keccak256(payload), payload);
+    }
+
+    function testModerationImportRejectsStatusTrailBeforeFinalStatus() public {
+        bytes32 repoId = bytes32(uint256(0xB0A));
+        _importCoreRepository(repoId, ALICE);
+        _finalizeEmpty(SuiteIds.RECOVERY);
+
+        ModerationModule.StatusTrailEntry[] memory entries = new ModerationModule.StatusTrailEntry[](1);
+        entries[0] = ModerationModule.StatusTrailEntry(
+            ModerationModule.RepoStatus.Active, address(this), "", 2, 0
+        );
+        ModerationModule.ImportStatusTrail[] memory trails = new ModerationModule.ImportStatusTrail[](1);
+        trails[0] = ModerationModule.ImportStatusTrail(repoId, entries);
+        bytes memory payload = abi.encode(uint8(2), abi.encode(trails));
+        bytes32 root = _rootAfterBatch(SuiteIds.MODERATION, _emptyRoot(SuiteIds.MODERATION), 0, 1, payload);
+        coordinator.beginNextModule(SuiteIds.MODERATION, 1, 1, root);
+        vm.expectRevert(ModerationModule.InvalidImportRecord.selector);
+        coordinator.importBatch(SuiteIds.MODERATION, 0, 1, keccak256(payload), payload);
+    }
+
+    function testCoreImportRejectsUnknownForkParent() public {
+        RepositoryCore.ImportRepository[] memory repositories = new RepositoryCore.ImportRepository[](1);
+        repositories[0] = RepositoryCore.ImportRepository(
+            bytes32(uint256(0xF001)),
+            ALICE,
+            "Child",
+            "historical",
+            "main",
+            bytes32(uint256(0xF000)),
+            1,
+            2
+        );
+        bytes memory payload = abi.encode(uint8(0), abi.encode(repositories));
+        bytes32 root = _rootAfterBatch(SuiteIds.CORE, _emptyRoot(SuiteIds.CORE), 0, 1, payload);
+        coordinator.beginNextModule(SuiteIds.CORE, 1, 1, root);
+        vm.expectRevert(RepositoryCore.InvalidImportRecord.selector);
+        coordinator.importBatch(SuiteIds.CORE, 0, 1, keccak256(payload), payload);
+    }
+
+    function testCoreImportRejectsRefWithoutProvenance() public {
+        bytes32 repoId = bytes32(uint256(0xC0FE));
+        RepositoryCore.ImportRepository[] memory repositories = new RepositoryCore.ImportRepository[](1);
+        repositories[0] = RepositoryCore.ImportRepository(
+            repoId, ALICE, "Imported.Repo", "historical", "main", bytes32(0), 1, 2
+        );
+        bytes memory repositoryPayload = abi.encode(uint8(0), abi.encode(repositories));
+        RepositoryCore.ImportRef[] memory refs = new RepositoryCore.ImportRef[](1);
+        string[] memory uris = new string[](1);
+        uris[0] = "ipfs://bafy-import";
+        refs[0] = RepositoryCore.ImportRef(
+            repoId,
+            "refs/heads/main",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            uris,
+            0,
+            address(0)
+        );
+        bytes memory refPayload = abi.encode(uint8(2), abi.encode(refs));
+        bytes32 rolling = _rootAfterBatch(
+            SuiteIds.CORE, _emptyRoot(SuiteIds.CORE), 0, 1, repositoryPayload
+        );
+        rolling = _rootAfterBatch(SuiteIds.CORE, rolling, 1, 1, refPayload);
+        coordinator.beginNextModule(SuiteIds.CORE, 2, 2, rolling);
+        coordinator.importBatch(SuiteIds.CORE, 0, 1, keccak256(repositoryPayload), repositoryPayload);
+        vm.expectRevert(RepositoryCore.InvalidImportRecord.selector);
+        coordinator.importBatch(SuiteIds.CORE, 1, 1, keccak256(refPayload), refPayload);
+    }
+
+    function testEconomicImportRejectsOwnerRecipient() public {
+        bytes32 repoId = bytes32(uint256(0xEC01));
+        _importCoreRepository(repoId, ALICE);
+        _finalizeEmpty(SuiteIds.RECOVERY);
+        _finalizeEmpty(SuiteIds.MODERATION);
+
+        EconomicModule.Split[] memory splits = new EconomicModule.Split[](1);
+        splits[0] = EconomicModule.Split(payable(ALICE), 1_000);
+        EconomicModule.ImportSplits[] memory records = new EconomicModule.ImportSplits[](1);
+        records[0] = EconomicModule.ImportSplits(repoId, splits);
+        bytes memory payload = abi.encode(uint8(0), abi.encode(records));
+        bytes32 root = _rootAfterBatch(
+            SuiteIds.ECONOMIC, _emptyRoot(SuiteIds.ECONOMIC), 0, 1, payload
+        );
+        coordinator.beginNextModule(SuiteIds.ECONOMIC, 1, 1, root);
+        vm.expectRevert(EconomicModule.InvalidImportRecord.selector);
+        coordinator.importBatch(SuiteIds.ECONOMIC, 0, 1, keccak256(payload), payload);
+    }
+
+    function testBadgeImportRejectsHistoricalSelfAward() public {
+        bytes32 repoId = bytes32(uint256(0xBAD6E));
+        _importCoreRepository(repoId, ALICE);
+        _finalizeEmpty(SuiteIds.RECOVERY);
+        _finalizeEmpty(SuiteIds.MODERATION);
+        _finalizeEmpty(SuiteIds.ECONOMIC);
+        coordinator.attestUsernameEscrowReleased(bytes32(uint256(0xE5C0)));
+        _finalizeEmpty(SuiteIds.USERNAME);
+
+        BadgeModule.Badge[] memory records = new BadgeModule.Badge[](1);
+        records[0] = BadgeModule.Badge(1, repoId, ALICE, ALICE, "self award", 2, true);
+        bytes memory payload = abi.encode(records);
+        bytes32 root = _rootAfterBatch(SuiteIds.BADGE, _emptyRoot(SuiteIds.BADGE), 0, 1, payload);
+        coordinator.beginNextModule(SuiteIds.BADGE, 1, 1, root);
+        vm.expectRevert(BadgeModule.InvalidImportRecord.selector);
+        coordinator.importBatch(SuiteIds.BADGE, 0, 1, keccak256(payload), payload);
+    }
+
+    function testModerationImportRestoresOriginalReasonFromTrail() public {
+        bytes32 repoId = bytes32(uint256(0xA11D17));
+        _importCoreRepository(repoId, ALICE);
+        _finalizeEmpty(SuiteIds.RECOVERY);
+
+        ModerationModule.TrailEntry[] memory trail = new ModerationModule.TrailEntry[](2);
+        trail[0] = ModerationModule.TrailEntry(
+            ModerationModule.TrailAction.Submitted,
+            BOB,
+            ModerationModule.RepoStatus.Active,
+            "sha256:original",
+            1
+        );
+        trail[1] = ModerationModule.TrailEntry(
+            ModerationModule.TrailAction.Resolved,
+            address(this),
+            ModerationModule.RepoStatus.Frozen,
+            "sha256:decision",
+            2
+        );
+        ModerationModule.ImportReport[] memory records = new ModerationModule.ImportReport[](1);
+        records[0] = ModerationModule.ImportReport(
+            ModerationModule.Report(
+                7,
+                repoId,
+                BOB,
+                ModerationModule.ReportStatus.Resolved,
+                ModerationModule.RepoStatus.Frozen,
+                "sha256:original",
+                1,
+                2,
+                true
+            ),
+            trail
+        );
+        bytes memory payload = abi.encode(uint8(1), abi.encode(records));
+        bytes32 root = _rootAfterBatch(
+            SuiteIds.MODERATION, _emptyRoot(SuiteIds.MODERATION), 0, 1, payload
+        );
+        coordinator.beginNextModule(SuiteIds.MODERATION, 1, 1, root);
+        coordinator.importBatch(SuiteIds.MODERATION, 0, 1, keccak256(payload), payload);
+        coordinator.finalizeCurrentModule(SuiteIds.MODERATION);
+
+        ModerationModule.Report memory report = moderation.getReport(7);
+        require(keccak256(bytes(report.reasonHash)) == keccak256(bytes("sha256:original")), "original reason");
+        (, string memory resolution,) = moderation.reportCommitments(7);
+        require(keccak256(bytes(resolution)) == keccak256(bytes("sha256:decision")), "resolution reason");
+    }
+
+    function testModerationImportRejectsMismatchedSubmissionReason() public {
+        bytes32 repoId = bytes32(uint256(0xA11D19));
+        _importCoreRepository(repoId, ALICE);
+        _finalizeEmpty(SuiteIds.RECOVERY);
+
+        ModerationModule.TrailEntry[] memory trail = new ModerationModule.TrailEntry[](2);
+        trail[0] = ModerationModule.TrailEntry(
+            ModerationModule.TrailAction.Submitted,
+            BOB,
+            ModerationModule.RepoStatus.Active,
+            "sha256:original",
+            1
+        );
+        trail[1] = ModerationModule.TrailEntry(
+            ModerationModule.TrailAction.Resolved,
+            address(this),
+            ModerationModule.RepoStatus.Frozen,
+            "sha256:decision",
+            2
+        );
+        ModerationModule.ImportReport[] memory records = new ModerationModule.ImportReport[](1);
+        records[0] = ModerationModule.ImportReport(
+            ModerationModule.Report(
+                9,
+                repoId,
+                BOB,
+                ModerationModule.ReportStatus.Resolved,
+                ModerationModule.RepoStatus.Frozen,
+                "sha256:decision",
+                1,
+                2,
+                true
+            ),
+            trail
+        );
+        bytes memory payload = abi.encode(uint8(1), abi.encode(records));
+        bytes32 root = _rootAfterBatch(
+            SuiteIds.MODERATION, _emptyRoot(SuiteIds.MODERATION), 0, 1, payload
+        );
+        coordinator.beginNextModule(SuiteIds.MODERATION, 1, 1, root);
+        vm.expectRevert(ModerationModule.InvalidImportRecord.selector);
+        coordinator.importBatch(SuiteIds.MODERATION, 0, 1, keccak256(payload), payload);
+    }
+
+    function testModerationImportRejectsInvalidReportStateTrail() public {
+        bytes32 repoId = bytes32(uint256(0xA11D1A));
+        _importCoreRepository(repoId, ALICE);
+        _finalizeEmpty(SuiteIds.RECOVERY);
+
+        ModerationModule.TrailEntry[] memory trail = new ModerationModule.TrailEntry[](3);
+        trail[0] = ModerationModule.TrailEntry(
+            ModerationModule.TrailAction.Submitted,
+            BOB,
+            ModerationModule.RepoStatus.Active,
+            "sha256:original",
+            1
+        );
+        trail[1] = ModerationModule.TrailEntry(
+            ModerationModule.TrailAction.Resolved,
+            address(this),
+            ModerationModule.RepoStatus.Frozen,
+            "sha256:decision",
+            2
+        );
+        trail[2] = ModerationModule.TrailEntry(
+            ModerationModule.TrailAction.Appealed,
+            ALICE,
+            ModerationModule.RepoStatus.Active,
+            "sha256:appeal",
+            3
+        );
+        ModerationModule.ImportReport[] memory records = new ModerationModule.ImportReport[](1);
+        records[0] = ModerationModule.ImportReport(
+            ModerationModule.Report(
+                10,
+                repoId,
+                BOB,
+                ModerationModule.ReportStatus.Resolved,
+                ModerationModule.RepoStatus.Frozen,
+                "sha256:original",
+                1,
+                3,
+                true
+            ),
+            trail
+        );
+        bytes memory payload = abi.encode(uint8(1), abi.encode(records));
+        bytes32 root = _rootAfterBatch(
+            SuiteIds.MODERATION, _emptyRoot(SuiteIds.MODERATION), 0, 1, payload
+        );
+        coordinator.beginNextModule(SuiteIds.MODERATION, 1, 1, root);
+        vm.expectRevert(ModerationModule.InvalidImportRecord.selector);
+        coordinator.importBatch(SuiteIds.MODERATION, 0, 1, keccak256(payload), payload);
+    }
+
+    function testModerationImportRestoresAppealResolutionStateMachine() public {
+        bytes32 repoId = bytes32(uint256(0xA11D1B));
+        _importCoreRepository(repoId, ALICE);
+        _finalizeEmpty(SuiteIds.RECOVERY);
+
+        ModerationModule.TrailEntry[] memory trail = new ModerationModule.TrailEntry[](4);
+        trail[0] = ModerationModule.TrailEntry(
+            ModerationModule.TrailAction.Submitted,
+            BOB,
+            ModerationModule.RepoStatus.Active,
+            "sha256:original",
+            1
+        );
+        trail[1] = ModerationModule.TrailEntry(
+            ModerationModule.TrailAction.Resolved,
+            address(this),
+            ModerationModule.RepoStatus.Frozen,
+            "sha256:decision",
+            2
+        );
+        trail[2] = ModerationModule.TrailEntry(
+            ModerationModule.TrailAction.Appealed,
+            ALICE,
+            ModerationModule.RepoStatus.Frozen,
+            "sha256:appeal",
+            3
+        );
+        trail[3] = ModerationModule.TrailEntry(
+            ModerationModule.TrailAction.AppealResolved,
+            address(this),
+            ModerationModule.RepoStatus.Delisted,
+            "sha256:appeal-decision",
+            4
+        );
+        ModerationModule.ImportReport[] memory records = new ModerationModule.ImportReport[](1);
+        records[0] = ModerationModule.ImportReport(
+            ModerationModule.Report(
+                11,
+                repoId,
+                BOB,
+                ModerationModule.ReportStatus.AppealResolved,
+                ModerationModule.RepoStatus.Delisted,
+                "sha256:original",
+                1,
+                4,
+                true
+            ),
+            trail
+        );
+        bytes memory payload = abi.encode(uint8(1), abi.encode(records));
+        bytes32 root = _rootAfterBatch(
+            SuiteIds.MODERATION, _emptyRoot(SuiteIds.MODERATION), 0, 1, payload
+        );
+        coordinator.beginNextModule(SuiteIds.MODERATION, 1, 1, root);
+        coordinator.importBatch(SuiteIds.MODERATION, 0, 1, keccak256(payload), payload);
+        coordinator.finalizeCurrentModule(SuiteIds.MODERATION);
+
+        ModerationModule.Report memory report = moderation.getReport(11);
+        require(report.status == ModerationModule.ReportStatus.AppealResolved, "appeal state");
+        require(report.resolution == ModerationModule.RepoStatus.Delisted, "appeal resolution");
+        (string memory submission, string memory resolution, string memory appeal) =
+            moderation.reportCommitments(11);
+        require(keccak256(bytes(submission)) == keccak256(bytes("sha256:original")), "imported submission");
+        require(keccak256(bytes(resolution)) == keccak256(bytes("sha256:appeal-decision")), "imported resolution");
+        require(keccak256(bytes(appeal)) == keccak256(bytes("sha256:appeal")), "imported appeal");
+    }
+
+    function testModerationImportRejectsMalformedFirstTrailEntry() public {
+        bytes32 repoId = bytes32(uint256(0xA11D18));
+        _importCoreRepository(repoId, ALICE);
+        _finalizeEmpty(SuiteIds.RECOVERY);
+
+        ModerationModule.TrailEntry[] memory trail = new ModerationModule.TrailEntry[](1);
+        trail[0] = ModerationModule.TrailEntry(
+            ModerationModule.TrailAction.Resolved,
+            address(this),
+            ModerationModule.RepoStatus.Frozen,
+            "sha256:not-submitted",
+            1
+        );
+        ModerationModule.ImportReport[] memory records = new ModerationModule.ImportReport[](1);
+        records[0] = ModerationModule.ImportReport(
+            ModerationModule.Report(
+                8,
+                repoId,
+                BOB,
+                ModerationModule.ReportStatus.Resolved,
+                ModerationModule.RepoStatus.Frozen,
+                "sha256:not-submitted",
+                1,
+                1,
+                true
+            ),
+            trail
+        );
+        bytes memory payload = abi.encode(uint8(1), abi.encode(records));
+        bytes32 root = _rootAfterBatch(
+            SuiteIds.MODERATION, _emptyRoot(SuiteIds.MODERATION), 0, 1, payload
+        );
+        coordinator.beginNextModule(SuiteIds.MODERATION, 1, 1, root);
+        vm.expectRevert(ModerationModule.InvalidImportRecord.selector);
+        coordinator.importBatch(SuiteIds.MODERATION, 0, 1, keccak256(payload), payload);
+    }
+}

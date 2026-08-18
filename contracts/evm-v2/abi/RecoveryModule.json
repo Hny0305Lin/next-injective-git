@@ -230,6 +230,17 @@
   {
     "inputs": [
       {
+        "internalType": "bytes32",
+        "name": "repoId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "OwnershipTransferPending",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "address",
         "name": "guardian",
         "type": "address"
@@ -889,6 +900,25 @@
       }
     ],
     "name": "hasApproved",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "repoId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "hasPendingRecovery",
     "outputs": [
       {
         "internalType": "bool",

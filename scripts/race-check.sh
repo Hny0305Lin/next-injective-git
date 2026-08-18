@@ -12,7 +12,7 @@ usage() {
   cat <<'EOF'
 usage: race-check.sh [--required]
 
-Runs CGO_ENABLED=1 go test -race for cli/internal/migration and
+Runs CGO_ENABLED=1 go test -race for cli/internal/suitemigration and
 cli/internal/chain. Without --required, an unavailable Go/C toolchain is a
 clear SKIP; with --required it is a failure.
 EOF
@@ -62,6 +62,6 @@ fi
 echo "== Go race check =="
 echo "compiler=$compiler"
 pushd "$ROOT/cli" >/dev/null
-CGO_ENABLED=1 go test -race -mod=readonly -count=1 ./internal/migration ./internal/chain
+CGO_ENABLED=1 go test -race -mod=readonly -count=1 ./internal/suitemigration ./internal/chain
 popd >/dev/null
 echo "PASS: Go race checks for migration and chain control plane"

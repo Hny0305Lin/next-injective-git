@@ -285,6 +285,22 @@
         "internalType": "bytes32",
         "name": "repoId",
         "type": "bytes32"
+      },
+      {
+        "internalType": "enum ModerationModule.RepoStatus",
+        "name": "status",
+        "type": "uint8"
+      }
+    ],
+    "name": "RepositoryNotActive",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "repoId",
+        "type": "bytes32"
       }
     ],
     "name": "RepositoryNotFound",
@@ -1157,6 +1173,53 @@
   {
     "inputs": [
       {
+        "internalType": "uint256",
+        "name": "reportId",
+        "type": "uint256"
+      }
+    ],
+    "name": "reportCommitments",
+    "outputs": [
+      {
+        "internalType": "string",
+        "name": "reasonHash",
+        "type": "string"
+      },
+      {
+        "internalType": "string",
+        "name": "resolutionHash",
+        "type": "string"
+      },
+      {
+        "internalType": "string",
+        "name": "appealHash",
+        "type": "string"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "repoId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "name": "requireBadgeAward",
+    "outputs": [],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "bytes32",
         "name": "repoId",
         "type": "bytes32"
@@ -1168,6 +1231,24 @@
       }
     ],
     "name": "requireEconomicAction",
+    "outputs": [],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "repoId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "name": "requireFork",
     "outputs": [],
     "stateMutability": "view",
     "type": "function"

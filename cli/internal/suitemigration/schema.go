@@ -5,11 +5,13 @@ const (
 	PlanSchema     = "igit.evm-suite.bootstrap-plan.v1"
 	ManifestSchema = "igit.evm-suite.bootstrap-calldata-manifest.v1"
 
-	SuiteVersion        = uint64(3)
-	DefaultBatchSize    = 64
-	MaximumBatchItems   = 128
-	MaximumPayloadBytes = 96_000
-	RequiredModuleCount = 7
+	SuiteVersion              = uint64(3)
+	DefaultBatchSize          = 64
+	MaximumBatchItems         = 128
+	MaximumPayloadBytes       = 96_000
+	RequiredModuleCount       = 7
+	MaxRevenueSplitRecipients = 20
+	MaxReservedUsernames      = 128
 )
 
 type Snapshot struct {

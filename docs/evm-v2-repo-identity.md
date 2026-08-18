@@ -11,7 +11,9 @@ and fork lineage key state by `repoId`, not mutable display location.
 
 Ownership transfer is an explicit state machine with proposal, target action,
 cancellation, and expiry. Guardian recovery is separate and Core accepts its
-ownership capability only from the Directory-bound Recovery module. Pending
+ownership capability only from the Directory-bound Recovery module. A pending
+ownership transfer and a pending guardian recovery are mutually exclusive, so
+neither path can silently replace the other path's nominated owner. Pending
 transfers and recoveries are not included in migration snapshots.
 
 Fork creation records immutable source lineage and is bounded against abusive

@@ -53,7 +53,6 @@ export const coreAbi = parseAbi([
   "function updateMetadata(bytes32 repoId,bool updateDescription,string description,bool updateDefaultBranch,string defaultBranch)",
   "function beginOwnershipTransfer(bytes32 repoId,address newOwner)",
   "function cancelOwnershipTransfer(bytes32 repoId)",
-  "function rejectOwnershipTransfer(bytes32 repoId)",
   "function expireOwnershipTransfer(bytes32 repoId)",
   "function acceptOwnershipTransfer(bytes32 repoId)",
   "event RepositoryCreated(bytes32 indexed repoId,address indexed owner,string name,bytes32 indexed forkedFrom)",

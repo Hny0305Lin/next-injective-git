@@ -49,13 +49,15 @@ func TestNativeKuboLifecycleIntegration(t *testing.T) {
 	updated, result, prepareErr := PrepareKubo(ctx, cfg, Options{
 		Force: true, Progress: integrationProgressWriter{t: t},
 	})
-	if strings.TrimSpace(updated.IPFSBin) != "" && result.KuboPID > 0 {
+	if strings.TrimSpace(updated.IPFSBin) != "" && result.KuboStarted {
 		defer shutdownIntegrationKubo(t, updated.IPFSBin, cfg.IPFSAPI, result.KuboPID)
 	}
 	if prepareErr != nil {
 		t.Fatal(prepareErr)
 	}
-	if !result.KuboStarted || result.KuboPID <= 0 || len(result.Installed) != 1 {
+	// A user-systemd service is healthy without exposing a child PID. Detached
+	// daemons still return one and shutdownIntegrationKubo handles both forms.
+	if !result.KuboStarted || len(result.Installed) != 1 {
 		t.Fatalf("unexpected native Kubo result: %#v", result)
 	}
 	if rel, err := filepath.Rel(igitHome, updated.IPFSBin); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
@@ -105,7 +107,10 @@ func shutdownIntegrationKubo(t *testing.T, binary, api string, pid int) {
 	if ctx.Err() != nil {
 		t.Errorf("native Kubo API remained reachable after shutdown")
 	}
-	if err := syscall.Kill(pid, 0); err == nil {
+	if pid > 0 {
+		if err := syscall.Kill(pid, 0); err != nil {
+			return
+		}
 		if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
 			t.Errorf("terminate lingering native Kubo process %d: %v", pid, err)
 		}

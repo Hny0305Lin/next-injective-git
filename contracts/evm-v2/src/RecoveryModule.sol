@@ -1,10 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-import {IRepositoryCore, ISuiteDirectory, SuiteIds} from "./suite/ISuite.sol";
+import {
+    IRecoveryOwnershipHook,
+    IOwnershipTransferState,
+    IRecoveryState,
+    IRepositoryCore,
+    ISuiteDirectory,
+    SuiteIds
+} from "./suite/ISuite.sol";
 import {SuiteModule} from "./suite/SuiteModule.sol";
 
-contract RecoveryModule is SuiteModule {
+contract RecoveryModule is SuiteModule, IRecoveryState, IRecoveryOwnershipHook {
     uint256 public constant MAX_GUARDIANS = 10;
     uint64 public constant RECOVERY_DELAY = 7 days;
     uint64 public constant RECOVERY_WINDOW = 30 days;
@@ -50,6 +57,7 @@ contract RecoveryModule is SuiteModule {
     error RecoveryApprovalThreshold(uint256 required, uint256 actual);
     error RecoveryTooEarly(uint64 executeAfter);
     error RecoveryExpired(uint64 expiresAt);
+    error OwnershipTransferPending(bytes32 repoId);
     error TimestampOverflow(uint256 timestamp);
     error InvalidImportRecord();
 
@@ -85,6 +93,10 @@ contract RecoveryModule is SuiteModule {
         if (!_isGuardian[repoId][msg.sender]) revert Unauthorized(msg.sender);
         if (newOwner == address(0) || newOwner == repository.owner) revert InvalidRecoveryOwner(newOwner);
         if (_proposals[repoId].newOwner != address(0)) revert RecoveryAlreadyPending(repoId);
+        (address pendingOwner,,) = IOwnershipTransferState(_core()).pendingOwnershipTransfer(repoId);
+        if (pendingOwner != address(0)) {
+            revert OwnershipTransferPending(repoId);
+        }
         uint64 nonce = ++_proposalNonces[repoId];
         uint64 executeAfter = _addTime(_now64(), RECOVERY_DELAY);
         uint64 expiresAt = _addTime(executeAfter, RECOVERY_WINDOW);
@@ -108,9 +120,17 @@ contract RecoveryModule is SuiteModule {
         emit RecoveryApproved(repoId, msg.sender, proposal.approvals, proposal.nonce);
     }
 
-    function cancelRecovery(bytes32 repoId) external onlyActiveSuite {
+    function cancelRecovery(bytes32 repoId) external override onlyActiveSuite {
         IRepositoryCore.Repository memory repository = _repository(repoId);
         Proposal memory proposal = _proposals[repoId];
+        address core = _core();
+        address economic = ISuiteDirectory(suiteDirectory).moduleAddress(SuiteIds.ECONOMIC);
+        bool coreCaller = msg.sender == core || msg.sender == economic;
+        if (coreCaller) {
+            _clearConfig(repoId);
+            delete _proposals[repoId];
+            return;
+        }
         if (proposal.newOwner == address(0)) revert RecoveryNotPending(repoId);
         if (msg.sender != repository.owner && msg.sender != proposal.newOwner) revert Unauthorized(msg.sender);
         delete _proposals[repoId];
@@ -147,6 +167,10 @@ contract RecoveryModule is SuiteModule {
 
     function hasApproved(bytes32 repoId, uint64 nonce, address guardian) external view returns (bool) {
         return _approvals[repoId][nonce][guardian];
+    }
+
+    function hasPendingRecovery(bytes32 repoId) external view override returns (bool) {
+        return _proposals[repoId].newOwner != address(0);
     }
 
     function _importPayload(bytes calldata payload) internal override returns (uint256 count) {

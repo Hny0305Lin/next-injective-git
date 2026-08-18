@@ -56,6 +56,27 @@ interface IBootstrapCoordinator {
 interface IModerationPolicy {
     function requireRefMutation(bytes32 repoId, address actor) external view;
     function requireEconomicAction(bytes32 repoId, address actor) external view;
+    function requireFork(bytes32 repoId, address actor) external view;
+    function requireBadgeAward(bytes32 repoId, address actor) external view;
+}
+
+interface IRecoveryState {
+    function hasPendingRecovery(bytes32 repoId) external view returns (bool);
+}
+
+interface IRecoveryOwnershipHook {
+    function cancelRecovery(bytes32 repoId) external;
+}
+
+interface IOwnershipTransferState {
+    function pendingOwnershipTransfer(bytes32 repoId)
+        external
+        view
+        returns (address newOwner, uint64 executeAfter, uint64 expiresAt);
+}
+
+interface IEconomicOwnershipHook {
+    function clearRevenueSplitsOnOwnershipTransfer(bytes32 repoId) external;
 }
 
 interface IRepositoryCore {
@@ -73,5 +94,12 @@ interface IRepositoryCore {
 
     function getRepository(bytes32 repoId) external view returns (Repository memory);
     function canMaintain(bytes32 repoId, address actor) external view returns (bool);
+    function updateMetadata(
+        bytes32 repoId,
+        bool updateDescription,
+        string calldata description,
+        bool updateDefaultBranch,
+        string calldata defaultBranch
+    ) external;
     function recoverOwnership(bytes32 repoId, address newOwner) external;
 }

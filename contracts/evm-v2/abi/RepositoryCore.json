@@ -357,6 +357,17 @@
         "internalType": "bytes32",
         "name": "repoId",
         "type": "bytes32"
+      }
+    ],
+    "name": "RecoveryPending",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "repoId",
+        "type": "bytes32"
       },
       {
         "internalType": "bytes32",

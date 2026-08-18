@@ -217,7 +217,34 @@ func snapshotModuleRecords(snapshot *Snapshot) (map[string][]recordGroup, PlanSu
 	}
 
 	repositories := append([]SnapshotRepository(nil), snapshot.Repositories...)
-	sort.Slice(repositories, func(i, j int) bool { return repositories[i].ID < repositories[j].ID })
+	repoByID := make(map[string]SnapshotRepository, len(repositories))
+	for _, repository := range repositories {
+		repoByID[repository.ID] = repository
+	}
+	depth := make(map[string]int, len(repositories))
+	var forkDepth func(string) int
+	forkDepth = func(id string) int {
+		if value, ok := depth[id]; ok {
+			return value
+		}
+		parent := repoByID[id].ForkedFrom
+		if parent == "" {
+			depth[id] = 0
+			return 0
+		}
+		value := forkDepth(parent) + 1
+		depth[id] = value
+		return value
+	}
+	for _, repository := range repositories {
+		forkDepth(repository.ID)
+	}
+	sort.Slice(repositories, func(i, j int) bool {
+		if depth[repositories[i].ID] != depth[repositories[j].ID] {
+			return depth[repositories[i].ID] < depth[repositories[j].ID]
+		}
+		return repositories[i].ID < repositories[j].ID
+	})
 	repoValues := make([]coreRepositoryABI, len(repositories))
 	repoKeys := make([]string, len(repositories))
 	for i, record := range repositories {
@@ -770,14 +797,14 @@ func validRepoName(value string) bool {
 		return false
 	}
 	for _, c := range []byte(value) {
-		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.') {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.') {
 			return false
 		}
 	}
 	return true
 }
 func validUsername(value string) bool {
-	if len(value) < 3 || len(value) > 32 || value[0] == '-' || value[len(value)-1] == '-' {
+	if len(value) < 3 || len(value) > 32 || value[0] == '-' || value[len(value)-1] == '-' || strings.HasPrefix(value, "inj1") {
 		return false
 	}
 	for _, c := range []byte(value) {
@@ -803,7 +830,19 @@ func validSHA(value string) bool {
 		return false
 	}
 	for _, c := range []byte(value) {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+func validRefName(value string) bool {
+	if len(value) < 5 || len(value) > 256 || !strings.HasPrefix(value, "refs/") || strings.Contains(value, "..") {
+		return false
+	}
+	for _, c := range []byte(value) {
+		if c < 0x21 || c > 0x7e || c == '~' || c == '^' || c == ':' || c == '\\' {
 			return false
 		}
 	}
@@ -867,6 +906,31 @@ func validateSnapshot(s *Snapshot) error {
 			}
 		}
 	}
+	visiting := map[string]bool{}
+	visited := map[string]bool{}
+	var visitFork func(string) error
+	visitFork = func(id string) error {
+		if visiting[id] {
+			return fmt.Errorf("repository fork lineage contains a cycle at %s", id)
+		}
+		if visited[id] {
+			return nil
+		}
+		visiting[id] = true
+		if parent := repos[id].ForkedFrom; parent != "" {
+			if err := visitFork(parent); err != nil {
+				return err
+			}
+		}
+		delete(visiting, id)
+		visited[id] = true
+		return nil
+	}
+	for id := range repos {
+		if err := visitFork(id); err != nil {
+			return err
+		}
+	}
 	for i, a := range s.Aliases {
 		if _, ok := repos[a.RepoID]; !ok {
 			return fmt.Errorf("alias %d references unknown repository", i)
@@ -893,7 +957,7 @@ func validateSnapshot(s *Snapshot) error {
 		if _, ok := repos[r.RepoID]; !ok {
 			return fmt.Errorf("ref %d references unknown repository", i)
 		}
-		if len(r.RefName) < 5 || len(r.RefName) > 256 || !strings.HasPrefix(r.RefName, "refs/") || !validSHA(r.CommitSHA) || len(r.PackURIs) == 0 || len(r.PackURIs) > 128 {
+		if !validRefName(r.RefName) || !validSHA(r.CommitSHA) || len(r.PackURIs) == 0 || len(r.PackURIs) > 128 {
 			return fmt.Errorf("ref %d violates contract limits", i)
 		}
 		for _, uri := range r.PackURIs {
@@ -997,7 +1061,8 @@ func validateSnapshot(s *Snapshot) error {
 		if _, exists := reports[r.ID]; exists {
 			return fmt.Errorf("duplicate report %d", r.ID)
 		}
-		if _, ok := repos[r.RepoID]; !ok {
+		_, ok := repos[r.RepoID]
+		if !ok {
 			return fmt.Errorf("report %d references unknown repository", r.ID)
 		}
 		if _, err := canonicalAddress("reporter", r.Reporter); err != nil {
@@ -1009,13 +1074,34 @@ func validateSnapshot(s *Snapshot) error {
 		if _, err := repoStatusCode(r.Resolution); err != nil {
 			return err
 		}
-		if len(r.ReasonHash) > 128 || r.CreatedAt == 0 || r.UpdatedAt < r.CreatedAt || len(r.Trail) == 0 {
+		if len(r.ReasonHash) == 0 || len(r.ReasonHash) > 128 || r.CreatedAt == 0 || r.UpdatedAt < r.CreatedAt || len(r.Trail) == 0 {
 			return fmt.Errorf("report %d record is invalid", r.ID)
 		}
+		expectedTrailLength := 0
+		switch r.Status {
+		case "open":
+			expectedTrailLength = 1
+			if r.Resolution != "active" {
+				return fmt.Errorf("report %d open report must resolve to active", r.ID)
+			}
+		case "resolved":
+			expectedTrailLength = 2
+		case "appealed":
+			expectedTrailLength = 3
+		case "appeal_resolved":
+			expectedTrailLength = 4
+		}
+		if len(r.Trail) != expectedTrailLength {
+			return fmt.Errorf("report %d has %d trail entries; want %d for %s", r.ID, len(r.Trail), expectedTrailLength, r.Status)
+		}
+		expectedActions := []string{"submitted", "resolved", "appealed", "appeal_resolved"}
 		previous := uint64(0)
-		for _, entry := range r.Trail {
+		for index, entry := range r.Trail {
 			if _, err := trailActionCode(entry.Action); err != nil {
 				return err
+			}
+			if entry.Action != expectedActions[index] {
+				return fmt.Errorf("report %d trail entry %d has action %q; want %q", r.ID, index, entry.Action, expectedActions[index])
 			}
 			if _, err := canonicalAddress("report trail actor", entry.Actor); err != nil {
 				return err
@@ -1023,10 +1109,26 @@ func validateSnapshot(s *Snapshot) error {
 			if _, err := repoStatusCode(entry.Status); err != nil {
 				return err
 			}
-			if len(entry.ReasonHash) > 128 || entry.Timestamp == 0 || entry.Timestamp < previous {
+			if len(entry.ReasonHash) == 0 || len(entry.ReasonHash) > 128 || entry.Timestamp == 0 || entry.Timestamp < previous {
 				return fmt.Errorf("report %d trail invalid", r.ID)
 			}
+			if index == 0 && (entry.Actor != r.Reporter || entry.Status != "active" || entry.Timestamp != r.CreatedAt || entry.ReasonHash != r.ReasonHash) {
+				return fmt.Errorf("report %d trail does not begin with its immutable submission", r.ID)
+			}
 			previous = entry.Timestamp
+		}
+		if previous != r.UpdatedAt {
+			return fmt.Errorf("report %d updated_at must equal the final trail timestamp", r.ID)
+		}
+		last := r.Trail[len(r.Trail)-1]
+		if last.Status != r.Resolution {
+			return fmt.Errorf("report %d final trail status does not match resolution", r.ID)
+		}
+		if r.Status == "appeal_resolved" && r.Trail[2].Status != r.Trail[1].Status {
+			return fmt.Errorf("report %d appeal changed the unresolved status", r.ID)
+		}
+		if r.Status != "open" && r.Status != "appeal_resolved" && r.Trail[1].Status != r.Resolution {
+			return fmt.Errorf("report %d resolution trail status does not match resolution", r.ID)
 		}
 		reports[r.ID] = r
 	}
@@ -1067,14 +1169,15 @@ func validateSnapshot(s *Snapshot) error {
 	}
 	splitRepos := map[string]struct{}{}
 	for _, r := range s.Economic.Splits {
-		if _, ok := repos[r.RepoID]; !ok {
+		repo, ok := repos[r.RepoID]
+		if !ok {
 			return fmt.Errorf("splits reference unknown repository %s", r.RepoID)
 		}
 		if _, ok := splitRepos[r.RepoID]; ok {
 			return fmt.Errorf("duplicate splits %s", r.RepoID)
 		}
 		splitRepos[r.RepoID] = struct{}{}
-		if len(r.Splits) == 0 || len(r.Splits) > 16 {
+		if len(r.Splits) > MaxRevenueSplitRecipients {
 			return fmt.Errorf("splits %s count invalid", r.RepoID)
 		}
 		seen := map[string]struct{}{}
@@ -1082,6 +1185,9 @@ func validateSnapshot(s *Snapshot) error {
 		for _, entry := range r.Splits {
 			if _, err := canonicalAddress("split recipient", entry.Recipient); err != nil {
 				return err
+			}
+			if entry.Recipient == repo.Owner {
+				return fmt.Errorf("split %s names the repository owner; owner receives the remainder implicitly", r.RepoID)
 			}
 			if entry.BPS == 0 {
 				return fmt.Errorf("split %s has zero bps", r.RepoID)
@@ -1132,6 +1238,9 @@ func validateSnapshot(s *Snapshot) error {
 		usernameOwners[r.Owner] = r.Name
 	}
 	reserved := map[string]struct{}{}
+	if len(s.Username.ReservedNames) > MaxReservedUsernames {
+		return fmt.Errorf("reserved usernames exceed maximum of %d", MaxReservedUsernames)
+	}
 	for _, name := range s.Username.ReservedNames {
 		if !validUsername(name) {
 			return fmt.Errorf("invalid reserved username %q", name)
@@ -1157,7 +1266,8 @@ func validateSnapshot(s *Snapshot) error {
 		if _, ok := badges[b.ID]; ok {
 			return fmt.Errorf("duplicate badge %d", b.ID)
 		}
-		if _, ok := repos[b.RepoID]; !ok {
+		_, ok := repos[b.RepoID]
+		if !ok {
 			return fmt.Errorf("badge %d references unknown repository", b.ID)
 		}
 		if _, err := canonicalAddress("badge recipient", b.Recipient); err != nil {
@@ -1165,6 +1275,9 @@ func validateSnapshot(s *Snapshot) error {
 		}
 		if _, err := canonicalAddress("badge awarded_by", b.AwardedBy); err != nil {
 			return err
+		}
+		if b.Recipient == b.AwardedBy {
+			return fmt.Errorf("badge %d awards the repository owner; owner self-awards are not supported", b.ID)
 		}
 		if len(b.Reason) == 0 || len(b.Reason) > 256 || b.AwardedAt == 0 {
 			return fmt.Errorf("badge %d is invalid", b.ID)

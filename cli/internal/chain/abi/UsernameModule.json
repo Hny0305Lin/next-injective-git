@@ -251,6 +251,22 @@
   {
     "inputs": [
       {
+        "internalType": "uint256",
+        "name": "count",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "maximum",
+        "type": "uint256"
+      }
+    ],
+    "name": "TooManyReservedUsernames",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "address",
         "name": "caller",
         "type": "address"
@@ -482,6 +498,19 @@
   {
     "inputs": [],
     "name": "MAX_IMPORT_PAYLOAD_BYTES",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "MAX_RESERVED_USERNAMES",
     "outputs": [
       {
         "internalType": "uint256",
@@ -793,6 +822,19 @@
     "name": "releaseUsername",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "reservedUsernameCount",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {

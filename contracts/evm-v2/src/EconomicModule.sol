@@ -1,12 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-import {IModerationPolicy, IRepositoryCore, ISuiteDirectory, SuiteIds} from "./suite/ISuite.sol";
+import {
+    IEconomicOwnershipHook,
+    IModerationPolicy,
+    IRecoveryOwnershipHook,
+    IRepositoryCore,
+    ISuiteDirectory,
+    SuiteIds
+} from "./suite/ISuite.sol";
 import {SuiteModule} from "./suite/SuiteModule.sol";
 
-contract EconomicModule is SuiteModule {
+contract EconomicModule is SuiteModule, IEconomicOwnershipHook {
     uint16 public constant MAX_PLATFORM_FEE_BPS = 500;
-    uint256 public constant MAX_SPLIT_RECIPIENTS = 16;
+    uint256 public constant MAX_SPLIT_RECIPIENTS = 20;
     uint256 public constant MAX_MESSAGE_LENGTH = 256;
     uint256 public constant MAX_DENOM_LENGTH = 128;
 
@@ -32,6 +39,7 @@ contract EconomicModule is SuiteModule {
     uint256 private _settlementLock = 1;
 
     mapping(bytes32 repoId => Split[] splits) private _splits;
+    mapping(bytes32 repoId => bool importedSplits) private _importedSplits;
     mapping(bytes32 repoId => mapping(bytes32 denomHash => uint256 total)) private _totals;
     mapping(bytes32 repoId => string[] denoms) private _denoms;
     mapping(bytes32 repoId => mapping(bytes32 denomHash => bool known)) private _knownDenom;
@@ -44,6 +52,7 @@ contract EconomicModule is SuiteModule {
     error InvalidMessageLength(uint256 length, uint256 maximum);
     error TooManySplitRecipients(uint256 count, uint256 maximum);
     error InvalidSplitRecipient(address recipient);
+    error OwnerCannotReceiveRevenueSplit(address owner);
     error DuplicateSplitRecipient(address recipient);
     error InvalidSplitBps(address recipient, uint256 bps);
     error SplitTotalTooHigh(uint256 total, uint256 maximum);
@@ -99,6 +108,7 @@ contract EconomicModule is SuiteModule {
         for (uint256 i; i < recipients.length; ++i) {
             address payable recipient = recipients[i];
             if (recipient == address(0)) revert InvalidSplitRecipient(recipient);
+            if (recipient == repository.owner) revert OwnerCannotReceiveRevenueSplit(repository.owner);
             if (bps[i] == 0) revert InvalidSplitBps(recipient, bps[i]);
             for (uint256 j; j < i; ++j) {
                 if (recipients[j] == recipient) revert DuplicateSplitRecipient(recipient);
@@ -149,6 +159,20 @@ contract EconomicModule is SuiteModule {
         emit FeeConfigUpdated(newTreasury, newPlatformFeeBps, msg.sender);
     }
 
+    function clearRevenueSplitsOnOwnershipTransfer(bytes32 repoId)
+        external
+        override
+        onlyActiveSuite
+    {
+        address core = ISuiteDirectory(suiteDirectory).moduleAddress(SuiteIds.CORE);
+        if (core == address(0) || msg.sender != core) revert Unauthorized(msg.sender);
+        _repository(repoId);
+        delete _splits[repoId];
+        address recovery = ISuiteDirectory(suiteDirectory).moduleAddress(SuiteIds.RECOVERY);
+        if (recovery == address(0)) revert SuiteNotActive();
+        IRecoveryOwnershipHook(recovery).cancelRecovery(repoId);
+    }
+
     function revenueSplits(bytes32 repoId) external view returns (Split[] memory) {
         _repository(repoId);
         return _splits[repoId];
@@ -187,13 +211,18 @@ contract EconomicModule is SuiteModule {
     }
 
     function _importSplits(ImportSplits memory value) private {
-        _repository(value.repoId);
-        if (_splits[value.repoId].length != 0 || value.splits.length > MAX_SPLIT_RECIPIENTS) {
+        IRepositoryCore.Repository memory repository = _repository(value.repoId);
+        if (_importedSplits[value.repoId] || value.splits.length > MAX_SPLIT_RECIPIENTS) {
             revert InvalidImportRecord();
         }
+        _importedSplits[value.repoId] = true;
+        if (value.splits.length == 0) return;
         uint256 total;
         for (uint256 i; i < value.splits.length; ++i) {
-            if (value.splits[i].recipient == address(0) || value.splits[i].bps == 0) revert InvalidImportRecord();
+            if (
+                value.splits[i].recipient == address(0) || value.splits[i].recipient == repository.owner
+                || value.splits[i].bps == 0
+            ) revert InvalidImportRecord();
             for (uint256 j; j < i; ++j) {
                 if (value.splits[j].recipient == value.splits[i].recipient) revert InvalidImportRecord();
             }

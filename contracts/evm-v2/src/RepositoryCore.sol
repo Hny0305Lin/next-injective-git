@@ -4,6 +4,8 @@ pragma solidity 0.8.24;
 import {
     IModerationPolicy,
     IRepositoryCore,
+    IEconomicOwnershipHook,
+    IRecoveryState,
     ISuiteDirectory,
     SuiteIds
 } from "./suite/ISuite.sol";
@@ -113,6 +115,7 @@ contract RepositoryCore is SuiteModule, IRepositoryCore {
     error TransferTooEarly(uint64 executeAfter);
     error TransferExpired(uint64 expiresAt);
     error TransferNotExpired(uint64 expiresAt);
+    error RecoveryPending(bytes32 repoId);
     error TimestampOverflow(uint256 timestamp);
     error InvalidImportKind(uint8 kind);
     error InvalidImportRecord();
@@ -182,7 +185,7 @@ contract RepositoryCore is SuiteModule, IRepositoryCore {
         returns (bytes32 forkId)
     {
         Repository storage source = _requireRepository(sourceRepoId);
-        IModerationPolicy(_moderation()).requireRefMutation(sourceRepoId, msg.sender);
+        IModerationPolicy(_moderation()).requireFork(sourceRepoId, msg.sender);
         uint256 refCount = _refNames[sourceRepoId].length;
         if (refCount > MAX_FORK_REFS) revert ForkTooLarge(refCount, MAX_FORK_REFS);
         _validateRepositoryName(newName);
@@ -225,7 +228,12 @@ contract RepositoryCore is SuiteModule, IRepositoryCore {
         string calldata defaultBranch
     ) external onlyActiveSuite {
         Repository storage repository = _requireRepository(repoId);
-        if (msg.sender != repository.owner) revert Unauthorized(msg.sender);
+        if (
+            msg.sender != repository.owner
+                && (updateDescription || updateDefaultBranch || msg.sender != _moderation())
+        ) {
+            revert Unauthorized(msg.sender);
+        }
         uint8 fieldMask;
         if (updateDescription) {
             _requireLength(description, MAX_DESCRIPTION_LENGTH);
@@ -337,6 +345,9 @@ contract RepositoryCore is SuiteModule, IRepositoryCore {
         if (msg.sender != repository.owner) revert Unauthorized(msg.sender);
         if (newOwner == address(0) || newOwner == repository.owner) revert InvalidTransferTarget(newOwner);
         if (_pendingTransfers[repoId].newOwner != address(0)) revert TransferAlreadyPending(repoId);
+        address recovery = ISuiteDirectory(suiteDirectory).moduleAddress(SuiteIds.RECOVERY);
+        if (recovery == address(0)) revert SuiteNotActive();
+        if (IRecoveryState(recovery).hasPendingRecovery(repoId)) revert RecoveryPending(repoId);
         bytes32 targetLocator = _locator(newOwner, repository.name);
         _requireLocatorAvailable(targetLocator, newOwner, repository.name);
         uint64 executeAfter = _addTime(_now64(), OWNERSHIP_TRANSFER_DELAY);
@@ -382,7 +393,7 @@ contract RepositoryCore is SuiteModule, IRepositoryCore {
         if (newOwner == address(0) || newOwner == repository.owner) revert InvalidTransferTarget(newOwner);
         _requireLocatorAvailableFor(repoId, _locator(newOwner, repository.name), newOwner, repository.name);
         PendingOwnershipTransfer memory pending = _pendingTransfers[repoId];
-        if (pending.newOwner != address(0)) _clearPending(repoId, repository.name, pending.newOwner);
+        if (pending.newOwner != address(0)) revert TransferAlreadyPending(repoId);
         _transferOwnership(repoId, repository, newOwner, true);
     }
 
@@ -486,8 +497,12 @@ contract RepositoryCore is SuiteModule, IRepositoryCore {
             count = aliases.length;
             for (uint256 i; i < count; ++i) {
                 _requireRepository(aliases[i].repoId);
+                _validateRepositoryName(aliases[i].name);
+                if (aliases[i].owner == address(0)) revert InvalidImportRecord();
                 bytes32 locator = _locator(aliases[i].owner, aliases[i].name);
-                _requireLocatorAvailableFor(aliases[i].repoId, locator, aliases[i].owner, aliases[i].name);
+                if (_locators[locator] != bytes32(0) || _reservedLocators[locator] != bytes32(0)) {
+                    revert InvalidImportRecord();
+                }
                 _locators[locator] = aliases[i].repoId;
             }
         } else if (kind == 2) {
@@ -508,7 +523,12 @@ contract RepositoryCore is SuiteModule, IRepositoryCore {
             imported.id == bytes32(0) || imported.owner == address(0) || imported.createdAt == 0
                 || imported.updatedAt < imported.createdAt
         ) revert InvalidImportRecord();
+        if (imported.forkedFrom != bytes32(0) && !_repositories[imported.forkedFrom].exists) {
+            revert InvalidImportRecord();
+        }
         _validateRepositoryName(imported.name);
+        _requireLength(imported.description, MAX_DESCRIPTION_LENGTH);
+        _requireLength(imported.defaultBranch, MAX_NAME_LENGTH);
         if (_repositories[imported.id].exists) revert RepositoryAlreadyExists(imported.id);
         bytes32 locator = _locator(imported.owner, imported.name);
         _requireLocatorAvailable(locator, imported.owner, imported.name);
@@ -532,8 +552,11 @@ contract RepositoryCore is SuiteModule, IRepositoryCore {
         _requireRepository(imported.repoId);
         _validateRefName(imported.refName);
         _validateCommitSha(imported.commitSha);
-        if (imported.packUris.length == 0 || imported.packUris.length > MAX_PACK_URIS) {
-            revert TooManyPackUris(imported.packUris.length, MAX_PACK_URIS);
+        if (
+            imported.packUris.length == 0 || imported.packUris.length > MAX_PACK_URIS || imported.updatedAt == 0
+            || imported.updatedBy == address(0)
+        ) {
+            revert InvalidImportRecord();
         }
         bytes32 refId = keccak256(bytes(imported.refName));
         if (_refs[imported.repoId][refId].exists) revert InvalidImportRecord();
@@ -577,9 +600,11 @@ contract RepositoryCore is SuiteModule, IRepositoryCore {
         _locators[oldLocator] = repoId;
         _locators[newLocator] = repoId;
         repository.owner = newOwner;
-        repository.updatedAt = _now64();
         delete _reservedLocators[newLocator];
         delete _pendingTransfers[repoId];
+        address economic = ISuiteDirectory(suiteDirectory).moduleAddress(SuiteIds.ECONOMIC);
+        if (economic == address(0)) revert SuiteNotActive();
+        IEconomicOwnershipHook(economic).clearRevenueSplitsOnOwnershipTransfer(repoId);
         emit OwnershipTransferred(repoId, oldOwner, newOwner, repository.name, recovered);
     }
 
@@ -657,7 +682,10 @@ contract RepositoryCore is SuiteModule, IRepositoryCore {
         if (raw.length == 0 || raw.length > MAX_NAME_LENGTH) revert InvalidRepositoryName(value);
         for (uint256 i; i < raw.length; ++i) {
             bytes1 c = raw[i];
-            if (!((c >= "a" && c <= "z") || (c >= "0" && c <= "9") || c == "-" || c == "_" || c == ".")) {
+            if (
+                !((c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || (c >= "0" && c <= "9") || c == "-"
+                    || c == "_" || c == ".")
+            ) {
                 revert InvalidRepositoryName(value);
             }
         }
@@ -666,8 +694,19 @@ contract RepositoryCore is SuiteModule, IRepositoryCore {
     function _validateRefName(string memory value) private pure {
         bytes memory raw = bytes(value);
         if (raw.length < 5 || raw.length > MAX_REF_NAME_LENGTH) revert InvalidRefName(value);
-        if (!(raw[0] == "r" && raw[1] == "e" && raw[2] == "f" && raw[3] == "s" && raw[4] == "/")) {
+        uint256 prefix;
+        assembly {
+            prefix := shr(216, mload(add(raw, 32)))
+        }
+        if (prefix != 0x726566732f) {
             revert InvalidRefName(value);
+        }
+        for (uint256 i = 5; i < raw.length; ++i) {
+            bytes1 c = raw[i];
+            if (c < 0x21 || c > 0x7e || c == "~" || c == "^" || c == ":" || c == "\\") {
+                revert InvalidRefName(value);
+            }
+            if (c == "." && raw[i - 1] == ".") revert InvalidRefName(value);
         }
     }
 
@@ -676,14 +715,20 @@ contract RepositoryCore is SuiteModule, IRepositoryCore {
         if (raw.length != 40 && raw.length != 64) revert InvalidCommitSha(value);
         for (uint256 i; i < raw.length; ++i) {
             bytes1 c = raw[i];
-            if (!((c >= "0" && c <= "9") || (c >= "a" && c <= "f"))) revert InvalidCommitSha(value);
+            if (
+                !((c >= "0" && c <= "9") || (c >= "a" && c <= "f") || (c >= "A" && c <= "F"))
+            ) revert InvalidCommitSha(value);
         }
     }
 
     function _validatePackUri(string memory value) private pure {
         bytes memory raw = bytes(value);
         if (raw.length <= 7 || raw.length > MAX_PACK_URI_LENGTH) revert InvalidPackUri(value);
-        if (!(raw[0] == "i" && raw[1] == "p" && raw[2] == "f" && raw[3] == "s" && raw[4] == ":" && raw[5] == "/" && raw[6] == "/")) {
+        uint256 prefix;
+        assembly {
+            prefix := shr(200, mload(add(raw, 32)))
+        }
+        if (prefix != 0x697066733a2f2f) {
             revert InvalidPackUri(value);
         }
     }

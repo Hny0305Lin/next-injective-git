@@ -272,6 +272,17 @@
     "inputs": [
       {
         "internalType": "address",
+        "name": "owner",
+        "type": "address"
+      }
+    ],
+    "name": "OwnerCannotReceiveRevenueSplit",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
         "name": "recipient",
         "type": "address"
       },
@@ -727,6 +738,19 @@
       }
     ],
     "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "repoId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "clearRevenueSplitsOnOwnershipTransfer",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {

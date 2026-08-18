@@ -7,6 +7,7 @@ import {SuiteModule} from "./suite/SuiteModule.sol";
 contract UsernameModule is SuiteModule {
     uint64 public constant ORIGINAL_OWNER_CLAIM_WINDOW = 90 days;
     uint256 public constant MAX_USERNAME_LENGTH = 32;
+    uint256 public constant MAX_RESERVED_USERNAMES = 128;
 
     struct UsernameRecord {
         address owner;
@@ -20,6 +21,7 @@ contract UsernameModule is SuiteModule {
 
     address public immutable policyAdmin;
     uint64 public originalOwnerClaimDeadline;
+    uint256 public reservedUsernameCount;
 
     mapping(bytes32 nameHash => UsernameRecord record) private _records;
     mapping(bytes32 nameHash => string name) private _names;
@@ -39,6 +41,7 @@ contract UsernameModule is SuiteModule {
     error TimestampOverflow(uint256 timestamp);
     error InvalidImportKind(uint8 kind);
     error InvalidImportRecord();
+    error TooManyReservedUsernames(uint256 count, uint256 maximum);
 
     event UsernameRegistered(string indexed name, address indexed owner, bool originalOwnerClaim);
     event UsernameReleased(string indexed name, address indexed owner);
@@ -75,6 +78,7 @@ contract UsernameModule is SuiteModule {
         }
         address expected = _snapshotOriginalOwner[key];
         if (expected == address(0) || expected != msg.sender) revert OriginalOwnerMismatch(expected, msg.sender);
+        if (_reserved[key]) revert UsernameReserved(name);
         if (_records[key].owner != address(0)) revert UsernameUnavailable(name);
         if (bytes(_reverse[msg.sender]).length != 0) revert AddressAlreadyNamed(msg.sender);
         _register(key, name, msg.sender, true);
@@ -94,6 +98,16 @@ contract UsernameModule is SuiteModule {
         if (msg.sender != policyAdmin) revert Unauthorized(msg.sender);
         bytes32 key = _validateAndHash(name);
         if (reserved && _records[key].owner != address(0)) revert UsernameUnavailable(name);
+        if (reserved != _reserved[key]) {
+            if (reserved) {
+                if (reservedUsernameCount >= MAX_RESERVED_USERNAMES) {
+                    revert TooManyReservedUsernames(reservedUsernameCount + 1, MAX_RESERVED_USERNAMES);
+                }
+                ++reservedUsernameCount;
+            } else {
+                --reservedUsernameCount;
+            }
+        }
         _reserved[key] = reserved;
         emit UsernameReservationSet(name, reserved, msg.sender);
     }
@@ -134,8 +148,9 @@ contract UsernameModule is SuiteModule {
             count = names.length;
             for (uint256 i; i < count; ++i) {
                 bytes32 key = _validateAndHash(names[i]);
-                if (_reserved[key]) revert InvalidImportRecord();
+                if (_reserved[key] || reservedUsernameCount >= MAX_RESERVED_USERNAMES) revert InvalidImportRecord();
                 _reserved[key] = true;
+                ++reservedUsernameCount;
             }
         } else {
             revert InvalidImportKind(kind);
@@ -159,7 +174,10 @@ contract UsernameModule is SuiteModule {
 
     function _validateAndHash(string memory name) private pure returns (bytes32) {
         bytes memory raw = bytes(name);
-        if (raw.length < 3 || raw.length > MAX_USERNAME_LENGTH || raw[0] == "-" || raw[raw.length - 1] == "-") {
+        if (
+            raw.length < 3 || raw.length > MAX_USERNAME_LENGTH || raw[0] == "-" || raw[raw.length - 1] == "-"
+            || (raw.length >= 4 && raw[0] == "i" && raw[1] == "n" && raw[2] == "j" && raw[3] == "1")
+        ) {
             revert InvalidUsername(name);
         }
         for (uint256 i; i < raw.length; ++i) {

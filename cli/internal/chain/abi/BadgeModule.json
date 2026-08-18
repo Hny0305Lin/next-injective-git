@@ -235,6 +235,17 @@
   {
     "inputs": [
       {
+        "internalType": "address",
+        "name": "owner",
+        "type": "address"
+      }
+    ],
+    "name": "OwnerCannotReceiveBadge",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "bytes32",
         "name": "repoId",
         "type": "bytes32"

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-import {IRepositoryCore, ISuiteDirectory, SuiteIds} from "./suite/ISuite.sol";
+import {IModerationPolicy, IRepositoryCore, ISuiteDirectory, SuiteIds} from "./suite/ISuite.sol";
 import {SuiteModule} from "./suite/SuiteModule.sol";
 
 contract BadgeModule is SuiteModule {
@@ -26,6 +26,7 @@ contract BadgeModule is SuiteModule {
     error RepositoryNotFound(bytes32 repoId);
     error Unauthorized(address caller);
     error InvalidRecipient(address recipient);
+    error OwnerCannotReceiveBadge(address owner);
     error InvalidReasonLength(uint256 length, uint256 maximum);
     error BadgeNotFound(uint256 badgeId);
     error InvalidPageSize(uint256 requested, uint256 maximum);
@@ -54,7 +55,9 @@ contract BadgeModule is SuiteModule {
     {
         IRepositoryCore.Repository memory repository = _repository(repoId);
         if (msg.sender != repository.owner) revert Unauthorized(msg.sender);
+        IModerationPolicy(_moderation()).requireBadgeAward(repoId, msg.sender);
         if (recipient == address(0)) revert InvalidRecipient(recipient);
+        if (recipient == repository.owner) revert OwnerCannotReceiveBadge(repository.owner);
         uint256 length = bytes(reason).length;
         if (length == 0 || length > MAX_REASON_LENGTH) revert InvalidReasonLength(length, MAX_REASON_LENGTH);
         badgeId = nextBadgeId++;
@@ -93,7 +96,8 @@ contract BadgeModule is SuiteModule {
             Badge memory badge = badges[i];
             if (
                 badge.id == 0 || !badge.exists || badge.recipient == address(0) || badge.awardedBy == address(0)
-                    || badge.awardedAt == 0 || _badges[badge.id].exists
+                    || badge.id == type(uint256).max || badge.awardedAt == 0 || _badges[badge.id].exists
+                    || badge.recipient == badge.awardedBy
             ) revert InvalidImportRecord();
             _repository(badge.repoId);
             uint256 length = bytes(badge.reason).length;
@@ -131,6 +135,11 @@ contract BadgeModule is SuiteModule {
         } catch {
             revert RepositoryNotFound(repoId);
         }
+    }
+
+    function _moderation() private view returns (address module) {
+        module = ISuiteDirectory(suiteDirectory).moduleAddress(SuiteIds.MODERATION);
+        if (module == address(0)) revert SuiteNotActive();
     }
 
     function _now64() private view returns (uint64) {
