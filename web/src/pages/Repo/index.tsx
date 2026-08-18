@@ -26,7 +26,7 @@ import {
   EVMLocatorNotFoundError,
 } from "../../lib/chain";
 import { useWallet } from "../../lib/WalletContext";
-import { getEvmProvider } from "../../lib/wallet";
+import type { Eip1193 } from "../../lib/wallet";
 import type { Hex } from "viem";
 import { getRepoStore } from "../../lib/gitstore";
 import {
@@ -59,7 +59,7 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
   const splat = params["*"] ?? "";
   const isLegacy = contractKind === "cosmwasm-v1";
   const cfg = useMemo(() => loadConfig(), []);
-  const { connected } = useWallet();
+  const { connected, provider } = useWallet();
   const [addr, setAddr] = useState("");
   const [info, setInfo] = useState<RepoInfo | null>(null);
   const [resolvedRepo, setResolvedRepo] = useState<PageResolvedRepo | null>(null);
@@ -216,20 +216,22 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
     resolvedRepo?.isCanonical === true &&
     resolvedRepo.repoId != null &&
     connected != null &&
+    connected.writable &&
     connected.address === addr;
   const canManageOwnership =
     !isLegacy &&
     resolvedRepo.isCanonical &&
     connected != null &&
+    connected.writable &&
     Boolean(resolvedRepo.repoId);
   const isCurrentOwner = canManageOwnership && connected?.address === resolvedRepo.canonical.owner;
   const badgeProvider =
     isCurrentOwner && connected != null
-      ? getEvmProvider(connected.id)
+      ? provider ?? undefined
       : undefined;
   const economicProvider =
     isCurrentOwner && connected != null
-      ? getEvmProvider(connected.id)
+      ? provider ?? undefined
       : undefined;
   const transferCapabilities = ownershipTransferCapabilities(
     pendingTransfer,
@@ -238,10 +240,9 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
   );
 
   const runOwnershipAction = async (
-    action: (provider: NonNullable<ReturnType<typeof getEvmProvider>>, repoId: Hex) => Promise<string>,
+    action: (provider: Eip1193, repoId: Hex) => Promise<string>,
   ) => {
     if (!canManageOwnership || !connected || !resolvedRepo.repoId) return;
-    const provider = getEvmProvider(connected.id);
     if (!provider) {
       setTransferError(`${connected.label} is no longer available`);
       return;
@@ -271,7 +272,6 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
 
   const beginTransfer = async () => {
     if (!canManageOwnership || !isCurrentOwner || !connected || !resolvedRepo.repoId) return;
-    const provider = getEvmProvider(connected.id);
     if (!provider) {
       setTransferError(`${connected.label} is no longer available`);
       return;
@@ -306,7 +306,6 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
       setEditingMetadata(false);
       return;
     }
-    const provider = getEvmProvider(connected.id);
     if (!provider) {
       setMetadataError(`${connected.label} is no longer available`);
       return;

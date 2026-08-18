@@ -48,6 +48,8 @@ export function findRpcData(value: unknown, depth = 0): `0x${string}` | undefine
 }
 
 export function formatError(error: unknown): string {
+  const walletMessage = walletErrorMessage(providerErrorCode(error));
+  if (walletMessage) return walletMessage;
   if (error == null) return "unknown error";
   if (typeof error === "string") return error;
   if (error instanceof Error) return error.message;
@@ -65,6 +67,49 @@ export function formatError(error: unknown): string {
     }
   }
   return String(error);
+}
+
+function numericErrorCode(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isInteger(value)) return value;
+  if (typeof value === "string" && /^-?\d+$/.test(value.trim())) {
+    const parsed = Number(value.trim());
+    return Number.isSafeInteger(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+/** Normalize wallet/RPC error codes across provider-specific nesting and types. */
+export function providerErrorCode(error: unknown, depth = 0, seen = new Set<object>()): number | undefined {
+  if (depth > 6 || error == null) return undefined;
+  const direct = numericErrorCode(error);
+  if (direct !== undefined) return direct;
+  if (typeof error !== "object") return undefined;
+  if (seen.has(error)) return undefined;
+  seen.add(error);
+  const record = error as Record<string, unknown>;
+  const code = numericErrorCode(record.code);
+  if (code !== undefined) return code;
+  for (const key of ["error", "originalError", "cause", "data", "details"]) {
+    const nested = providerErrorCode(record[key], depth + 1, seen);
+    if (nested !== undefined) return nested;
+  }
+  return undefined;
+}
+
+function walletErrorMessage(code: number | undefined): string | undefined {
+  switch (code) {
+    case 4001: return "Wallet request was rejected. Approve it in your wallet to continue.";
+    case 4100: return "This wallet is not authorized for this site. Reconnect it in the wallet extension.";
+    case 4200: return "This wallet does not support the requested EVM method.";
+    case 4902: return "Injective EVM testnet is not configured in this wallet.";
+    case -32002: return "A wallet request is already pending. Complete or cancel it in the wallet.";
+    default: return undefined;
+  }
+}
+
+/** Convert common EIP-1193 errors into retryable, user-actionable copy. */
+export function formatWalletError(error: unknown): string {
+  return walletErrorMessage(providerErrorCode(error)) ?? formatError(error);
 }
 
 export function formatResourceError(error: unknown, resource: "owner" | "repository"): string {

@@ -19,6 +19,8 @@ import {
   EVMReceiptUnconfirmedError,
   SuiteConfigurationError,
   SuiteVerificationError,
+  formatWalletError,
+  providerErrorCode,
 } from "../src/lib/errors.ts";
 import {
   clearSuiteCache,
@@ -31,6 +33,16 @@ import {
   updateRepoInfoWithEvm,
 } from "../src/lib/registry.ts";
 import { sponsorWithEconomicModule } from "../src/lib/modules.ts";
+import {
+  clearDiscoveredWalletProviders,
+  getEvmProvider,
+  isWalletInstalled,
+  prepareEvmProvider,
+  requestWalletProviders,
+  resolveEvmProvider,
+  subscribeWalletProviders,
+  SUPPORTED_WALLETS,
+} from "../src/lib/wallet.ts";
 
 const DIRECTORY = "0x0000000000000000000000000000000000000001";
 const COORDINATOR = "0x0000000000000000000000000000000000000002";
@@ -474,4 +486,184 @@ test("EIP-6963 announcements are matched by wallet RDNS", async () => {
   } finally {
     globalThis.window = previous;
   }
+});
+
+test("late EIP-6963 announcements update availability without replacing a selected family", () => {
+  const previous = globalThis.window;
+  const browserWindow = new EventTarget();
+  globalThis.window = browserWindow;
+  try {
+    requestWalletProviders();
+    assert.equal(isWalletInstalled("okxevm"), false);
+    let updates = 0;
+    const unsubscribe = subscribeWalletProviders(() => { updates += 1; });
+    const provider = { request: async () => [] };
+    const announcement = new Event("eip6963:announceProvider");
+    Object.defineProperty(announcement, "detail", { value: {
+      info: { uuid: "okx-late", name: "OKX Wallet", icon: "data:image/svg+xml,", rdns: "com.okex.wallet" },
+      provider,
+    } });
+    browserWindow.dispatchEvent(announcement);
+    assert.equal(getEvmProvider("okxevm"), provider);
+    assert.ok(updates >= 1);
+    unsubscribe();
+    clearDiscoveredWalletProviders();
+  } finally {
+    globalThis.window = previous;
+  }
+});
+
+test("provider error codes normalize numeric, string, and nested EIP-1193 shapes", () => {
+  assert.equal(providerErrorCode({ code: 4001 }), 4001);
+  assert.equal(providerErrorCode({ code: "4100" }), 4100);
+  assert.equal(providerErrorCode({ error: { data: { code: "4200" } } }), 4200);
+  assert.equal(providerErrorCode({ cause: { originalError: { code: "-32002" } } }), -32002);
+  assert.equal(providerErrorCode({ data: { message: "no code" } }), undefined);
+  assert.match(formatWalletError({ error: { code: "4001" } }), /rejected/i);
+  assert.match(formatWalletError({ data: { code: "-32002" } }), /already pending/i);
+});
+
+test("wallet chain setup only adds a chain for normalized unknown-chain errors", async () => {
+  const requests = [];
+  const wallet = {
+    async request(request) {
+      requests.push(request);
+      if (request.method === "wallet_switchEthereumChain") {
+        throw { error: { code: "4001" } };
+      }
+      throw new Error(`unexpected wallet method ${request.method}`);
+    },
+  };
+  await assert.rejects(ensureWalletChain(wallet, configForProfile()), (error) => providerErrorCode(error) === 4001);
+  assert.deepEqual(requests.map((request) => request.method), ["wallet_switchEthereumChain"]);
+});
+
+test("EIP-6963 resolution covers every announced EVM wallet and pins provider identity", async () => {
+  const previous = globalThis.window;
+  const browserWindow = new EventTarget();
+  const eipWallets = SUPPORTED_WALLETS.filter((wallet) => !["keplr", "compass"].includes(wallet.id));
+  const providers = new Map();
+  for (const wallet of eipWallets) {
+    const provider = { request: async () => [] };
+    providers.set(wallet.id, provider);
+  }
+  browserWindow.addEventListener("eip6963:requestProvider", () => {
+    const rdns = {
+      metamask: "io.metamask",
+      rabby: "io.rabby",
+      okxevm: "com.okex.wallet",
+      bitget: "com.bitget.web3",
+      trust: "com.trustwallet.app",
+      coinbase: "com.coinbase.wallet",
+      brave: "com.brave.wallet",
+    };
+    for (const wallet of eipWallets) {
+      const announcement = new Event("eip6963:announceProvider");
+      Object.defineProperty(announcement, "detail", { value: {
+        info: { uuid: `${wallet.id}-uuid`, name: wallet.label, icon: "data:image/svg+xml,", rdns: rdns[wallet.id] },
+        provider: providers.get(wallet.id),
+      } });
+      browserWindow.dispatchEvent(announcement);
+    }
+  });
+  globalThis.window = browserWindow;
+  try {
+    let updates = 0;
+    const unsubscribe = (await import("../src/lib/wallet.ts")).subscribeWalletProviders(() => { updates += 1; });
+    for (const wallet of eipWallets) {
+      const resolution = resolveEvmProvider(wallet.id, { requireUnique: true });
+      assert.equal(resolution?.provider, providers.get(wallet.id));
+      assert.equal(isWalletInstalled(wallet.id), true);
+    }
+    assert.ok(updates >= eipWallets.length);
+
+    const selected = resolveEvmProvider("rabby");
+    assert.ok(selected);
+    const replacement = { request: async () => [] };
+    const changed = new Event("eip6963:announceProvider");
+    Object.defineProperty(changed, "detail", { value: {
+      info: { uuid: "rabby-uuid", name: "Rabby", icon: "data:image/svg+xml,", rdns: "io.rabby" },
+      provider: replacement,
+    } });
+    browserWindow.dispatchEvent(changed);
+    assert.equal(resolveEvmProvider("rabby", { pinned: selected }), undefined);
+    assert.equal(getEvmProvider("rabby"), replacement);
+    unsubscribe();
+    clearDiscoveredWalletProviders();
+  } finally {
+    globalThis.window = previous;
+  }
+});
+
+test("same-brand provider ambiguity is deterministic for connect but blocked for silent restore", () => {
+  const previous = globalThis.window;
+  const browserWindow = new EventTarget();
+  globalThis.window = browserWindow;
+  try {
+    requestWalletProviders();
+    const first = { request: async () => [] };
+    const second = { request: async () => [] };
+    for (const [uuid, provider] of [["rabby-z", second], ["rabby-a", first]]) {
+      const announcement = new Event("eip6963:announceProvider");
+      Object.defineProperty(announcement, "detail", { value: {
+        info: { uuid, name: "Rabby", icon: "data:image/svg+xml,", rdns: "io.rabby" },
+        provider,
+      } });
+      browserWindow.dispatchEvent(announcement);
+    }
+    assert.equal(resolveEvmProvider("rabby")?.provider, first);
+    assert.equal(resolveEvmProvider("rabby", { requireUnique: true }), undefined);
+  } finally {
+    clearDiscoveredWalletProviders();
+    globalThis.window = previous;
+  }
+});
+
+test("legacy fallback never chooses an arbitrary provider when a vendor flag is ambiguous", () => {
+  const previous = globalThis.window;
+  const first = { request: async () => [] , isMetaMask: true };
+  const second = { request: async () => [] , isMetaMask: true };
+  globalThis.window = Object.assign(new EventTarget(), { ethereum: { providers: [first, second] } });
+  try {
+    assert.equal(getEvmProvider("metamask"), undefined);
+    globalThis.window = Object.assign(new EventTarget(), { ethereum: first });
+    assert.equal(getEvmProvider("metamask"), first);
+    const keplrProvider = { request: async () => [], on() {}, off() {} };
+    globalThis.window = Object.assign(new EventTarget(), { keplr: { ethereum: keplrProvider } });
+    assert.equal(getEvmProvider("keplr"), keplrProvider);
+    const compassProvider = { request: async () => [] };
+    globalThis.window = Object.assign(new EventTarget(), { compassEvm: compassProvider });
+    assert.equal(getEvmProvider("compass"), compassProvider);
+  } finally {
+    clearDiscoveredWalletProviders();
+    globalThis.window = previous;
+  }
+});
+
+test("Keplr EVM preparation uses only the documented provider enable hook", async () => {
+  const calls = [];
+  const provider = {
+    async enable() { calls.push("enable"); },
+    async request() { calls.push("request"); return []; },
+  };
+  await prepareEvmProvider({ walletId: "keplr", provider, identity: { source: "legacy" } });
+  assert.deepEqual(calls, ["enable"]);
+  await prepareEvmProvider({ walletId: "metamask", provider, identity: { source: "legacy" } });
+  assert.deepEqual(calls, ["enable"]);
+});
+
+test("wallet context pins events to the selected provider and marks wrong chains unwritable", async () => {
+  const walletContext = await readFile(new URL("../src/lib/WalletContext.tsx", import.meta.url), "utf8");
+  const walletSource = await readFile(new URL("../src/lib/wallet.ts", import.meta.url), "utf8");
+  assert.match(walletContext, /resolveEvmProvider\(walletId, \{ pinned: resolution \}\)/);
+  assert.match(walletContext, /accountsChanged/);
+  assert.match(walletContext, /chainChanged/);
+  assert.match(walletContext, /disconnect/);
+  assert.match(walletContext, /writable:/);
+  assert.match(walletContext, /removeListener/);
+  assert.match(walletContext, /provider\.off/);
+  assert.doesNotMatch(walletContext, /getEvmProvider\(/);
+  assert.match(walletSource, /keplr\?\.ethereum/);
+  assert.match(walletSource, /compassEvm/);
+  assert.doesNotMatch(walletSource, /keplr\.enable\(/);
 });

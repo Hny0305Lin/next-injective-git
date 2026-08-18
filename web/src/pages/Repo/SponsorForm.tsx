@@ -6,7 +6,6 @@ import {
   sponsorWithEconomicModule,
   type AppConfig,
 } from "../../lib/chain";
-import { getEvmProvider } from "../../lib/wallet";
 import type { Hex } from "viem";
 
 export default function SponsorForm({
@@ -20,7 +19,7 @@ export default function SponsorForm({
   repo: string;
   repoId: Hex | null;
 }) {
-  const { connected, walletModalOpen, openWalletModal, closeWalletModal, refreshBalance } = useWallet();
+  const { connected, provider, walletModalOpen, openWalletModal, closeWalletModal, refreshBalance } = useWallet();
   const [amount, setAmount] = useState("0.1");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -37,8 +36,8 @@ export default function SponsorForm({
       setErr("");
       setTxhash("");
       try {
+        if (!connected.writable) throw new Error("Switch the wallet to Injective EVM testnet before writing.");
         if (!repoId) throw new Error("EVM repository has no stable repository ID");
-        const provider = getEvmProvider(connected.id);
         if (!provider) throw new Error(`${connected.label} not available`);
         const hash = await sponsorWithEconomicModule(provider, cfg, repoId, amount, message);
         setTxhash(hash);
@@ -51,7 +50,7 @@ export default function SponsorForm({
         setBusy(false);
       }
     },
-    [connected, cfg, addr, repo, repoId, amount, message, refreshBalance],
+    [connected, provider, cfg, addr, repo, repoId, amount, message, refreshBalance],
   );
 
   return (
@@ -85,9 +84,10 @@ export default function SponsorForm({
             maxLength={256}
             aria-label="sponsor message"
           />
-          <button type="submit" disabled={busy}>
+          <button type="submit" disabled={busy || !connected.writable}>
             {busy ? "signing…" : `Sponsor via ${connected.label}`}
           </button>
+          {!connected.writable && <span className="muted">Switch to Injective EVM testnet to write.</span>}
         </form>
       )}
 

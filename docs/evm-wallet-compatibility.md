@@ -1,6 +1,6 @@
 # EVM Wallet Compatibility Plan
 
-- Status: Proposed
+- Status: Implemented in Web runtime; live wallet acceptance pending
 - Scope: Web wallet connection and EVM transaction compatibility
 - Target network: Injective EVM testnet, chain ID `1439` (`0x59f`)
 - Product decision: Support wallets that can sign the current Injective EVM
@@ -41,8 +41,9 @@ connection, network-management, signing, and receipt checks.
 
 ### Explicit Non-Goals
 
-- Do not restore `window.keplr`, `window.leap`, Cosmos `enable`,
-  `getOfflineSigner`, `signDirect`, CosmJS, or V1 `MsgExecuteContract` writes.
+- Do not restore native Cosmos signing (`window.keplr.enable`, `getOfflineSigner`,
+  `signDirect`, CosmJS, or V1 `MsgExecuteContract` writes). Keplr is considered
+  only through its documented `window.keplr.ethereum` EVM provider.
 - Do not use a V1 fallback, a dual-write mode, a relayer, or a Cosmos-to-EVM
   bridge as part of this work.
 - Do not add WalletConnect/Reown or mobile deep-link support in the first
@@ -52,7 +53,9 @@ connection, network-management, signing, and receipt checks.
   wrong provider is a signing-risk and user-experience failure.
 - Do not declare Keplr or Leap supported merely because they expose native
   Cosmos APIs or an `inj1...` account. They are candidates only if a tested
-  version exposes the EIP-1193 methods required by this plan.
+  EVM provider exposes the methods required by this plan. Leap's documented
+  browser EVM surface is the Compass provider (`window.compassEvm`), not the
+  native `window.leap` Cosmos API.
 - Do not ask for, import, log, persist, or transmit a seed phrase, private key,
   or wallet secret.
 
@@ -61,7 +64,7 @@ connection, network-management, signing, and receipt checks.
 The ordinary Web runtime currently has one EVM connection model:
 
 1. `SUPPORTED_WALLETS` identifies MetaMask, Rabby, OKX Wallet, Bitget, Trust,
-   Coinbase Wallet, and Brave Wallet.
+   Coinbase Wallet, Brave Wallet, Keplr (EVM), and Compass (Leap EVM).
 2. `getEvmProvider` resolves a named EIP-1193 provider.
 3. The context calls `eth_requestAccounts`, validates a `0x` address, then
    calls `wallet_switchEthereumChain` or, on error `4902`,
@@ -70,12 +73,39 @@ The ordinary Web runtime currently has one EVM connection model:
    target chain, estimates gas, sends a legacy EVM transaction, and waits for a
    successful receipt.
 
-The current working-tree baseline additionally contains EIP-6963 discovery,
-delayed provider re-scanning, silent reconnect via `eth_accounts`, and a
-connection flow that no longer verifies the Suite before requesting a wallet.
-Those changes solve the generic empty-`SuiteDirectory` connection gate, but
-they are not a real-wallet compatibility claim and must be preserved, reviewed,
-and committed as part of this work.
+The Web implementation now contains EIP-6963 discovery, delayed provider
+re-scanning, silent reconnect via `eth_accounts`, and a connection flow that no
+longer verifies the Suite before requesting a wallet. A connected session keeps
+the selected provider object and EIP-6963 UUID in memory; only the wallet family
+ID is persisted. Account, chain, and disconnect events are subscribed on that
+same provider, and a replacement or ambiguous provider cannot be substituted
+silently. Public native-balance reads continue to use the configured profile
+RPC. These source-level guarantees are covered by the Web API test suite, but
+they are not a real-wallet compatibility claim until the live acceptance matrix
+below has been completed.
+
+### Implemented In This Change
+
+- MetaMask, Rabby, OKX Wallet (EVM), Bitget Wallet, Trust Wallet, Coinbase
+  Wallet, Brave Wallet, Keplr (EVM), and Compass (Leap EVM) are exposed through
+  the EIP-1193 EVM picker. Keplr is resolved only from `window.keplr.ethereum`,
+  and Compass only from the documented `window.compassEvm`, never from native
+  Cosmos signer APIs.
+- EIP-6963 UUID/RDNS resolution is deterministic, late announcements are
+  handled, same-brand ambiguity blocks silent restore, and legacy fallbacks
+  reject ambiguous vendor flags.
+- Writes from repository, ownership, sponsor, badge, and revenue-split flows
+  receive the session-pinned provider from `WalletContext`; no write caller
+  re-resolves a provider by family ID.
+- `accountsChanged`, `chainChanged`, and `disconnect` update or clear the
+  session. A wrong chain remains visible as an account session but is marked
+  unwritable until chain `1439` is confirmed again.
+- EIP-1193 error codes `4001`, `4100`, `4200`, `4902`, and `-32002` are
+  normalized across numeric, string, and nested provider error shapes.
+- Automated coverage now includes all listed RDNS mappings, late discovery,
+  provider replacement, ambiguity, legacy fallback safety, and event/lifecycle
+  source checks. `npm run typecheck`, `npm run test:api`, and `npm run build`
+  pass in the Web package.
 
 The checked-in public profile deliberately has no deployed `SuiteDirectory`.
 This means that connection and basic network validation can be tested before
@@ -163,12 +193,21 @@ release column only after the acceptance matrix passes.
 | Trust Wallet | Expected EIP-6963 `com.trustwallet.app`; retain an exact fallback only after validation | Candidate | Include only after its tested version passes all checks. |
 | Coinbase Wallet | Expected EIP-6963 `com.coinbase.wallet`; retain an exact fallback only after validation | Candidate | Include only after its tested version passes all checks. |
 | Brave Wallet | Expected EIP-6963 `com.brave.wallet`; retain an exact fallback only after validation | Candidate | Include only after its tested version passes all checks. |
-| Keplr | A documented EIP-1193 EVM provider only | Conditional | Do not show a native Cosmos connector. Add only after a real EVM-provider test passes. |
-| Leap | A documented EIP-1193 EVM provider only | Conditional | Do not show a native Cosmos connector. Add only after a real EVM-provider test passes. |
+| Keplr (EVM) | Exact `window.keplr.ethereum` provider fallback; no Cosmos API | Conditional candidate | Keep conditional until a tested extension version completes the Injective EVM canary and receipt checks. |
+| Compass (Leap EVM) | Exact documented `window.compassEvm` fallback or reviewed EIP-6963 announcement | Conditional candidate | Keep conditional until a tested extension version completes the Injective EVM canary and receipt checks. |
 
 The first implementation batch should make MetaMask, Rabby, and OKX Wallet
 (EVM) the explicit release target. The remaining currently listed EVM wallets
 remain candidates until their real-extension results are recorded.
+
+Keplr's EVM surface is documented at
+<https://docs.keplr.app/api/multi-ecosystem-support/evm>; that documentation is
+the reason the conditional `Keplr (EVM)` row is implemented, but it is not a
+substitute for testing the exact extension version against Injective testnet.
+
+Leap documents its Compass EVM provider at
+<https://docs.leapwallet.io/cosmos/for-sei-evm-dapps-connect-to-compass/connect-to-compass>;
+the connector uses only the documented EIP-1193 provider object.
 
 ## Implementation Plan
 
@@ -340,7 +379,7 @@ flowchart TD
   K -- "No" --> L["Do not create writable connection"]
   K -- "Yes" --> M["Store named adapter and public addresses"]
   M --> N["Connect or read native EVM balance"]
-  N --> P["No Suite verification prerequisite"]
+  N --> P["No Suite prerequisite for connect/native balance"]
   M --> O["Suite-backed repository read or write"]
   O --> Q["Verify Suite before query or guarded EVM transaction"]
 ```
@@ -369,9 +408,10 @@ status, and transaction serialization independently.
   wallets after browser-extension compatibility is accepted.
 - Choose the supported browser and extension-version floor after the first live
   matrix establishes reliable combinations.
-- Reconsider Keplr or Leap only upon evidence that their EVM provider supports
-  this exact Injective EVM transaction contract. Native Cosmos support requires
-  a separate approved protocol and security design.
+- Promote Keplr (EVM) or Compass (Leap EVM) only after their exact provider and
+  extension version pass this Injective EVM transaction contract. Any native
+  Cosmos support still requires a separate approved protocol and security
+  design.
 
 ## Completion Definition
 

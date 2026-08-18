@@ -29,13 +29,17 @@ import {
   WalletTransactionBusyError,
   findRpcData,
   formatError,
+  providerErrorCode,
 } from "./errors";
 import { networkProfile, type AppConfig } from "./profile";
 
 export interface Eip1193 {
   request(args: { method: string; params?: unknown[] }): Promise<unknown>;
   on?(event: string, listener: (...args: unknown[]) => void): void;
+  off?(event: string, listener: (...args: unknown[]) => void): void;
   removeListener?(event: string, listener: (...args: unknown[]) => void): void;
+  addEventListener?(event: string, listener: (...args: unknown[]) => void): void;
+  removeEventListener?(event: string, listener: (...args: unknown[]) => void): void;
 }
 
 interface JsonRpcResponse<T> {
@@ -68,7 +72,7 @@ function cacheKey(cfg: AppConfig): string {
 }
 
 function quantity(value: unknown, label: string): bigint {
-  if (typeof value !== "string" || !/^0x(?:0|[1-9a-fA-F][0-9a-fA-F]*)$/.test(value)) {
+  if (typeof value !== "string" || !/^0x[0-9a-fA-F]+$/.test(value)) {
     throw new Error(`EVM RPC returned an invalid ${label}`);
   }
   return BigInt(value);
@@ -243,18 +247,12 @@ export async function readModule(
   return rawRead(cfg, suite.modules[module], MODULE_ABIS[module], functionName, args, suite.blockTag);
 }
 
-function rpcCode(error: unknown): number | undefined {
-  if (!error || typeof error !== "object") return undefined;
-  const value = (error as { code?: unknown }).code;
-  return typeof value === "number" ? value : undefined;
-}
-
 export async function ensureWalletChain(provider: Eip1193, cfg: AppConfig): Promise<void> {
   const chainId = `0x${cfg.evmChainId.toString(16)}`;
   try {
     await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId }] });
   } catch (error) {
-    if (rpcCode(error) !== 4902) throw error;
+    if (providerErrorCode(error) !== 4902) throw error;
     const profile = networkProfile(cfg);
     await provider.request({
       method: "wallet_addEthereumChain",
@@ -268,10 +266,14 @@ export async function ensureWalletChain(provider: Eip1193, cfg: AppConfig): Prom
     });
     await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId }] });
   }
-  const active = await provider.request({ method: "eth_chainId" });
-  if (quantity(active, "wallet chain ID") !== BigInt(cfg.evmChainId)) {
-    throw new Error(`wallet is connected to the wrong EVM chain: ${String(active)}`);
+  const active = await walletChainId(provider);
+  if (active !== BigInt(cfg.evmChainId)) {
+    throw new Error(`wallet is connected to the wrong EVM chain: ${active.toString()}`);
   }
+}
+
+export async function walletChainId(provider: Eip1193): Promise<bigint> {
+  return quantity(await provider.request({ method: "eth_chainId" }), "wallet chain ID");
 }
 
 function delay(milliseconds: number): Promise<void> {
@@ -294,7 +296,7 @@ async function waitForReceipt(provider: Eip1193, txHash: Hex): Promise<void> {
     } catch (error) {
       if (error instanceof EVMTransactionRevertedError || error instanceof EVMReceiptUnconfirmedError) throw error;
       const message = formatError(error).toLowerCase();
-      if (rpcCode(error) !== -32603 && !message.includes("internal error")) {
+      if (providerErrorCode(error) !== -32603 && !message.includes("internal error")) {
         throw new EVMReceiptUnconfirmedError(txHash, { cause: error });
       }
       internalErrors += 1;

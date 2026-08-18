@@ -3,7 +3,7 @@ export * from "./errors";
 export * from "./registry";
 export * from "./modules";
 export * from "./activity";
-export { ensureWalletChain, verifySuite, clearSuiteCache, type SuiteBinding } from "./transport";
+export { ensureWalletChain, walletChainId, verifySuite, clearSuiteCache, type SuiteBinding } from "./transport";
 export type { Eip1193 } from "./transport";
 
 export function formatInj(amount: string, denom: string): string {

@@ -68,7 +68,7 @@ export function WalletModal({ onClose }: { onClose: () => void }) {
         {scanComplete && !Object.values(installed).some(Boolean) && (
           <div className="wallet-empty" role="status">
             <CircleAlert size={16} />
-            <span>No wallet extension was detected in this browser. Open iGit in Chrome or Brave where your wallet extension is installed and enabled.</span>
+            <span>No supported EVM wallet was detected in this browser. Open iGit in Chrome or Brave where your wallet extension is installed and enabled.</span>
           </div>
         )}
         <div className="wallet-list">
