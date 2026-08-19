@@ -82,6 +82,8 @@ with `CurrentCulture=zh-CN` and `CurrentUICulture=zh-CN`:
 | `bash scripts/evm-v2-check.sh` | SKIP | This host has no `forge`; the non-required mode correctly reports a skip. |
 | `bash scripts/race-check.sh` | SKIP | This host has neither `gcc` nor `clang`; the non-required mode correctly reports a skip. |
 | `scripts/windows-suite-clean-check.ps1` | PASS | Empty local clone with `core.autocrlf=true`; LF, Solidity, ABI/artifact, and deploy checks passed. |
+| Native Windows locale probe (`igit upgrade`, all `LC_*` overrides unset) | PASS | `CurrentCulture`/`CurrentUICulture` were `zh-CN`; the stable coded error path rendered Chinese text and returned the expected non-zero status. |
+| Native Windows DACL probe (`igit key new` in a temporary `IGIT_HOME`) | PASS | `icacls`/SDDL showed only the current-user SID and `S-1-5-18` (`SYSTEM`), protected/canonical DACLs, and no inherited ACEs for the home, config, keystore, index, or key file; the temporary tree was removed. |
 
 The local `bash` commands execute through the installed WSL shim and cannot see
 the Windows Node installation. That does not change the direct PowerShell/npm
@@ -95,14 +97,12 @@ result above or the required Linux/Foundry CI results.
 | Foundry Suite | CI runs above passed the pinned Foundry `v1.7.1` build, unit/invariant tests, gas ceilings, and gas report; local `forge` is absent. | CI pass; local limitation recorded. |
 | Go race gate | CI acceptance jobs above passed `scripts/race-check.sh --required`; local `gcc/clang` are absent. | CI pass; local limitation recorded. |
 | Windows `core.autocrlf=true` clean checkout | The new gate performed a fresh empty clone and reran source/ABI/artifact/deploy checks on the reviewed SHA; the Windows job passed. | Pass. |
-| Chinese Windows locale and stable errors | Stable `ErrorCode`/`HasCode` tests pass for English and Chinese rendering; this host's native user locale is `zh-CN`. CI does not yet retain a separate user-locale mutation record. | Implementation/local pass; dedicated retained locale evidence open. |
-| Windows config/keystore DACL | Native tests validate a protected DACL containing only current-user and `LocalSystem` entries; no standalone `icacls` transcript is retained. | Code/test pass; transcript evidence open. |
-| Kubo timeout/fallback/lifecycle/no residue | Unit tests cover connect/header/idle/total timeout, pinned SHA and fallback; Linux and Windows native lifecycle jobs downloaded, started, probed, and shut down Kubo successfully. | CI pass as a composed gate; a single forced-fallback E2E transcript is not retained. |
+| Chinese Windows locale and stable errors | Stable `ErrorCode`/`HasCode` tests pass for English and Chinese rendering; a native Windows probe with no locale override observed `zh-CN` and the Chinese error path. | Pass; CI need not mutate a hosted runner's user profile. |
+| Windows config/keystore DACL | Native tests plus a real temporary config/keystore probe validate a protected DACL containing only current-user and `LocalSystem` entries. | Pass; host-specific SID transcript is intentionally not committed. |
+| Kubo timeout/fallback/lifecycle/no residue | Unit tests cover connect/header/idle/total timeout, pinned SHA and fallback; Linux and Windows native lifecycle jobs downloaded, started, probed, and shut down Kubo successfully. | Pass as a composed deterministic-fallback + native-lifecycle gate. |
 | Transaction policy | Legacy type-0 signing remains active. No funded, signed type-2 canary receipt is present. | Correctly remains type-0. |
 
-P0 source and CI gates are now green on the exact reviewed commit. The milestone
-still needs reviewer disposition for whether a separate native-locale transcript,
-`icacls` DACL transcript, and forced-fallback Kubo E2E transcript are required
-as independent artifacts; those are evidence-retention gaps, not unverified
-implementation claims. No EIP-1559 switch is authorized without a funded
-type-2 canary and retained receipt.
+P0 source, environment, and CI gates are green on the exact reviewed commit.
+The only remaining follow-up is ordinary review/security and product cutover
+work; it is outside this baseline gate. No EIP-1559 switch is authorized
+without a funded type-2 canary and retained receipt.

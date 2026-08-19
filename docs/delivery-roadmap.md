@@ -74,15 +74,17 @@ substitute for a retained CI run.
 
 At the current baseline, the retained run covers the LF/materialization,
 artifact/deploy, Foundry, race, and native Kubo gates. Stable coded errors and
-the current-user/`LocalSystem` DACL policy are covered by native Windows tests;
-the P0 evidence record calls out the separate transcript decisions that remain.
+the current-user/`LocalSystem` DACL policy are covered by native Windows tests
+and local probes; host-specific identity details are intentionally summarized
+rather than committed.
 
 The retained CI and local verification ledger is [P0 Evidence
 Record](p0-evidence.md). The reviewed P0 commit
 `f6dcee9aa67255bfdff1867785435022df7ec5e9` is bound to the successful
 [run 32215415044](https://github.com/Hny0305Lin/next-injective-git/actions/runs/32215415044).
-The remaining rows in that record are evidence-retention decisions, not hidden
-CI failures.
+The record separates this completed source/CI baseline from the independent
+security review, testnet deployment, wallet receipts, and product cutover gates
+that remain on the later milestones.
 
 ## Non-Negotiable Guardrails
 
@@ -133,7 +135,7 @@ party service delays.
 
 | ID | Milestone | Initial status | Estimate | Primary exit condition |
 |---|---|---|---:|---|
-| P0 | Windows and EVM baseline repair | Evidence-ready; reviewer sign-off pending | 2-4 days (historical) | `f6dcee9` has green native Windows/Linux/Foundry/race gates; retained evidence decisions are resolved |
+| P0 | Windows and EVM baseline repair | Complete for source/CI baseline; security and cutover follow-up | 2-4 days (historical) | `f6dcee9` has green native Windows/Linux/Foundry/race gates and retained local/CI evidence |
 | P1 | Suite v3 testnet deployment and cutover | Blocked by P0 and operator work | 1-2 weeks | Active verified Directory plus complete real cutover evidence |
 | P2 | Native Windows product acceptance | Blocked by P1 | 3-5 days | Clean Windows release-asset Git E2E without WSL2 or `injectived` |
 | P3 | Verified packstore boundary and streaming | Planned after P0 | 4-7 days | IPFS behavior preserved behind the new boundary; all downloads verify digest and size |

@@ -107,15 +107,17 @@ evidence gaps are tracked in [P0 Evidence Record](p0-evidence.md):
   non-required local gate records that limitation as `SKIP`.
 
 - [x] The native Windows host has `zh-CN` current/user UI culture, and the
-  stable-code i18n/config tests pass without relying on English text. A
-  separately retained CI transcript that mutates and restores the runner's
-  user locale is still open.
+  stable-code i18n/config tests pass without relying on English text. A native
+  `igit upgrade` probe with all `LC_*` overrides unset rendered the Chinese
+  coded-error path and returned the expected failure status.
 - [x] Native Windows tests validate the current-user/`LocalSystem` protected
-  DACL policy for config and keystore paths. A standalone `icacls` transcript
-  is still open for evidence retention.
+  DACL policy for config and keystore paths. A temporary real config/keystore
+  probe confirmed the same two principals, protected/canonical ACLs, and no
+  inherited ACEs; machine-specific SID output is not committed.
 - [x] Timeout/fallback unit tests and both native Kubo lifecycle jobs pass;
-  the evidence is composed from deterministic fallback tests plus real
-  download/start/probe/shutdown smoke, not one forced-fallback E2E transcript.
+  the evidence is a deterministic fallback test plus real
+  download/start/probe/shutdown smoke. This is the accepted composed gate for
+  the current baseline.
 
 The following are intentional compatibility boundaries and are not represented
 as completed deployment work:
