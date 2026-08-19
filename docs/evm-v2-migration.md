@@ -42,7 +42,8 @@ is recorded separately in [ADR 0002](adr/0002-pluggable-pack-storage.md).
 
 | Area | Repository state | Completion evidence still required |
 |---|---|---|
-| Suite source architecture | Present in source | Reviewed, commit-bound green CI and security findings resolved |
+| Suite source architecture | Present in source; P0 source/CI baseline complete | Independent security findings and approval remain open |
+| Native Windows/EVM baseline | P0 source, environment, and CI gates complete | Clean release-asset Git E2E and product acceptance |
 | V1 inventory and planning | Offline source tooling present | Complete fixed-height production inventory and independently verified plan |
 | Operator broadcast and import | Not implemented for the Suite | Reviewed runner, signed append-only journal, receipts, safe resume, fixed-block state |
 | Activation and cutover | Not executed | Module parity, active Directory, Linux/Windows Git E2E, Web receipts, finality and approval |

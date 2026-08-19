@@ -23,11 +23,10 @@ The public SuiteDirectory fields remain empty until the cutover gate passes.
 
 ## Engineering TODO
 
-- Record and retain a passing, commit-bound immutable Suite CI run. CI already
-  pins Foundry v1.7.1 and invokes the unit, stateful invariant, gas-ceiling,
-  and gas-report checks; workflow configuration alone is not evidence that the
-  reviewed migration commit passed. A retained local run is useful interim
-  verification, but final evidence must include the CI URL and exact commit.
+- [x] Record and retain a passing, commit-bound immutable Suite CI run. The
+  reviewed P0 commit `f6dcee9aa67255bfdff1867785435022df7ec5e9` is bound to CI
+  run `32215415044`; the complete ledger is in [P0 Evidence
+  Record](p0-evidence.md). This closes the P0 source/CI baseline only.
 - Add an operator runner for the reviewed calldata manifest. It must use the
   encrypted keystore transactor, preserve an append-only signed journal and
   receipts, resume safely after uncertain receipts, and emit fixed-block
@@ -36,10 +35,9 @@ The public SuiteDirectory fields remain empty until the cutover gate passes.
 - Replace or archive the root `scripts/testnet-e2e.sh`, which is still an
   explicitly gated V1 script. Add pure-Suite clean-environment Git acceptance
   for Linux and Windows, including historical alias resolution.
-- Record and retain a passing native Windows CI run for Go/Kubo tests and the
-  PowerShell cutover fixture. The Windows job is already defined; local Windows
-  execution is useful interim verification, but neither the job definition nor
-  an unbound local result replaces a green run for the reviewed commit.
+- [x] Record and retain a passing native Windows CI run for Go/Kubo tests and
+  the PowerShell cutover fixture. The reviewed P0 Windows job passed these
+  gates; clean release-asset Git E2E remains a separate P2 requirement.
 - Design the successor pack-reference protocol and storage adapter boundary for
   Amazon S3 and Cloudflare R2. The current immutable Suite and clients remain
   `ipfs://`-only; do not claim object-storage support until upload, durable-write

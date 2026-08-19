@@ -58,6 +58,13 @@ The following are explicitly not claimed as completed by this change:
 - independent security review, finality runbook, and hash-bound cutover approval;
 - S3/R2 storage adapters.
 
+## Post-P0 Acceptance Boundary
+
+The P0 source, environment, and commit-bound CI baseline are complete and are
+recorded in [P0 Evidence Record](p0-evidence.md). The remaining items below are
+post-P0 release boundaries; they must not be conflated with the green source
+and CI result.
+
 ## Acceptance gates
 
 1. Locked Solidity compilation, ABI/artifact parity, and Foundry tests pass.
@@ -78,8 +85,8 @@ change the operational release boundary above.
 
 ## Verification Snapshot
 
-Verified locally on 2026-08-19; commit-bound CI history and the remaining P0
-evidence gaps are tracked in [P0 Evidence Record](p0-evidence.md):
+Verified locally on 2026-08-19; the completed P0 record and its commit-bound CI
+history are tracked in [P0 Evidence Record](p0-evidence.md):
 
 - Reviewed P0 commit: `f6dcee9aa67255bfdff1867785435022df7ec5e9`.
 - Full green CI run: [32215415044](https://github.com/Hny0305Lin/next-injective-git/actions/runs/32215415044)

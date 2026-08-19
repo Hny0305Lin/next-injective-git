@@ -118,7 +118,26 @@ export function formatResourceError(error: unknown, resource: "owner" | "reposit
   if (message.includes("failed to fetch") || message.includes("network error")) {
     return "Network unavailable. Check your connection and try again.";
   }
-  if (message.includes("not found") || message.includes("locatornotfound")) {
+  if (error instanceof SuiteConfigurationError || message.includes("suitedirectory is not configured")) {
+    return "Repository data is not configured. Open Settings and add a verified SuiteDirectory.";
+  }
+  if (
+    error instanceof SuiteVerificationError ||
+    message.includes("suitedirectory") ||
+    message.includes("suite rpc") ||
+    message.includes("suite module") ||
+    message.includes("bootstrap coordinator")
+  ) {
+    return "Repository data could not be verified. Check the SuiteDirectory in Settings and try again.";
+  }
+  if (
+    message.includes("not found") ||
+    message.includes("locatornotfound") ||
+    message.includes("invalid username") ||
+    message.includes("invalidusername") ||
+    message.includes("usernamenotfound") ||
+    message.includes("invalid injective address")
+  ) {
     return `Could not find this ${label}. Check the ${resource === "owner" ? "address or username" : "owner and repository name"}.`;
   }
   return `Unable to load this ${label}. Please try again.`;

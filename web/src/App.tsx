@@ -20,6 +20,7 @@ import Toast from "./components/Toast";
 import { Button } from "./components/ui/button";
 import { WalletModal } from "./components/WalletModal";
 import { useWallet } from "./lib/WalletContext";
+import { buildSearchPath } from "./lib/search";
 import {
   CONFIG_CHANGED_EVENT,
   isSuiteDirectoryConfigured,
@@ -146,16 +147,13 @@ export default function App() {
     return () => window.removeEventListener("keydown", focusSearch);
   }, []);
 
-  const submitSearch = () => {
-    const query = q.trim();
+  const submitSearch = (rawQuery = q) => {
+    const query = rawQuery.trim();
     if (!query) return;
+    const path = buildSearchPath(query);
+    if (!path) return;
     addToHistory(query);
-    const archiveQuery = /^(?:archive|cosmwasm|v1):\/\//i.test(query);
-    const parts = query.replace(/^(?:igit|inj|archive|cosmwasm|v1):\/\//i, "").split("/").filter(Boolean);
-    if (parts.length === 0) return;
-    const prefix = archiveQuery ? "/archive/cosmwasm-v1" : "";
-    if (parts.length >= 2) nav(`${prefix}/${parts[0]}/${parts[1]}`);
-    else nav(`${prefix}/${parts[0]}`);
+    nav(path);
     setQ("");
     setShowHistory(false);
   };
@@ -200,6 +198,12 @@ export default function App() {
               value={q}
               onChange={(event) => setQ(event.target.value)}
               onFocus={() => setShowHistory(true)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  submitSearch();
+                }
+              }}
               placeholder="Search owner, repository, address..."
               aria-label="Search owner, repository, or address"
               spellCheck={false}
@@ -209,16 +213,14 @@ export default function App() {
             <div className="search-history" role="listbox">
               <div className="search-history-head">
                 <span className="muted small">Recent</span>
-                <button className="search-history-clear" onClick={clearHistory}>Clear</button>
+                <button type="button" className="search-history-clear" onClick={clearHistory}>Clear</button>
               </div>
               {history.map((item) => (
                 <button
                   key={item}
+                  type="button"
                   className="search-history-item"
-                  onClick={() => {
-                    setQ(item);
-                    addToHistory(item);
-                  }}
+                  onClick={() => submitSearch(item)}
                   role="option"
                 >
                   {item}

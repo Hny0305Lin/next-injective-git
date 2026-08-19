@@ -279,10 +279,12 @@ export async function addressUsername(cfg: AppConfig, address: string): Promise<
 }
 
 export async function resolveOwner(cfg: AppConfig, owner: string): Promise<string> {
+  const normalized = owner.trim().replace(/^@+/, "").trim();
+  if (!normalized) throw new Error("owner is required");
   try {
-    return toInjectiveAddress(toEvmAddress(owner));
+    return toInjectiveAddress(toEvmAddress(normalized));
   } catch {
-    return resolveUsername(cfg, owner);
+    return resolveUsername(cfg, normalized);
   }
 }
 

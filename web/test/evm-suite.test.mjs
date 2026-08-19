@@ -599,6 +599,7 @@ test("EIP-6963 resolution covers every announced EVM wallet and pins provider id
       bitget: "com.bitget.web3",
       trust: "com.trustwallet.app",
       coinbase: "com.coinbase.wallet",
+      gate: "io.gate.wallet",
       brave: "com.brave.wallet",
     };
     for (const wallet of eipWallets) {
@@ -678,10 +679,29 @@ test("legacy fallback never chooses an arbitrary provider when a vendor flag is 
     const compassProvider = { request: async () => [] };
     globalThis.window = Object.assign(new EventTarget(), { compassEvm: compassProvider });
     assert.equal(getEvmProvider("compass"), compassProvider);
+    const gateProvider = { request: async () => [], isGateWallet: true, isMetaMask: true };
+    globalThis.window = Object.assign(new EventTarget(), { ethereum: gateProvider, gatewallet: gateProvider });
+    assert.equal(getEvmProvider("gate"), gateProvider);
+    assert.equal(getEvmProvider("metamask"), undefined);
   } finally {
     clearDiscoveredWalletProviders();
     globalThis.window = previous;
   }
+});
+
+test("wallet metadata uses the requested brand icons and keeps Compass unchanged", () => {
+  assert.deepEqual(Object.fromEntries(SUPPORTED_WALLETS.map(({ id, icon }) => [id, icon])), {
+    metamask: "token-branded:metamask",
+    rabby: "token-branded:rabby",
+    okxevm: "token-branded:okx",
+    bitget: "token-branded:bitget",
+    trust: "token-branded:trust",
+    coinbase: "token-branded:coinbase",
+    gate: "token-branded:gate-io",
+    brave: "thesvg-color:brave",
+    keplr: "token:keplr",
+    compass: "CP",
+  });
 });
 
 test("Keplr EVM preparation uses only the documented provider enable hook", async () => {

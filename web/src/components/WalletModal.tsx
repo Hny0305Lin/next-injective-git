@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
+import { Icon as IconifyIcon } from "@iconify/react/offline";
 import { CircleAlert, ExternalLink, X } from "lucide-react";
 import { isWalletInstalled, subscribeWalletProviders, SUPPORTED_WALLETS } from "../lib/wallet";
 import { useWallet } from "../lib/WalletContext";
+import "../lib/wallet-icons";
 
 // A compact injected EVM wallet picker for Suite transactions.
 export function WalletModal({ onClose }: { onClose: () => void }) {
@@ -63,7 +65,7 @@ export function WalletModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         <div className="modal-sub muted">
-          Connect an EVM wallet on Injective testnet.
+          Connect an EVM wallet on Igit to interact with the network.
         </div>
         {scanComplete && !Object.values(installed).some(Boolean) && (
           <div className="wallet-empty" role="status">
@@ -76,7 +78,9 @@ export function WalletModal({ onClose }: { onClose: () => void }) {
             const ok = installed[w.id];
             return (
               <div className="wallet-row" key={w.id}>
-                <span className="wallet-ic">{w.icon}</span>
+                <span className="wallet-ic" aria-hidden="true">
+                  {w.icon.includes(":") ? <IconifyIcon icon={w.icon} width={24} height={24} /> : w.icon}
+                </span>
                 <span className="wallet-name">
                   {w.label}
                   <span className="wallet-kind muted">EVM</span>

@@ -2,6 +2,7 @@
 
 - Status: Active execution plan
 - Initial assessment: 2026-08-15
+- Latest assessment: 2026-08-19
 - Assessment baseline: `f6dcee9aa67255bfdff1867785435022df7ec5e9`
 - Current public availability: None; checked-in Suite profiles remain intentionally empty
 
@@ -54,7 +55,9 @@ availability.
 | ZKP on Injective testnet | Research only | No circuit, proving pipeline, verifier, deployment, or product authorization integration exists |
 | Mainnet | Not scheduled for release | Governance, storage scope, security, migration, and acceptance decisions remain open |
 
-Observed native Windows blockers at the initial assessment include:
+The initial assessment found the following native Windows blockers. They are
+retained here for audit context; the P0 evidence record below shows that the
+source, environment, and CI baseline is now closed:
 
 - `core.autocrlf=true` checks out Suite Solidity and artifact JSON with CRLF,
   while checked artifacts bind LF source bytes. The Solidity artifact and
@@ -69,8 +72,9 @@ Observed native Windows blockers at the initial assessment include:
 - The native Kubo smoke can spend its full download budget on one slow source
   without reaching a fallback mirror.
 
-These findings must be reproduced in CI before being closed. They are not a
-substitute for a retained CI run.
+These findings were reproduced and closed by the retained P0 evidence set,
+which combines commit-bound CI with the documented native Windows probes. They
+are not deployment, migration, security, or product-acceptance evidence.
 
 At the current baseline, the retained run covers the LF/materialization,
 artifact/deploy, Foundry, race, and native Kubo gates. Stable coded errors and
@@ -85,6 +89,9 @@ Record](p0-evidence.md). The reviewed P0 commit
 The record separates this completed source/CI baseline from the independent
 security review, testnet deployment, wallet receipts, and product cutover gates
 that remain on the later milestones.
+Later commits may change Web, Monitor, or documentation files without changing
+the reviewed P0 source anchor. Any release assembled from a later commit still
+needs its own release CI and cutover evidence binding before publication.
 
 ## Non-Negotiable Guardrails
 
@@ -136,9 +143,9 @@ party service delays.
 | ID | Milestone | Initial status | Estimate | Primary exit condition |
 |---|---|---|---:|---|
 | P0 | Windows and EVM baseline repair | Complete for source/CI baseline; security and cutover follow-up | 2-4 days (historical) | `f6dcee9` has green native Windows/Linux/Foundry/race gates and retained local/CI evidence |
-| P1 | Suite v3 testnet deployment and cutover | Blocked by P0 and operator work | 1-2 weeks | Active verified Directory plus complete real cutover evidence |
+| P1 | Suite v3 testnet deployment and cutover | Blocked by operator work and cutover prerequisites | 1-2 weeks | Active verified Directory plus complete real cutover evidence |
 | P2 | Native Windows product acceptance | Blocked by P1 | 3-5 days | Clean Windows release-asset Git E2E without WSL2 or `injectived` |
-| P3 | Verified packstore boundary and streaming | Planned after P0 | 4-7 days | IPFS behavior preserved behind the new boundary; all downloads verify digest and size |
+| P3 | Verified packstore boundary and streaming | Planned; may proceed in parallel with P1 | 4-7 days | IPFS behavior preserved behind the new boundary; all downloads verify digest and size |
 | P4 | S3/R2 successor protocol and adapters | Blocked by design gate | 2-3 weeks | Successor Suite and real AWS/R2 provider workflows pass |
 | P5 | Historical storage migration and cutover | Blocked by P4 | 1 week | Hash-bound CID mapping, dual-read rollback window, and provider E2E pass |
 | Z0 | Isolated ZKP testnet prototype | Can run after P0 | 3-5 days | Useful proof statement verified on testnet with reproducible benchmarks |
@@ -146,7 +153,19 @@ party service delays.
 
 ## P0: Windows And EVM Baseline Repair
 
+**Status: Complete for source, environment, and CI baseline.** Reviewed commit
+`f6dcee9aa67255bfdff1867785435022df7ec5e9` is bound to the successful [CI run
+32215415044](https://github.com/Hny0305Lin/next-injective-git/actions/runs/32215415044),
+including native Windows, Linux, Foundry, race, Kubo, and Web jobs. The local
+Windows locale and DACL probes are recorded separately in [P0 Evidence
+Record](p0-evidence.md). This completion does not satisfy the independent
+security review, testnet deployment, migration, wallet, or product cutover
+gates.
+
 ### Deliverables
+
+The following P0 controls and evidence are now in place for the reviewed
+commit:
 
 1. Pin LF for Suite Solidity, ABI JSON, and checked artifact JSON in
    `.gitattributes`. Exercise the artifact gate after a Windows checkout with
@@ -169,8 +188,9 @@ party service delays.
    exposed London fee data and accepted type-2 fields for gas estimation. Keep
    the tested legacy type-0 path until a funded, signed type-2 canary is
    broadcast and its receipt is retained.
-7. Open a reviewable PR for the EVM branch and retain the exact green CI URL and
-   commit. Workflow source alone is not evidence.
+7. Retain the exact green CI URL and commit binding. The workflow definition
+   alone is not evidence; the retained run and local probes are recorded in
+   [P0 Evidence Record](p0-evidence.md).
 
 ### Exit Criteria
 
@@ -549,11 +569,12 @@ security or release evidence:
 Install counts are a dated discovery signal and will change. No additional
 skill was installed during this assessment.
 
-## Immediate PR Sequence
+## PR Sequence
 
-1. **PR 1 - Native baseline:** LF attributes, locale-independent errors,
-   Windows permission abstraction/tests, mainnet RPC, bounded Kubo fallback,
-   and a commit-bound Windows/Linux CI run.
+1. **Completed - PR 1, native baseline:** LF attributes, locale-independent
+   errors, Windows permission abstraction/tests, mainnet RPC, bounded Kubo
+   fallback, and a commit-bound Windows/Linux CI run. See [P0 Evidence
+   Record](p0-evidence.md).
 2. **PR 2 - Operator runner:** append-only journal, safe resume, receipt and
    fixed-block evidence, with no public profile change.
 3. **PR 3 - Testnet evidence:** rotate key, deploy, verify, import, activate,

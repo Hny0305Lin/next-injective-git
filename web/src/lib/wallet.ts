@@ -10,14 +10,15 @@ export interface SupportedWallet {
 }
 
 export const SUPPORTED_WALLETS: SupportedWallet[] = [
-  { id: "metamask", label: "MetaMask", icon: "MM", installUrl: "https://metamask.io/download/" },
-  { id: "rabby", label: "Rabby", icon: "RB", installUrl: "https://rabby.io/" },
-  { id: "okxevm", label: "OKX Wallet (EVM)", icon: "OK", installUrl: "https://www.okx.com/web3" },
-  { id: "bitget", label: "Bitget Wallet", icon: "BG", installUrl: "https://web3.bitget.com/" },
-  { id: "trust", label: "Trust Wallet", icon: "TW", installUrl: "https://trustwallet.com/" },
-  { id: "coinbase", label: "Coinbase Wallet", icon: "CB", installUrl: "https://www.coinbase.com/wallet" },
-  { id: "brave", label: "Brave Wallet", icon: "BW", installUrl: "https://brave.com/wallet/" },
-  { id: "keplr", label: "Keplr (EVM)", icon: "KP", installUrl: "https://www.keplr.app/download" },
+  { id: "metamask", label: "MetaMask", icon: "token-branded:metamask", installUrl: "https://metamask.io/download/" },
+  { id: "rabby", label: "Rabby", icon: "token-branded:rabby", installUrl: "https://rabby.io/" },
+  { id: "okxevm", label: "OKX Wallet (EVM)", icon: "token-branded:okx", installUrl: "https://www.okx.com/web3" },
+  { id: "bitget", label: "Bitget Wallet", icon: "token-branded:bitget", installUrl: "https://web3.bitget.com/" },
+  { id: "trust", label: "Trust Wallet", icon: "token-branded:trust", installUrl: "https://trustwallet.com/" },
+  { id: "coinbase", label: "Coinbase Wallet", icon: "token-branded:coinbase", installUrl: "https://www.coinbase.com/wallet" },
+  { id: "gate", label: "Gate Wallet", icon: "token-branded:gate-io", installUrl: "https://chromewebstore.google.com/detail/gate-wallet/cpmkedoipcpimgecpmgpldfpohjplkpp" },
+  { id: "brave", label: "Brave Wallet", icon: "thesvg-color:brave", installUrl: "https://brave.com/wallet/" },
+  { id: "keplr", label: "Keplr (EVM)", icon: "token:keplr", installUrl: "https://www.keplr.app/download" },
   { id: "compass", label: "Compass (Leap EVM)", icon: "CP", installUrl: "https://chrome.google.com/webstore/detail/compass-wallet/anokgmphncpekkhclmingpimjmcooifb" },
 ];
 
@@ -30,6 +31,7 @@ interface ProviderRecord extends Eip1193 {
   isTrustWallet?: boolean;
   isCoinbaseWallet?: boolean;
   isBraveWallet?: boolean;
+  isGateWallet?: boolean;
 }
 
 interface WalletWindow {
@@ -41,6 +43,7 @@ interface WalletWindow {
   bitkeep?: { ethereum?: ProviderRecord };
   trustwallet?: ProviderRecord;
   coinbaseWalletExtension?: ProviderRecord;
+  gatewallet?: ProviderRecord;
 }
 
 export interface Eip6963ProviderInfo {
@@ -76,6 +79,7 @@ const EIP6963_RDNS: Record<string, readonly string[]> = {
   bitget: ["com.bitget.web3", "com.bitkeep.wallet"],
   trust: ["com.trustwallet.app"],
   coinbase: ["com.coinbase.wallet"],
+  gate: ["io.gate.wallet"],
   brave: ["com.brave.wallet"],
   // Compass may announce via EIP-6963; its exact RDNS is intentionally not
   // guessed here until an extension announcement is reviewed.
@@ -137,11 +141,16 @@ function usableProvider(value: unknown): value is Eip1193 {
   return Boolean(value && typeof (value as Eip1193).request === "function");
 }
 
-function injectedByFlag(flag: keyof ProviderRecord): Eip1193 | undefined {
+function injectedByFlag(
+  flag: keyof ProviderRecord,
+  excludedFlags: readonly (keyof ProviderRecord)[] = [],
+): Eip1193 | undefined {
   const ethereum = walletWindow()?.ethereum;
   if (!ethereum) return undefined;
   const providers = Array.isArray(ethereum.providers) ? ethereum.providers : [ethereum];
-  const matches = providers.filter((provider) => provider[flag] === true && usableProvider(provider));
+  const matches = providers.filter((provider) => provider[flag] === true
+    && excludedFlags.every((excluded) => provider[excluded] !== true)
+    && usableProvider(provider));
   // A shared vendor flag is not enough to choose between two extensions.
   return matches.length === 1 ? matches[0] : undefined;
 }
@@ -150,12 +159,13 @@ function legacyProvider(id: string): Eip1193 | undefined {
   const wallet = walletWindow();
   if (!wallet) return undefined;
   switch (id) {
-    case "metamask": return injectedByFlag("isMetaMask");
+    case "metamask": return injectedByFlag("isMetaMask", ["isGateWallet"]);
     case "rabby": return (usableProvider(wallet.rabby) ? wallet.rabby : undefined) ?? injectedByFlag("isRabby");
     case "okxevm": return usableProvider(wallet.okxwallet) ? wallet.okxwallet : undefined;
     case "bitget": return (usableProvider(wallet.bitkeep?.ethereum) ? wallet.bitkeep.ethereum : undefined) ?? injectedByFlag("isBitKeep");
     case "trust": return (usableProvider(wallet.trustwallet) ? wallet.trustwallet : undefined) ?? injectedByFlag("isTrust") ?? injectedByFlag("isTrustWallet");
     case "coinbase": return (usableProvider(wallet.coinbaseWalletExtension) ? wallet.coinbaseWalletExtension : undefined) ?? injectedByFlag("isCoinbaseWallet");
+    case "gate": return (usableProvider(wallet.gatewallet) ? wallet.gatewallet : undefined) ?? injectedByFlag("isGateWallet");
     case "brave": return injectedByFlag("isBraveWallet");
     case "keplr": return usableProvider(wallet.keplr?.ethereum) ? wallet.keplr.ethereum : undefined;
     case "compass": return usableProvider(wallet.compassEvm) ? wallet.compassEvm : undefined;
