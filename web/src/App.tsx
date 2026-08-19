@@ -2,7 +2,6 @@ import {
   Activity,
   AlertTriangle,
   Archive as ArchiveIcon,
-  Boxes,
   GitFork,
   HardDrive,
   Gauge,
@@ -13,6 +12,7 @@ import {
   Settings as SettingsIcon,
   Sun,
 } from "lucide-react";
+import { Icon as IconifyIcon } from "@iconify/react/offline";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import AccountMenu from "./components/AccountMenu";
@@ -29,6 +29,7 @@ import {
 import Home from "./pages/Home";
 import Settings from "./pages/Settings";
 import { isCosmWasmV1ArchivePath } from "./pages/Repo/useRepoViews";
+import "./lib/architecture-icons";
 
 const LazyOwner = lazy(() => import("./pages/Owner"));
 const LazyRepo = lazy(() => import("./pages/Repo/index"));
@@ -280,15 +281,15 @@ export default function App() {
           <div className="side-nav-section architecture">
             <div className="side-nav-label">Architecture</div>
             <div className="side-nav-meta">
-              <span className="side-nav-meta-icon"><Boxes size={14} /></span>
+              <span className="side-nav-meta-icon"><IconifyIcon icon="mdi:ethereum" width={14} height={14} aria-hidden="true" /></span>
               <span><b>EVM V2</b><small>Current repositories</small></span>
             </div>
             <div className="side-nav-meta">
-              <span className="side-nav-meta-icon"><ArchiveIcon size={14} /></span>
+              <span className="side-nav-meta-icon"><IconifyIcon icon="token:cosmos" width={14} height={14} aria-hidden="true" /></span>
               <span><b>CosmWasm V1</b><small>Read-only repository archive</small></span>
             </div>
             <div className="side-nav-meta">
-              <span className="side-nav-meta-icon"><HardDrive size={14} /></span>
+              <span className="side-nav-meta-icon"><IconifyIcon icon="simple-icons:ipfs" width={14} height={14} aria-hidden="true" /></span>
               <span><b>IPFS</b><small>Packfile storage</small></span>
             </div>
           </div>
