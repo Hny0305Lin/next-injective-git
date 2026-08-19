@@ -108,7 +108,7 @@ evidence gaps are tracked in [P0 Evidence Record](p0-evidence.md):
 
 - [x] The native Windows host has `zh-CN` current/user UI culture, and the
   stable-code i18n/config tests pass without relying on English text. A native
-  `igit upgrade` probe with all `LC_*` overrides unset rendered the Chinese
+  removed-command probe with all `LC_*` overrides unset rendered the Chinese
   coded-error path and returned the expected failure status.
 - [x] Native Windows tests validate the current-user/`LocalSystem` protected
   DACL policy for config and keystore paths. A temporary real config/keystore

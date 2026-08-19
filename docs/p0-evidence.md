@@ -82,7 +82,7 @@ with `CurrentCulture=zh-CN` and `CurrentUICulture=zh-CN`:
 | `bash scripts/evm-v2-check.sh` | SKIP | This host has no `forge`; the non-required mode correctly reports a skip. |
 | `bash scripts/race-check.sh` | SKIP | This host has neither `gcc` nor `clang`; the non-required mode correctly reports a skip. |
 | `scripts/windows-suite-clean-check.ps1` | PASS | Empty local clone with `core.autocrlf=true`; LF, Solidity, ABI/artifact, and deploy checks passed. |
-| Native Windows locale probe (`igit upgrade`, all `LC_*` overrides unset) | PASS | `CurrentCulture`/`CurrentUICulture` were `zh-CN`; the stable coded error path rendered Chinese text and returned the expected non-zero status. |
+| Native Windows locale probe (removed-command path, all `LC_*` overrides unset) | PASS | `CurrentCulture`/`CurrentUICulture` were `zh-CN`; the stable coded error path rendered Chinese text and returned the expected non-zero status. |
 | Native Windows DACL probe (`igit key new` in a temporary `IGIT_HOME`) | PASS | `icacls`/SDDL showed only the current-user SID and `S-1-5-18` (`SYSTEM`), protected/canonical DACLs, and no inherited ACEs for the home, config, keystore, index, or key file; the temporary tree was removed. |
 
 The local `bash` commands execute through the installed WSL shim and cannot see
