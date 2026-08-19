@@ -48,7 +48,7 @@ The first release does not claim to provide:
 | --- | --- | --- | --- |
 | Verified EVM V2 `SuiteDirectory` | Suite status, latest block, recent decoded activity, and any repository data reachable through the verified Directory | `EVM V2` | The checked-in profile has no real Directory yet. Activity is a bounded recent-block observation, not an all-time index. |
 | CosmWasm V1 archive contract | Contract availability, session snapshot height, and links to the explicit archive viewer and public Injective Explorer | `CosmWasm V1 archive` and `Read-only` | Repository lookup remains in the dedicated archive viewer. The first Monitor release does not enumerate or aggregate V1 repositories. |
-| IPFS gateway and Git pack audit | Independent reachability probes for the HK hot-tier and US durable-archive gateways, plus packfile health for indexed repositories/CIDs | `IPFS observation` | Each gateway uses the same server-side `/ipfs/` probe; cross-project trends require a probe or metrics service. |
+| IPFS gateway and Git pack audit | Independent reachability probes for the HK hot-tier and US durable-archive gateways, plus packfile health for indexed repositories/CIDs | `IPFS observation` | Each gateway uses three consecutive direct-browser `/ipfs/` probes and displays the median response latency. Results describe the visitor's current ISP path, not global performance. |
 | Curated storage topology | Public HK/US gateway inventory plus Filebase and Fil.one provider roles and public endpoints | `IPFS gateways` and `Public inventory` | Provider badges describe the configured role only; browser code does not query private S3 metrics or credentials. |
 | Future event/indexer API | Complete historical totals, daily trends, unique owners/contributors, and cross-owner migration counts | `Indexed data` | Not part of the first release. The API must expose its index height and freshness. |
 
@@ -56,16 +56,21 @@ The Monitor must not treat a CosmWasm contract address as an EVM
 `SuiteDirectory`, and it must not silently fall back from an EVM verification
 or transport error to the V1 archive.
 
-The gateway reachability probes are served by the same-origin
-`/api/ipfs-health` function. The function uses a static network-profile and
-target-ID allowlist (`target=hk` and `target=us`) and probes each gateway's
-`/ipfs/` path from the website server. Arbitrary `gateway=` URL selection is
-rejected. A `403` from `/healthz` is therefore not used as a
-gateway signal: that path is an operational health route, while `/ipfs/` is
-the public read-only gateway path. The Vite-only local preview falls back to
-browser probes when the serverless function is not present. Monitor runs the
-full source and HK/US gateway probe cycle when the page opens and every 90
-seconds thereafter; visitors can also trigger the same cycle manually.
+The public Monitor probes each statically configured gateway's `/ipfs/` path
+directly from the visitor's browser. HK and US start concurrently; each
+gateway runs three sequential requests and reports their median HTTP response
+latency. This intentionally reflects the visitor's current ISP and route, so
+different networks may produce different regional rankings. A `403` from
+`/healthz` is not used as a gateway signal: that path is an operational health
+route, while `/ipfs/` is the public read-only gateway path.
+
+The same-origin `/api/ipfs-health` function remains available for operational
+server-side reachability checks. It uses a static network-profile and target-ID
+allowlist (`target=hk` and `target=us`) and rejects arbitrary `gateway=` URL
+selection, but Monitor does not use its latency as visitor latency. Monitor
+runs the full source and HK/US gateway probe cycle when the page opens and
+every 90 seconds thereafter; visitors can also trigger the same cycle
+manually.
 
 ## First-Release Screen
 
@@ -78,7 +83,8 @@ The top of the page shows four compact status items:
 2. **CosmWasm V1 archive** — `Online`, `Read-only`, `Unavailable`, or `Stale`,
    with the session snapshot height and shortened contract address.
 3. **IPFS observation** — paired HK/US gateway statuses (`Reachable`,
-   `Degraded`, or `Unknown`), based only on probes that actually ran.
+   `Degraded`, or `Unknown`) and three-sample browser median latency, based
+   only on probes that actually ran.
 4. **Data freshness** — the newest successful query time and the scope of the
    observation window.
 
@@ -229,7 +235,8 @@ Prometheus textfiles directly from a browser.
 - Activity counts state their block window and never claim to be all-time.
 - Failed or stale queries have explicit states and do not become numeric zero.
 - The HK and US IPFS gateways appear in the same gateway section and retain
-  independent reachability, latency, probe-source, and freshness states.
+  independent reachability, three-sample browser median latency, probe-source,
+  and freshness states.
 - Filebase and Fil.one remain clearly labelled provider inventory; they are
   not presented as IPFS gateway probes or as live storage-capacity metrics.
 - No Monitor control signs, broadcasts, edits, sponsors, transfers, or starts

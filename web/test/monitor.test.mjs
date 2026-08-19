@@ -52,7 +52,6 @@ test("Monitor keeps HK and US in one IPFS gateway surface", async () => {
   assert.match(monitor, /United States/);
   assert.match(monitor, /https:\/\/igit-us\.haohanyh\.ovh/);
   assert.match(monitor, /https:\/\/igit-hk\.haohanyh\.ovh/);
-  assert.match(monitor, /target=\$\{encodeURIComponent\(target\)\}/);
   assert.match(monitor, /PUBLIC_IPFS_GATEWAYS\.map/);
   assert.doesNotMatch(monitor, /healthz/);
 });
@@ -68,12 +67,17 @@ test("Monitor keeps Filebase and Fil.one as provider metadata", async () => {
   assert.doesNotMatch(monitor, /us101010|a10101|162\.35\.187\.224|12D3KooW/);
 });
 
-test("Monitor prefers the same-origin server gateway probe", async () => {
+test("Monitor measures each gateway directly from the browser using three-sample medians", async () => {
   const monitor = await source("../src/pages/Monitor.tsx");
-  assert.match(monitor, /\/api\/ipfs-health\?profile=.*target=/);
+  const probe = await source("../src/lib/ipfs-probe.ts");
+  assert.match(probe, /BROWSER_GATEWAY_PROBE_SAMPLE_COUNT = 3/);
+  assert.match(probe, /samples\.push\(await probeGatewayOnce/);
+  assert.match(probe, /medianLatency\(responses\.map/);
+  assert.match(monitor, /probeGatewayFromBrowser\(gateway\.endpoint\)/);
   assert.match(monitor, /Independent status, latency, and freshness/);
-  assert.match(monitor, /probeSource === "server"/);
-  assert.match(monitor, /probeIpfsGateway\(gateway, cfg\.profile\)/);
+  assert.match(monitor, /Median latency/);
+  assert.match(monitor, /This browser/);
+  assert.doesNotMatch(monitor, /\/api\/ipfs-health|Website server|Browser fallback/);
 });
 
 test("Monitor automatically refreshes all probes every 90 seconds", async () => {

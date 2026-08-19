@@ -61,6 +61,10 @@ import {
   type ContractTx,
 } from "../lib/chain";
 import { COSMWASM_V1_ARCHIVE, prepareCosmWasmV1Snapshot } from "../lib/cosmwasm-v1";
+import {
+  BROWSER_GATEWAY_PROBE_SAMPLE_COUNT,
+  probeGatewayFromBrowser,
+} from "../lib/ipfs-probe";
 import { rpcRequest, verifySuite } from "../lib/transport";
 import type { AppConfig } from "../lib/profile";
 
@@ -82,14 +86,6 @@ interface MonitorSnapshot {
   ipfs: Record<IpfsGatewayId, IpfsGatewaySnapshot>;
 }
 
-interface IpfsProbeResult {
-  ok: boolean;
-  status: number | null;
-  latencyMs: number | null;
-  error?: string;
-  source: "server" | "browser";
-}
-
 type IpfsGatewayId = "hk" | "us";
 
 interface IpfsGatewayDefinition {
@@ -105,7 +101,10 @@ interface IpfsGatewayDefinition {
 interface IpfsGatewaySnapshot extends SourceSnapshot {
   latencyMs: number | null;
   statusCode: number | null;
-  probeSource: "server" | "browser" | null;
+  probeSource: "browser" | null;
+  sampleCount: number;
+  responseSamples: number;
+  reachableSamples: number;
 }
 
 const PUBLIC_IPFS_GATEWAYS: readonly IpfsGatewayDefinition[] = [
@@ -140,6 +139,9 @@ function initialIpfsSnapshot(): Record<IpfsGatewayId, IpfsGatewaySnapshot> {
       latencyMs: null,
       statusCode: null,
       probeSource: null,
+      sampleCount: BROWSER_GATEWAY_PROBE_SAMPLE_COUNT,
+      responseSamples: 0,
+      reachableSamples: 0,
     }]),
   ) as Record<IpfsGatewayId, IpfsGatewaySnapshot>;
 }
@@ -358,7 +360,7 @@ function IpfsGatewayCard({
       <CardContent className="monitor-node-content">
         <div className="monitor-node-meta monitor-gateway-meta">
           <span><MapPin size={13} /> {gateway.region}</span>
-          <span><Wifi size={13} /> {snapshot.probeSource === "server" ? "Server probe" : snapshot.probeSource === "browser" ? "Browser fallback" : "Probe pending"}</span>
+          <span><Wifi size={13} /> {snapshot.probeSource === "browser" ? `${snapshot.sampleCount} browser samples` : "Probe pending"}</span>
           <span><Clock3 size={13} /> {formatCheckedAt(snapshot.checkedAt)}</span>
         </div>
         <p className="monitor-node-role">{snapshot.detail}</p>
@@ -415,83 +417,6 @@ async function latestEvmBlock(cfg: AppConfig): Promise<bigint> {
   return BigInt(raw);
 }
 
-function parseIpfsProbePayload(value: unknown): IpfsProbeResult {
-  if (value == null || typeof value !== "object") throw new Error("IPFS health API returned malformed JSON");
-  const record = value as Record<string, unknown>;
-  const status = record.status === null ? null : record.status;
-  const latencyMs = record.latencyMs === null ? null : record.latencyMs;
-  if (typeof record.ok !== "boolean" || (status !== null && !Number.isInteger(status)) || (latencyMs !== null && !Number.isFinite(latencyMs))) {
-    throw new Error("IPFS health API returned an invalid probe result");
-  }
-  return {
-    ok: record.ok,
-    status: status as number | null,
-    latencyMs: latencyMs as number | null,
-    error: typeof record.error === "string" ? record.error : undefined,
-    source: "server",
-  };
-}
-
-async function probeIpfsGatewayFromApi(profile: string, target: IpfsGatewayId): Promise<IpfsProbeResult | null> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 12_000);
-  try {
-    const response = await fetch(`/api/ipfs-health?profile=${encodeURIComponent(profile)}&target=${encodeURIComponent(target)}`, {
-      headers: { Accept: "application/json" },
-      signal: controller.signal,
-    });
-    const contentType = response.headers.get("content-type") ?? "";
-    // Vite's dev server does not serve Vercel functions. Keep local previews
-    // useful by falling back only when the health API is absent, not when the
-    // API reports a gateway failure.
-    if (response.status === 404 || !contentType.includes("application/json")) return null;
-    if (!response.ok) throw new Error(`IPFS health API failed (HTTP ${response.status})`);
-    return parseIpfsProbePayload(await response.json());
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function probeIpfsGatewayDirect(gateway: string): Promise<IpfsProbeResult> {
-  const endpoint = `${gateway.replace(/\/+$/, "")}/ipfs/`;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 8_000);
-  const started = performance.now();
-  try {
-    let response = await fetch(endpoint, {
-      method: "HEAD",
-      headers: { Accept: "text/plain" },
-      signal: controller.signal,
-    });
-    if (response.status === 405 || response.status === 501) {
-      response = await fetch(endpoint, {
-        method: "GET",
-        headers: { Accept: "text/plain", Range: "bytes=0-0" },
-        signal: controller.signal,
-      });
-      void response.body?.cancel();
-    }
-    return {
-      ok: response.status < 500,
-      status: response.status,
-      latencyMs: Math.round(performance.now() - started),
-      source: "browser",
-    };
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error("gateway probe timed out");
-    }
-    throw error;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function probeIpfsGateway(gateway: IpfsGatewayDefinition, profile: string): Promise<IpfsProbeResult> {
-  const serverResult = await probeIpfsGatewayFromApi(profile, gateway.id);
-  return serverResult ?? await probeIpfsGatewayDirect(gateway.endpoint);
-}
-
 function aggregateGatewayState(snapshots: readonly IpfsGatewaySnapshot[]): SourceState {
   if (snapshots.some((snapshot) => snapshot.state === "loading")) return "loading";
   if (snapshots.length > 0 && snapshots.every((snapshot) => snapshot.state === "healthy")) return "healthy";
@@ -523,7 +448,7 @@ export default function Monitor() {
     const latestPromise = latestEvmBlock(cfg);
     const activityPromise = configured ? contractActivity(cfg, 50) : Promise.resolve([] as ContractTx[]);
     const v1Promise = prepareCosmWasmV1Snapshot();
-    const ipfsPromises = PUBLIC_IPFS_GATEWAYS.map((gateway) => probeIpfsGateway(gateway, cfg.profile));
+    const ipfsPromises = PUBLIC_IPFS_GATEWAYS.map((gateway) => probeGatewayFromBrowser(gateway.endpoint));
 
     const coreResultsPromise = Promise.allSettled([
       suitePromise,
@@ -544,13 +469,13 @@ export default function Monitor() {
       const result = gatewayResults[index];
       const probe = result.status === "fulfilled" ? result.value : null;
       const error = result.status === "rejected" ? formatError(result.reason) : probe?.error || "";
-      const state: SourceState = !probe || probe.status == null
+      const state: SourceState = !probe || probe.responseSamples === 0
         ? "unavailable"
         : probe.ok
           ? "healthy"
           : "degraded";
-      const detail = probe?.status != null
-        ? `${probe.status} response in ${probe.latencyMs ?? "—"} ms · ${probe.source} probe`
+      const detail = probe && probe.responseSamples > 0
+        ? `${probe.reachableSamples}/${probe.sampleCount} reachable · ${probe.latencyMs ?? "—"} ms median · browser probes`
         : error || "Gateway probe failed";
       return [gateway.id, {
         state,
@@ -560,6 +485,9 @@ export default function Monitor() {
         latencyMs: probe?.latencyMs ?? null,
         statusCode: probe?.status ?? null,
         probeSource: probe?.source ?? null,
+        sampleCount: probe?.sampleCount ?? BROWSER_GATEWAY_PROBE_SAMPLE_COUNT,
+        responseSamples: probe?.responseSamples ?? 0,
+        reachableSamples: probe?.reachableSamples ?? 0,
       } satisfies IpfsGatewaySnapshot];
     })) as Record<IpfsGatewayId, IpfsGatewaySnapshot>;
 
@@ -835,7 +763,7 @@ export default function Monitor() {
               <CardHeader className="monitor-card-header">
                 <div>
                   <CardTitle>Gateway probes</CardTitle>
-                  <CardDescription>Independent server-side reachability checks for the HK and US IPFS gateways.</CardDescription>
+                  <CardDescription>Three direct browser checks per gateway, summarized by median response latency.</CardDescription>
                 </div>
                 <CardAction><Badge variant="outline" className={ipfsBadge.className}>{ipfsBadge.label}</Badge></CardAction>
               </CardHeader>
@@ -846,9 +774,9 @@ export default function Monitor() {
                     return (
                       <div className="monitor-storage-metrics" key={gateway.id}>
                         <div><span>{gateway.title}</span><code title={gateway.endpoint}>{gateway.endpoint}</code></div>
-                        <div><span>HTTP status</span><b>{gatewaySnapshot.statusCode ?? "—"}</b></div>
-                        <div><span>Latency</span><b>{gatewaySnapshot.latencyMs == null ? "—" : `${gatewaySnapshot.latencyMs} ms`}</b></div>
-                        <div><span>Probe source</span><b>{gatewaySnapshot.probeSource === "server" ? "Website server" : gatewaySnapshot.probeSource === "browser" ? "Browser fallback" : "—"}</b></div>
+                        <div><span>Common HTTP status</span><b>{gatewaySnapshot.statusCode ?? "—"}</b></div>
+                        <div><span>Median latency</span><b>{gatewaySnapshot.latencyMs == null ? "—" : `${gatewaySnapshot.latencyMs} ms`}</b></div>
+                        <div><span>Probe source</span><b>{gatewaySnapshot.probeSource === "browser" ? `This browser · ${gatewaySnapshot.reachableSamples}/${gatewaySnapshot.sampleCount}` : "—"}</b></div>
                         <div><span>Checked</span><b>{formatCheckedAt(gatewaySnapshot.checkedAt)}</b></div>
                       </div>
                     );
