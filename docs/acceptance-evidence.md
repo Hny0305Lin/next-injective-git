@@ -17,8 +17,11 @@ bindings, and runtime hash equality. Other required files cover Solidity tests,
 admin dry run, migration plan/calldata, signed journal, receipts, imported state,
 clean Linux/Windows Git E2E, Web receipts, security review, and finality runbook.
 
-No real evidence is checked into this repository. The public SuiteDirectory
-profile remains empty until the complete evidence set is reviewed and passes.
+No real deployment or migration evidence is checked into this repository. The
+public SuiteDirectory profile remains empty until the complete evidence set is
+reviewed and passes. Commit-bound P0 source/CI results are tracked separately in
+[P0 Evidence Record](p0-evidence.md); they do not satisfy deployment, wallet,
+finality, or cutover acceptance.
 
 The current evidence schema covers the IPFS-backed Suite cutover. It contains
 no evidence for Amazon S3 or Cloudflare R2 support; those adapters remain a

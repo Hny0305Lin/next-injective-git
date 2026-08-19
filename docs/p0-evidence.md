@@ -10,9 +10,10 @@ the cutover evidence rules remain in [Acceptance Evidence](acceptance-evidence.m
   This is the last commit that changed `contracts/evm-v2`, the embedded Suite
   ABIs, or the Suite source/gate tests. Later commits in the recorded runs only
   change monitoring and Web presentation files.
-- The P0 gate-hardening change in this branch adds a genuine empty Windows clone
-  with `core.autocrlf=true`. Its exact commit and its new CI run are recorded
-  below only after the pushed run completes. Until then, P0 remains open.
+- Reviewed P0 commit: `f6dcee9aa67255bfdff1867785435022df7ec5e9`.
+  This commit adds a genuine empty Windows clone with `core.autocrlf=true` and
+  is the exact SHA bound to the retained run below. The later documentation-only
+  update does not change Suite source or gate behavior.
 - A CI workflow definition is not evidence by itself. Every result below binds a
   full 40-hex `head_sha` to the run and individual job URLs.
 
@@ -20,8 +21,27 @@ the cutover evidence rules remain in [Acceptance Evidence](acceptance-evidence.m
 
 The following runs already prove the Suite source anchor and the subsequent
 merged repository states. They predate the clean-clone gate added in this
-change, so they are retained as historical evidence rather than used to close
-that new criterion.
+change, so they are retained as historical evidence. The reviewed P0 commit and
+its full result are recorded separately below.
+
+### Reviewed P0 commit: `f6dcee9aa67255bfdff1867785435022df7ec5e9`
+
+- Run: [32215415044](https://github.com/Hny0305Lin/next-injective-git/actions/runs/32215415044)
+- Created `2026-08-19T04:20:37Z`; completed `2026-08-19T04:27:46Z`;
+  event `push`; conclusion `success`.
+- Jobs, all `success`:
+  - [native Windows CLI](https://github.com/Hny0305Lin/next-injective-git/actions/runs/32215415044/job/95955902883)
+  - [Linux CLI/Kubo](https://github.com/Hny0305Lin/next-injective-git/actions/runs/32215415044/job/95955902782)
+  - [Foundry Suite](https://github.com/Hny0305Lin/next-injective-git/actions/runs/32215415044/job/95955902758)
+  - [race and acceptance fixtures](https://github.com/Hny0305Lin/next-injective-git/actions/runs/32215415044/job/95955902776)
+  - [Web](https://github.com/Hny0305Lin/next-injective-git/actions/runs/32215415044/job/95955902828)
+- Windows step-level P0 results: the existing `core.autocrlf=true` LF
+  materialization passed; the new **clean Windows checkout Suite gate** passed;
+  native Go tests, Kubo download/lifecycle smoke, vet, PowerShell fixture, and
+  Windows builds all passed.
+- Linux/Foundry step-level P0 results: locked Solidity artifact gate, native
+  Kubo smoke, pinned Foundry `v1.7.1` Suite build/tests/gas report, and required
+  `scripts/race-check.sh --required` all passed.
 
 ### Suite source anchor: `85a5eda1dd690d0fe9baf71ab63700f0b0aa3543`
 
@@ -71,16 +91,18 @@ result above or the required Linux/Foundry CI results.
 
 | P0 requirement | Current evidence | Status |
 |---|---|---|
-| Exact review commit and retained CI URL | Historical full-SHA runs are retained above; the new clean-clone gate still needs its own run after push. | Open until the new run is recorded. |
+| Exact review commit and retained CI URL | `f6dcee9aa67255bfdff1867785435022df7ec5e9` is bound to run `32215415044` and all five successful job URLs above. | Pass for the P0 source/gate review; no PR association has been created. |
 | Foundry Suite | CI runs above passed the pinned Foundry `v1.7.1` build, unit/invariant tests, gas ceilings, and gas report; local `forge` is absent. | CI pass; local limitation recorded. |
 | Go race gate | CI acceptance jobs above passed `scripts/race-check.sh --required`; local `gcc/clang` are absent. | CI pass; local limitation recorded. |
-| Windows `core.autocrlf=true` clean checkout | The new gate performs a fresh empty clone and reruns source/ABI/artifact/deploy checks. | Pending its bound CI run. |
+| Windows `core.autocrlf=true` clean checkout | The new gate performed a fresh empty clone and reran source/ABI/artifact/deploy checks on the reviewed SHA; the Windows job passed. | Pass. |
 | Chinese Windows locale and stable errors | Stable `ErrorCode`/`HasCode` tests pass for English and Chinese rendering; this host's native user locale is `zh-CN`. CI does not yet retain a separate user-locale mutation record. | Implementation/local pass; dedicated retained locale evidence open. |
 | Windows config/keystore DACL | Native tests validate a protected DACL containing only current-user and `LocalSystem` entries; no standalone `icacls` transcript is retained. | Code/test pass; transcript evidence open. |
 | Kubo timeout/fallback/lifecycle/no residue | Unit tests cover connect/header/idle/total timeout, pinned SHA and fallback; Linux and Windows native lifecycle jobs downloaded, started, probed, and shut down Kubo successfully. | CI pass as a composed gate; a single forced-fallback E2E transcript is not retained. |
 | Transaction policy | Legacy type-0 signing remains active. No funded, signed type-2 canary receipt is present. | Correctly remains type-0. |
 
-P0 must not be marked complete until the new clean-clone run is bound to its
-exact commit and the reviewer decides whether the locale, DACL transcript, and
-forced-fallback E2E evidence are required as separate artifacts. No EIP-1559
-switch is authorized without a funded type-2 canary and retained receipt.
+P0 source and CI gates are now green on the exact reviewed commit. The milestone
+still needs reviewer disposition for whether a separate native-locale transcript,
+`icacls` DACL transcript, and forced-fallback Kubo E2E transcript are required
+as independent artifacts; those are evidence-retention gaps, not unverified
+implementation claims. No EIP-1559 switch is authorized without a funded
+type-2 canary and retained receipt.

@@ -81,6 +81,13 @@ change the operational release boundary above.
 Verified locally on 2026-08-19; commit-bound CI history and the remaining P0
 evidence gaps are tracked in [P0 Evidence Record](p0-evidence.md):
 
+- Reviewed P0 commit: `f6dcee9aa67255bfdff1867785435022df7ec5e9`.
+- Full green CI run: [32215415044](https://github.com/Hny0305Lin/next-injective-git/actions/runs/32215415044)
+  (Windows job [95955902883](https://github.com/Hny0305Lin/next-injective-git/actions/runs/32215415044/job/95955902883),
+  Linux job [95955902782](https://github.com/Hny0305Lin/next-injective-git/actions/runs/32215415044/job/95955902782),
+  Foundry job [95955902758](https://github.com/Hny0305Lin/next-injective-git/actions/runs/32215415044/job/95955902758),
+  race/fixtures job [95955902776](https://github.com/Hny0305Lin/next-injective-git/actions/runs/32215415044/job/95955902776)).
+
 - [x] Locked Solidity `0.8.24` compilation, ABI/artifact generation, EIP-170
   and EIP-3860 checks: `npm run check` passed. `RepositoryCore` runtime is
   23,504 bytes, leaving 1,072 bytes of the required 1,024-byte headroom.
@@ -92,6 +99,9 @@ evidence gaps are tracked in [P0 Evidence Record](p0-evidence.md):
   match `contracts/evm-v2/abi`.
 - [x] Web API tests (41), typecheck, and production build passed.
 - [x] Suite source/readiness, identity, and compatibility ABI gates passed.
+- [x] The reviewed Windows job passed the genuine empty `core.autocrlf=true`
+  clone gate, including LF checks, locked Solidity compilation, checked
+  ABI/artifact parity, and `igit-deploy-suite --check`.
 - [x] The required race gate passed in the recorded Linux CI runs. This host
   still cannot execute it because neither `gcc` nor `clang` is installed; the
   non-required local gate records that limitation as `SKIP`.

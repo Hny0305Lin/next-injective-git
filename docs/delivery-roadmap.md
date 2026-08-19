@@ -2,7 +2,7 @@
 
 - Status: Active execution plan
 - Initial assessment: 2026-08-15
-- Assessment baseline: `012a916a8437b6765a7fd08f97d7975ab661a430`
+- Assessment baseline: `f6dcee9aa67255bfdff1867785435022df7ec5e9`
 - Current public availability: None; checked-in Suite profiles remain intentionally empty
 
 > [!IMPORTANT]
@@ -45,10 +45,10 @@ availability.
 
 | Area | Current status | Blocking fact |
 |---|---|---|
-| Immutable EVM Suite source | Implemented in source; evidence pending | No commit-bound reviewed CI and security approval for this delivery state |
+| Immutable EVM Suite source | Implemented; P0 source and CI evidence retained | Independent security approval and real cutover evidence remain open |
 | Testnet Suite deployment | Blocked | Public `SuiteDirectory` profiles are empty; no reviewed deployment, import, activation, or cutover evidence exists |
 | Migration operator | Blocked | Current tooling builds and verifies unsigned calldata but does not broadcast, journal, resume, or activate |
-| Native Windows ordinary use | Partially implemented; acceptance blocked | Unit/build coverage exists, but clean Git E2E and a fully green native Windows gate do not |
+| Native Windows ordinary use | P0 source gates green; product acceptance blocked | Clean release-asset Git E2E and product acceptance remain open |
 | Current IPFS pack storage | Implemented current data path | Native Kubo is still required for push; clone/fetch use gateways |
 | Amazon S3 / Cloudflare R2 | Direction accepted; not implemented | Current Suite, CLI, and Web accept only `ipfs://` |
 | ZKP on Injective testnet | Research only | No circuit, proving pipeline, verifier, deployment, or product authorization integration exists |
@@ -72,10 +72,17 @@ Observed native Windows blockers at the initial assessment include:
 These findings must be reproduced in CI before being closed. They are not a
 substitute for a retained CI run.
 
+At the current baseline, the retained run covers the LF/materialization,
+artifact/deploy, Foundry, race, and native Kubo gates. Stable coded errors and
+the current-user/`LocalSystem` DACL policy are covered by native Windows tests;
+the P0 evidence record calls out the separate transcript decisions that remain.
+
 The retained CI and local verification ledger is [P0 Evidence
-Record](p0-evidence.md). It currently records historical green runs and the
-local host limitations; the newly added clean-clone gate remains open until its
-post-push run is bound to an exact commit.
+Record](p0-evidence.md). The reviewed P0 commit
+`f6dcee9aa67255bfdff1867785435022df7ec5e9` is bound to the successful
+[run 32215415044](https://github.com/Hny0305Lin/next-injective-git/actions/runs/32215415044).
+The remaining rows in that record are evidence-retention decisions, not hidden
+CI failures.
 
 ## Non-Negotiable Guardrails
 
@@ -126,7 +133,7 @@ party service delays.
 
 | ID | Milestone | Initial status | Estimate | Primary exit condition |
 |---|---|---|---:|---|
-| P0 | Windows and EVM baseline repair | Next | 2-4 days | Native Windows source gates and commit-bound CI are green |
+| P0 | Windows and EVM baseline repair | Evidence-ready; reviewer sign-off pending | 2-4 days (historical) | `f6dcee9` has green native Windows/Linux/Foundry/race gates; retained evidence decisions are resolved |
 | P1 | Suite v3 testnet deployment and cutover | Blocked by P0 and operator work | 1-2 weeks | Active verified Directory plus complete real cutover evidence |
 | P2 | Native Windows product acceptance | Blocked by P1 | 3-5 days | Clean Windows release-asset Git E2E without WSL2 or `injectived` |
 | P3 | Verified packstore boundary and streaming | Planned after P0 | 4-7 days | IPFS behavior preserved behind the new boundary; all downloads verify digest and size |
