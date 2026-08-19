@@ -44,6 +44,28 @@ test("Monitor activity retains an explicit bounded observation window", async ()
   assert.doesNotMatch(monitor, /Total repositories/i);
 });
 
+test("Monitor lists the public US archive node and external storage providers", async () => {
+  const monitor = await source("../src/pages/Monitor.tsx");
+  assert.match(monitor, /Public archive topology/);
+  assert.match(monitor, /US archive node/);
+  assert.match(monitor, /United States/);
+  assert.match(monitor, /https:\/\/igit-us\.haohanyh\.ovh/);
+  assert.match(monitor, /Filebase/);
+  assert.match(monitor, /https:\/\/s3\.filebase\.com/);
+  assert.match(monitor, /Fil\.one/);
+  assert.match(monitor, /https:\/\/us-east-1\.s3\.fil\.one/);
+  assert.match(monitor, /Provider badges describe the configured role/);
+  assert.doesNotMatch(monitor, /us101010|a10101|162\.35\.187\.224|12D3KooW/);
+});
+
+test("Monitor prefers the same-origin server gateway probe", async () => {
+  const monitor = await source("../src/pages/Monitor.tsx");
+  assert.match(monitor, /\/api\/ipfs-health\?profile=/);
+  assert.match(monitor, /Server-side public gateway reachability probe/);
+  assert.match(monitor, /probeSource === "server"/);
+  assert.match(monitor, /probeIpfsGateway\(cfg\.ipfsGateway, cfg\.profile\)/);
+});
+
 test("V1 archive source includes the public Injective contract explorer", () => {
   assert.equal(COSMWASM_V1_ARCHIVE.network, "Injective Testnet");
   assert.match(COSMWASM_V1_ARCHIVE.explorer, /^https:\/\/testnet\.explorer\.injective\.network\/contract\/inj1/);

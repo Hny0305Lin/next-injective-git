@@ -3376,6 +3376,135 @@ html.dark .action-badge.a-award_badge {
   min-height: 172px;
 }
 
+.monitor-topology {
+  margin-top: 12px;
+  display: grid;
+  gap: 12px;
+}
+
+.monitor-topology-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 2px 2px 0;
+}
+
+.monitor-topology-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.monitor-topology-heading h2 {
+  margin: 4px 0 3px;
+  color: var(--fg);
+  font-size: 1rem;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.monitor-topology-heading p {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 0.74rem;
+}
+
+.monitor-node-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.monitor-node-card {
+  min-height: 188px;
+}
+
+.monitor-node-content {
+  display: grid;
+  align-content: space-between;
+  gap: 12px;
+}
+
+.monitor-node-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  color: var(--fg-muted);
+  font-size: 0.7rem;
+}
+
+.monitor-node-meta span {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.monitor-node-meta span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.monitor-node-role {
+  margin: 0;
+  color: var(--fg);
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.monitor-node-endpoint {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.monitor-node-endpoint code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg-muted);
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.monitor-node-endpoint a {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 4px;
+  color: var(--fg-muted);
+  font-size: 0.7rem;
+  font-weight: 550;
+}
+
+.monitor-node-endpoint a:hover {
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.monitor-topology-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 2px;
+  color: var(--fg-muted);
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
+.monitor-topology-note svg {
+  margin-top: 2px;
+  flex: 0 0 auto;
+}
+
 .monitor-card-header {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
@@ -3750,7 +3879,7 @@ html.dark .action-badge.a-award_badge {
 
 .monitor-storage-metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -3826,6 +3955,10 @@ html.dark .action-badge.a-award_badge {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .monitor-node-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .monitor-source-card:last-child {
     grid-column: 1 / -1;
     min-height: 150px;
@@ -3837,6 +3970,10 @@ html.dark .action-badge.a-award_badge {
 
   .monitor-content-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .monitor-storage-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .monitor-chart-card,
@@ -3857,10 +3994,17 @@ html.dark .action-badge.a-award_badge {
   }
 
   .monitor-source-grid,
+  .monitor-node-grid,
   .monitor-metric-grid,
   .monitor-storage-metrics,
   .monitor-migration-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .monitor-topology-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
   }
 
   .monitor-source-card:last-child {

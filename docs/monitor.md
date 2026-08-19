@@ -12,14 +12,18 @@ smaller than an internal operations console:
   status with links to its archive viewer and public contract explorer;
 - EVM V2 and CosmWasm V1 remain separate data sources and are never presented
   as one unqualified total;
+- a redacted public storage-topology strip identifies the US archive gateway
+  and the Filebase/Fil.one provider roles without exposing operational metrics;
 - every metric carries its source and observation scope, and the page shows
   when the data was last refreshed;
 - the Monitor has no wallet writes, migration execution, or administrative
   controls.
 
 The public route is `#/monitor` in the current hash-based Web application.
-Internal infrastructure metrics are out of scope for this route and belong in
-a future protected `/monitor/ops` surface.
+Internal infrastructure metrics remain out of scope for this route and belong
+in a future protected `/monitor/ops` surface. The public route may show
+curated endpoint inventory (region, role, and public URL) when it does not
+claim live uptime or capacity.
 
 ## Audience And Non-Goals
 
@@ -45,11 +49,19 @@ The first release does not claim to provide:
 | Verified EVM V2 `SuiteDirectory` | Suite status, latest block, recent decoded activity, and any repository data reachable through the verified Directory | `EVM V2` | The checked-in profile has no real Directory yet. Activity is a bounded recent-block observation, not an all-time index. |
 | CosmWasm V1 archive contract | Contract availability, session snapshot height, and links to the explicit archive viewer and public Injective Explorer | `CosmWasm V1 archive` and `Read-only` | Repository lookup remains in the dedicated archive viewer. The first Monitor release does not enumerate or aggregate V1 repositories. |
 | IPFS gateway and Git pack audit | Reachability and packfile health for indexed repositories/CIDs | `IPFS observation` | Existing browser code audits individual repositories/CIDs. Cross-project trends require a probe or metrics service. |
+| Curated storage topology | Public US archive gateway plus Filebase and Fil.one provider roles and public endpoints | `Storage nodes` and `Public inventory` | Provider badges describe the configured role only; browser code does not query private S3 metrics or credentials. |
 | Future event/indexer API | Complete historical totals, daily trends, unique owners/contributors, and cross-owner migration counts | `Indexed data` | Not part of the first release. The API must expose its index height and freshness. |
 
 The Monitor must not treat a CosmWasm contract address as an EVM
 `SuiteDirectory`, and it must not silently fall back from an EVM verification
 or transport error to the V1 archive.
+
+The gateway reachability probe is served by the same-origin
+`/api/ipfs-health` function. It uses a static network-profile allowlist and
+probes the configured gateway from the website server, so a visitor's local
+IPv6 route, proxy, or DNS cache cannot turn a server-wide status into a false
+`Unavailable`. The Vite-only local preview falls back to a browser probe when
+the serverless function is not present.
 
 ## First-Release Screen
 
@@ -123,9 +135,12 @@ or archive page.
 
 ### Storage Tab
 
-The public Storage tab is an aggregate view of completed checks, not a server
-console. It may show:
+The public Storage surface (the topology strip and Storage tab) is an aggregate
+view of completed checks, not a server console. It may show:
 
+- curated public storage nodes and provider roles (including the US archive
+  gateway, Filebase, and Fil.one) when each entry is explicitly marked as
+  topology metadata rather than an uptime claim;
 - indexed pack/CID count;
 - reachable and unreachable counts;
 - reachability percentage;
@@ -133,9 +148,10 @@ console. It may show:
 - optional p50/p95 gateway latency when a public probe supplies it;
 - repositories with missing or unreachable pack URIs.
 
-The tab must not expose Kubo hostnames, node addresses, filesystem paths,
-bucket names, credentials, replication queue internals, or exact internal
-alert thresholds.
+The tab must not expose private Kubo addresses, filesystem paths, bucket names,
+credentials, replication queue internals, or exact internal alert thresholds.
+Public gateway/provider URLs may be linked when they are already intended for
+read-only external access.
 
 ### Migration Tab
 
@@ -210,4 +226,5 @@ Prometheus textfiles directly from a browser.
 - Failed or stale queries have explicit states and do not become numeric zero.
 - No Monitor control signs, broadcasts, edits, sponsors, transfers, or starts
   migration.
-- No internal infrastructure secret, host detail, or credential is rendered.
+- The public topology strip contains no bucket name, private address, secret,
+  credential, or server-local metric.
