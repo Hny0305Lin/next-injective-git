@@ -44,12 +44,22 @@ test("Monitor activity retains an explicit bounded observation window", async ()
   assert.doesNotMatch(monitor, /Total repositories/i);
 });
 
-test("Monitor lists the public US archive node and external storage providers", async () => {
+test("Monitor keeps HK and US in one IPFS gateway surface", async () => {
   const monitor = await source("../src/pages/Monitor.tsx");
-  assert.match(monitor, /Public archive topology/);
-  assert.match(monitor, /US archive node/);
+  assert.match(monitor, /IPFS gateways/);
+  assert.match(monitor, /Hong Kong gateway/);
+  assert.match(monitor, /US gateway/);
   assert.match(monitor, /United States/);
   assert.match(monitor, /https:\/\/igit-us\.haohanyh\.ovh/);
+  assert.match(monitor, /https:\/\/igit-hk\.haohanyh\.ovh/);
+  assert.match(monitor, /target=\$\{encodeURIComponent\(target\)\}/);
+  assert.match(monitor, /PUBLIC_IPFS_GATEWAYS\.map/);
+  assert.doesNotMatch(monitor, /healthz/);
+});
+
+test("Monitor keeps Filebase and Fil.one as provider metadata", async () => {
+  const monitor = await source("../src/pages/Monitor.tsx");
+  assert.match(monitor, /External archive providers/);
   assert.match(monitor, /Filebase/);
   assert.match(monitor, /https:\/\/s3\.filebase\.com/);
   assert.match(monitor, /Fil\.one/);
@@ -60,10 +70,10 @@ test("Monitor lists the public US archive node and external storage providers", 
 
 test("Monitor prefers the same-origin server gateway probe", async () => {
   const monitor = await source("../src/pages/Monitor.tsx");
-  assert.match(monitor, /\/api\/ipfs-health\?profile=/);
-  assert.match(monitor, /Server-side public gateway reachability probe/);
+  assert.match(monitor, /\/api\/ipfs-health\?profile=.*target=/);
+  assert.match(monitor, /Independent status, latency, and freshness/);
   assert.match(monitor, /probeSource === "server"/);
-  assert.match(monitor, /probeIpfsGateway\(cfg\.ipfsGateway, cfg\.profile\)/);
+  assert.match(monitor, /probeIpfsGateway\(gateway, cfg\.profile\)/);
 });
 
 test("V1 archive source includes the public Injective contract explorer", () => {

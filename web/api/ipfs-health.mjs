@@ -7,10 +7,14 @@
  */
 
 export const IPFS_GATEWAYS = Object.freeze({
-  "injective-testnet": "https://igit-hk.haohanyh.ovh",
+  "injective-testnet": Object.freeze({
+    hk: "https://igit-hk.haohanyh.ovh",
+    us: "https://igit-us.haohanyh.ovh",
+  }),
 });
 
 export const DEFAULT_PROFILE = "injective-testnet";
+export const DEFAULT_TARGET = "hk";
 export const PROBE_TIMEOUT_MS = 8_000;
 
 const ALLOWED_PROFILE_PATTERN = /^[a-z0-9-]+$/;
@@ -42,11 +46,14 @@ function requestQuery(request) {
   const query = request?.query;
   if (query && typeof query === "object") {
     const profile = queryParameter(query, "profile");
+    const target = queryParameter(query, "target");
     const gateway = queryParameter(query, "gateway");
-    if (profile.present || gateway.present) {
+    if (profile.present || target.present || gateway.present) {
       return {
         profile: profile.value,
         profilePresent: profile.present,
+        target: target.value,
+        targetPresent: target.present,
         gateway: gateway.value,
         gatewayPresent: gateway.present,
       };
@@ -54,33 +61,52 @@ function requestQuery(request) {
   }
 
   const rawUrl = typeof request?.url === "string" ? request.url : "";
-  if (!rawUrl) return { profile: null, profilePresent: false, gateway: null, gatewayPresent: false };
+  if (!rawUrl) {
+    return {
+      profile: null,
+      profilePresent: false,
+      target: null,
+      targetPresent: false,
+      gateway: null,
+      gatewayPresent: false,
+    };
+  }
   try {
     // Vercel supplies an absolute URL in some runtimes and a path in others.
     const base = request?.headers?.host ? `https://${request.headers.host}` : "https://localhost";
     const parsed = new URL(rawUrl, base);
     const profiles = parsed.searchParams.getAll("profile");
+    const targets = parsed.searchParams.getAll("target");
     const gateways = parsed.searchParams.getAll("gateway");
     return {
       profile: profiles.length === 1 ? profiles[0] : null,
       profilePresent: profiles.length > 0,
+      target: targets.length === 1 ? targets[0] : null,
+      targetPresent: targets.length > 0,
       gateway: gateways.length === 1 ? gateways[0] : null,
       gatewayPresent: gateways.length > 0,
     };
   } catch {
-    return { profile: null, profilePresent: false, gateway: null, gatewayPresent: false };
+    return {
+      profile: null,
+      profilePresent: false,
+      target: null,
+      targetPresent: false,
+      gateway: null,
+      gatewayPresent: false,
+    };
   }
 }
 
 /** Resolve a request to one of the statically configured gateways. */
 export function resolveProfile(request) {
   const query = requestQuery(request);
-  // A gateway query parameter is never accepted, even when it happens to
-  // equal the configured value.  This makes the no-SSRF contract explicit.
+  // Keep the URL out of the request contract.  Only the fixed target IDs below
+  // may select an upstream; accepting `gateway=` would reintroduce an SSRF
+  // primitive for this public endpoint.
   if (query.gatewayPresent) {
     return { error: "gateway selection is not supported" };
   }
-
   if (query.profilePresent && !query.profile) {
     return { error: "invalid profile", profile: null };
   }
@@ -88,7 +114,15 @@ export function resolveProfile(request) {
   if (!ALLOWED_PROFILE_PATTERN.test(requested) || !Object.hasOwn(IPFS_GATEWAYS, requested)) {
     return { error: "unsupported profile", profile: requested };
   }
-  return { profile: requested, gateway: IPFS_GATEWAYS[requested] };
+  if (query.targetPresent && !query.target) {
+    return { error: "invalid target", profile: requested, target: null };
+  }
+  const target = query.targetPresent ? query.target : DEFAULT_TARGET;
+  const profileGateways = IPFS_GATEWAYS[requested];
+  if (!ALLOWED_PROFILE_PATTERN.test(target) || !Object.hasOwn(profileGateways, target)) {
+    return { error: "unsupported target", profile: requested, target };
+  }
+  return { profile: requested, target, gateway: profileGateways[target] };
 }
 
 function elapsedMs(started, now) {
@@ -207,6 +241,7 @@ export default async function handler(request, response) {
     sendJson(response, 400, {
       ok: false,
       profile: selection.profile ?? null,
+      target: selection.target ?? null,
       error: selection.error,
     });
     return;
@@ -214,13 +249,14 @@ export default async function handler(request, response) {
 
   try {
     const result = await probeGateway(selection.gateway);
-    sendJson(response, 200, { ...result, profile: selection.profile });
+    sendJson(response, 200, { ...result, profile: selection.profile, target: selection.target });
   } catch {
     // Keep configuration failures and unexpected runtime errors opaque to a
     // public caller.  The status is represented in JSON for the monitor UI.
     sendJson(response, 500, {
       ok: false,
       profile: selection.profile,
+      target: selection.target,
       gateway: selection.gateway,
       source: "server",
       status: null,

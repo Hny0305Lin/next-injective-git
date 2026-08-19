@@ -3368,12 +3368,28 @@ html.dark .action-badge.a-award_badge {
 
 .monitor-source-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
 .monitor-source-card {
   min-height: 172px;
+}
+
+.monitor-gateway-section {
+  margin-top: 18px;
+  display: grid;
+  gap: 12px;
+}
+
+.monitor-gateway-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.monitor-gateway-card {
+  min-height: 188px;
 }
 
 .monitor-topology {
@@ -3415,7 +3431,7 @@ html.dark .action-badge.a-award_badge {
 
 .monitor-node-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -3449,6 +3465,10 @@ html.dark .action-badge.a-award_badge {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.monitor-gateway-meta {
+  flex-wrap: wrap;
 }
 
 .monitor-node-role {
@@ -3877,6 +3897,11 @@ html.dark .action-badge.a-award_badge {
   gap: 18px;
 }
 
+.monitor-storage-gateway-list {
+  display: grid;
+  gap: 14px;
+}
+
 .monitor-storage-metrics {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -3959,9 +3984,8 @@ html.dark .action-badge.a-award_badge {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .monitor-source-card:last-child {
-    grid-column: 1 / -1;
-    min-height: 150px;
+  .monitor-gateway-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .monitor-metric-grid {
@@ -3994,6 +4018,7 @@ html.dark .action-badge.a-award_badge {
   }
 
   .monitor-source-grid,
+  .monitor-gateway-grid,
   .monitor-node-grid,
   .monitor-metric-grid,
   .monitor-storage-metrics,
@@ -4001,14 +4026,18 @@ html.dark .action-badge.a-award_badge {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .monitor-storage-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .monitor-storage-metrics > div:first-child {
+    grid-column: 1 / -1;
+  }
+
   .monitor-topology-heading {
     align-items: flex-start;
     flex-direction: column;
     gap: 8px;
-  }
-
-  .monitor-source-card:last-child {
-    grid-column: auto;
   }
 
   .monitor-alert {

@@ -12,7 +12,7 @@ smaller than an internal operations console:
   status with links to its archive viewer and public contract explorer;
 - EVM V2 and CosmWasm V1 remain separate data sources and are never presented
   as one unqualified total;
-- a redacted public storage-topology strip identifies the US archive gateway
+- a redacted public storage-topology strip identifies the HK/US IPFS gateways
   and the Filebase/Fil.one provider roles without exposing operational metrics;
 - every metric carries its source and observation scope, and the page shows
   when the data was last refreshed;
@@ -48,20 +48,22 @@ The first release does not claim to provide:
 | --- | --- | --- | --- |
 | Verified EVM V2 `SuiteDirectory` | Suite status, latest block, recent decoded activity, and any repository data reachable through the verified Directory | `EVM V2` | The checked-in profile has no real Directory yet. Activity is a bounded recent-block observation, not an all-time index. |
 | CosmWasm V1 archive contract | Contract availability, session snapshot height, and links to the explicit archive viewer and public Injective Explorer | `CosmWasm V1 archive` and `Read-only` | Repository lookup remains in the dedicated archive viewer. The first Monitor release does not enumerate or aggregate V1 repositories. |
-| IPFS gateway and Git pack audit | Reachability and packfile health for indexed repositories/CIDs | `IPFS observation` | Existing browser code audits individual repositories/CIDs. Cross-project trends require a probe or metrics service. |
-| Curated storage topology | Public US archive gateway plus Filebase and Fil.one provider roles and public endpoints | `Storage nodes` and `Public inventory` | Provider badges describe the configured role only; browser code does not query private S3 metrics or credentials. |
+| IPFS gateway and Git pack audit | Independent reachability probes for the HK hot-tier and US durable-archive gateways, plus packfile health for indexed repositories/CIDs | `IPFS observation` | Each gateway uses the same server-side `/ipfs/` probe; cross-project trends require a probe or metrics service. |
+| Curated storage topology | Public HK/US gateway inventory plus Filebase and Fil.one provider roles and public endpoints | `IPFS gateways` and `Public inventory` | Provider badges describe the configured role only; browser code does not query private S3 metrics or credentials. |
 | Future event/indexer API | Complete historical totals, daily trends, unique owners/contributors, and cross-owner migration counts | `Indexed data` | Not part of the first release. The API must expose its index height and freshness. |
 
 The Monitor must not treat a CosmWasm contract address as an EVM
 `SuiteDirectory`, and it must not silently fall back from an EVM verification
 or transport error to the V1 archive.
 
-The gateway reachability probe is served by the same-origin
-`/api/ipfs-health` function. It uses a static network-profile allowlist and
-probes the configured gateway from the website server, so a visitor's local
-IPv6 route, proxy, or DNS cache cannot turn a server-wide status into a false
-`Unavailable`. The Vite-only local preview falls back to a browser probe when
-the serverless function is not present.
+The gateway reachability probes are served by the same-origin
+`/api/ipfs-health` function. The function uses a static network-profile and
+target-ID allowlist (`target=hk` and `target=us`) and probes each gateway's
+`/ipfs/` path from the website server. Arbitrary `gateway=` URL selection is
+rejected. A `403` from `/healthz` is therefore not used as a
+gateway signal: that path is an operational health route, while `/ipfs/` is
+the public read-only gateway path. The Vite-only local preview falls back to
+browser probes when the serverless function is not present.
 
 ## First-Release Screen
 
@@ -73,8 +75,8 @@ The top of the page shows four compact status items:
    `Stale`, with chain ID and latest block when available.
 2. **CosmWasm V1 archive** — `Online`, `Read-only`, `Unavailable`, or `Stale`,
    with the session snapshot height and shortened contract address.
-3. **IPFS observation** — `Reachable`, `Degraded`, or `Unknown`, based only on
-   probes that actually ran.
+3. **IPFS observation** — paired HK/US gateway statuses (`Reachable`,
+   `Degraded`, or `Unknown`), based only on probes that actually ran.
 4. **Data freshness** — the newest successful query time and the scope of the
    observation window.
 
@@ -138,8 +140,8 @@ or archive page.
 The public Storage surface (the topology strip and Storage tab) is an aggregate
 view of completed checks, not a server console. It may show:
 
-- curated public storage nodes and provider roles (including the US archive
-  gateway, Filebase, and Fil.one) when each entry is explicitly marked as
+- the HK and US public gateway nodes plus Filebase and Fil.one provider roles
+  when each entry is explicitly marked as
   topology metadata rather than an uptime claim;
 - indexed pack/CID count;
 - reachable and unreachable counts;
@@ -224,6 +226,10 @@ Prometheus textfiles directly from a browser.
   fake zero and not an implicit V1 fallback.
 - Activity counts state their block window and never claim to be all-time.
 - Failed or stale queries have explicit states and do not become numeric zero.
+- The HK and US IPFS gateways appear in the same gateway section and retain
+  independent reachability, latency, probe-source, and freshness states.
+- Filebase and Fil.one remain clearly labelled provider inventory; they are
+  not presented as IPFS gateway probes or as live storage-capacity metrics.
 - No Monitor control signs, broadcasts, edits, sponsors, transfers, or starts
   migration.
 - The public topology strip contains no bucket name, private address, secret,

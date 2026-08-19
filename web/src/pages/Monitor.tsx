@@ -79,11 +79,7 @@ interface MonitorSnapshot {
   activity: ContractTx[];
   activityError: string;
   v1: SourceSnapshot & { snapshotHeight: number | null };
-  ipfs: SourceSnapshot & {
-    latencyMs: number | null;
-    statusCode: number | null;
-    probeSource: "server" | "browser" | null;
-  };
+  ipfs: Record<IpfsGatewayId, IpfsGatewaySnapshot>;
 }
 
 interface IpfsProbeResult {
@@ -94,47 +90,89 @@ interface IpfsProbeResult {
   source: "server" | "browser";
 }
 
+type IpfsGatewayId = "hk" | "us";
+
+interface IpfsGatewayDefinition {
+  id: IpfsGatewayId;
+  title: string;
+  description: string;
+  region: string;
+  endpoint: string;
+  href: string;
+  icon: LucideIcon;
+}
+
+interface IpfsGatewaySnapshot extends SourceSnapshot {
+  latencyMs: number | null;
+  statusCode: number | null;
+  probeSource: "server" | "browser" | null;
+}
+
+const PUBLIC_IPFS_GATEWAYS: readonly IpfsGatewayDefinition[] = [
+  {
+    id: "hk",
+    title: "Hong Kong gateway",
+    description: "Read-only IPFS gateway for the hot tier.",
+    region: "Hong Kong",
+    endpoint: "https://igit-hk.haohanyh.ovh",
+    href: "https://igit-hk.haohanyh.ovh/ipfs/",
+    icon: Server,
+  },
+  {
+    id: "us",
+    title: "US gateway",
+    description: "Read-only IPFS gateway for the durable archive.",
+    region: "United States",
+    endpoint: "https://igit-us.haohanyh.ovh",
+    href: "https://igit-us.haohanyh.ovh/ipfs/",
+    icon: Server,
+  },
+];
+
+const IPFS_GATEWAY_IDS = PUBLIC_IPFS_GATEWAYS.map((gateway) => gateway.id) as IpfsGatewayId[];
+
+function initialIpfsSnapshot(): Record<IpfsGatewayId, IpfsGatewaySnapshot> {
+  return Object.fromEntries(
+    PUBLIC_IPFS_GATEWAYS.map((gateway) => [gateway.id, {
+      state: "loading",
+      detail: "Checking gateway",
+      checkedAt: null,
+      latencyMs: null,
+      statusCode: null,
+      probeSource: null,
+    }]),
+  ) as Record<IpfsGatewayId, IpfsGatewaySnapshot>;
+}
+
 const INITIAL_SNAPSHOT: MonitorSnapshot = {
   evm: { state: "loading", detail: "Checking SuiteDirectory", checkedAt: null },
   latestBlock: null,
   activity: [],
   activityError: "",
   v1: { state: "loading", detail: "Checking archive endpoint", checkedAt: null, snapshotHeight: null },
-  ipfs: { state: "loading", detail: "Checking gateway", checkedAt: null, latencyMs: null, statusCode: null, probeSource: null },
+  ipfs: initialIpfsSnapshot(),
 };
 
 const REFRESH_INTERVAL_MS = 60_000;
 
-type PublicNodeStatus = "current" | "legacy";
+type PublicProviderStatus = "current" | "legacy";
 
-interface PublicStorageNode {
+interface PublicStorageProvider {
   id: string;
   title: string;
   description: string;
-  kind: "IPFS gateway" | "Storage provider";
+  kind: "Storage provider";
   region: string;
   role: string;
   endpoint: string;
   href: string;
-  status: PublicNodeStatus;
+  status: PublicProviderStatus;
   icon: LucideIcon;
 }
 
-// These are intentionally public topology facts, not live provider metrics.
+// These are intentionally public provider facts, not live storage metrics.
 // Provider capacity and credentials remain on the server-side archive monitor.
-const PUBLIC_STORAGE_NODES: readonly PublicStorageNode[] = [
-  {
-    id: "us-archive",
-    title: "US archive node",
-    description: "Read-only gateway for the durable US archive.",
-    kind: "IPFS gateway",
-    region: "United States",
-    role: "Current archive path",
-    endpoint: "https://igit-us.haohanyh.ovh",
-    href: "https://igit-us.haohanyh.ovh/healthz",
-    status: "current",
-    icon: Server,
-  },
+const PUBLIC_STORAGE_PROVIDERS: readonly PublicStorageProvider[] = [
   {
     id: "filebase",
     title: "Filebase",
@@ -218,7 +256,7 @@ function sourceBadge(state: SourceState, healthyLabel = "Healthy") {
   return { label: "Unavailable", className: "monitor-badge-danger", icon: XCircle };
 }
 
-function publicNodeBadge(status: PublicNodeStatus) {
+function publicProviderBadge(status: PublicProviderStatus) {
   return status === "current"
     ? { label: "Current path", className: "monitor-badge-healthy" }
     : { label: "Legacy copy", className: "monitor-badge-warning" };
@@ -290,17 +328,62 @@ function MetricCard({
   );
 }
 
-function PublicStorageNodeCard({ node }: { node: PublicStorageNode }) {
-  const Icon = node.icon;
-  const status = publicNodeBadge(node.status);
+function IpfsGatewayCard({
+  gateway,
+  snapshot,
+}: {
+  gateway: IpfsGatewayDefinition;
+  snapshot: IpfsGatewaySnapshot;
+}) {
+  const Icon = gateway.icon;
+  const status = sourceBadge(snapshot.state, "Reachable");
+  const StatusIcon = status.icon;
+  return (
+    <Card className="monitor-gateway-card">
+      <CardHeader className="monitor-card-header">
+        <div className="monitor-source-title">
+          <span className="monitor-icon-tile"><Icon size={16} /></span>
+          <div>
+            <CardTitle>{gateway.title}</CardTitle>
+            <CardDescription>{gateway.description}</CardDescription>
+          </div>
+        </div>
+        <CardAction>
+          <Badge variant="outline" className={status.className}>
+            <StatusIcon className={snapshot.state === "loading" ? "animate-spin" : undefined} />
+            {status.label}
+          </Badge>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="monitor-node-content">
+        <div className="monitor-node-meta monitor-gateway-meta">
+          <span><MapPin size={13} /> {gateway.region}</span>
+          <span><Wifi size={13} /> {snapshot.probeSource === "server" ? "Server probe" : snapshot.probeSource === "browser" ? "Browser fallback" : "Probe pending"}</span>
+          <span><Clock3 size={13} /> {formatCheckedAt(snapshot.checkedAt)}</span>
+        </div>
+        <p className="monitor-node-role">{snapshot.detail}</p>
+        <div className="monitor-node-endpoint">
+          <code title={gateway.endpoint}>{gateway.endpoint}</code>
+          <a href={gateway.href} target="_blank" rel="noreferrer" title={`Open ${gateway.title} endpoint`}>
+            <ExternalLink size={13} /> Open gateway
+          </a>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PublicStorageProviderCard({ provider }: { provider: PublicStorageProvider }) {
+  const Icon = provider.icon;
+  const status = publicProviderBadge(provider.status);
   return (
     <Card className="monitor-node-card">
       <CardHeader className="monitor-card-header">
         <div className="monitor-source-title">
           <span className="monitor-icon-tile"><Icon size={16} /></span>
           <div>
-            <CardTitle>{node.title}</CardTitle>
-            <CardDescription>{node.description}</CardDescription>
+            <CardTitle>{provider.title}</CardTitle>
+            <CardDescription>{provider.description}</CardDescription>
           </div>
         </div>
         <CardAction>
@@ -309,13 +392,13 @@ function PublicStorageNodeCard({ node }: { node: PublicStorageNode }) {
       </CardHeader>
       <CardContent className="monitor-node-content">
         <div className="monitor-node-meta">
-          <span><MapPin size={13} /> {node.region}</span>
-          <span><HardDrive size={13} /> {node.kind}</span>
+          <span><MapPin size={13} /> {provider.region}</span>
+          <span><HardDrive size={13} /> {provider.kind}</span>
         </div>
-        <p className="monitor-node-role">{node.role}</p>
+        <p className="monitor-node-role">{provider.role}</p>
         <div className="monitor-node-endpoint">
-          <code title={node.endpoint}>{node.endpoint}</code>
-          <a href={node.href} target="_blank" rel="noreferrer" title={`Open ${node.title} endpoint`}>
+          <code title={provider.endpoint}>{provider.endpoint}</code>
+          <a href={provider.href} target="_blank" rel="noreferrer" title={`Open ${provider.title} endpoint`}>
             <ExternalLink size={13} /> Endpoint
           </a>
         </div>
@@ -349,11 +432,11 @@ function parseIpfsProbePayload(value: unknown): IpfsProbeResult {
   };
 }
 
-async function probeIpfsGatewayFromApi(profile: string): Promise<IpfsProbeResult | null> {
+async function probeIpfsGatewayFromApi(profile: string, target: IpfsGatewayId): Promise<IpfsProbeResult | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 12_000);
   try {
-    const response = await fetch(`/api/ipfs-health?profile=${encodeURIComponent(profile)}`, {
+    const response = await fetch(`/api/ipfs-health?profile=${encodeURIComponent(profile)}&target=${encodeURIComponent(target)}`, {
       headers: { Accept: "application/json" },
       signal: controller.signal,
     });
@@ -404,9 +487,17 @@ async function probeIpfsGatewayDirect(gateway: string): Promise<IpfsProbeResult>
   }
 }
 
-async function probeIpfsGateway(gateway: string, profile: string): Promise<IpfsProbeResult> {
-  const serverResult = await probeIpfsGatewayFromApi(profile);
-  return serverResult ?? await probeIpfsGatewayDirect(gateway);
+async function probeIpfsGateway(gateway: IpfsGatewayDefinition, profile: string): Promise<IpfsProbeResult> {
+  const serverResult = await probeIpfsGatewayFromApi(profile, gateway.id);
+  return serverResult ?? await probeIpfsGatewayDirect(gateway.endpoint);
+}
+
+function aggregateGatewayState(snapshots: readonly IpfsGatewaySnapshot[]): SourceState {
+  if (snapshots.some((snapshot) => snapshot.state === "loading")) return "loading";
+  if (snapshots.length > 0 && snapshots.every((snapshot) => snapshot.state === "healthy")) return "healthy";
+  if (snapshots.some((snapshot) => snapshot.state === "healthy")) return "degraded";
+  if (snapshots.length > 0 && snapshots.every((snapshot) => snapshot.state === "unavailable")) return "unavailable";
+  return "degraded";
 }
 
 export default function Monitor() {
@@ -432,31 +523,45 @@ export default function Monitor() {
     const latestPromise = latestEvmBlock(cfg);
     const activityPromise = configured ? contractActivity(cfg, 50) : Promise.resolve([] as ContractTx[]);
     const v1Promise = prepareCosmWasmV1Snapshot();
-    const ipfsPromise = probeIpfsGateway(cfg.ipfsGateway, cfg.profile);
+    const ipfsPromises = PUBLIC_IPFS_GATEWAYS.map((gateway) => probeIpfsGateway(gateway, cfg.profile));
 
-    const [suite, latest, activity, v1, ipfs] = await Promise.allSettled([
+    const coreResultsPromise = Promise.allSettled([
       suitePromise,
       latestPromise,
       activityPromise,
       v1Promise,
-      ipfsPromise,
     ]);
+    const gatewayResultsPromise = Promise.allSettled(ipfsPromises);
+    const [coreResults, gatewayResults] = await Promise.all([coreResultsPromise, gatewayResultsPromise]);
+    const [suite, latest, activity, v1] = coreResults;
 
     const suiteError = suite.status === "rejected" ? formatError(suite.reason) : "";
     const latestError = latest.status === "rejected" ? formatError(latest.reason) : "";
     const activityError = activity.status === "rejected" ? formatError(activity.reason) : configured ? "" : "SuiteDirectory is not configured";
     const v1Error = v1.status === "rejected" ? formatError(v1.reason) : "";
-    const ipfsError = ipfs.status === "rejected" ? formatError(ipfs.reason) : "";
     const v1Height = v1.status === "fulfilled" ? v1.value : null;
-    const ipfsResult = ipfs.status === "fulfilled" ? ipfs.value : null;
-    const ipfsState: SourceState = !ipfsResult || ipfsResult.status == null
-      ? "unavailable"
-      : ipfsResult.ok
-        ? "healthy"
-        : "degraded";
-    const ipfsDetail = ipfsResult?.status != null
-      ? `${ipfsResult.status} response in ${ipfsResult.latencyMs ?? "—"} ms · ${ipfsResult.source} probe`
-      : ipfsResult?.error || ipfsError || "Gateway probe failed";
+    const ipfs = Object.fromEntries(PUBLIC_IPFS_GATEWAYS.map((gateway, index) => {
+      const result = gatewayResults[index];
+      const probe = result.status === "fulfilled" ? result.value : null;
+      const error = result.status === "rejected" ? formatError(result.reason) : probe?.error || "";
+      const state: SourceState = !probe || probe.status == null
+        ? "unavailable"
+        : probe.ok
+          ? "healthy"
+          : "degraded";
+      const detail = probe?.status != null
+        ? `${probe.status} response in ${probe.latencyMs ?? "—"} ms · ${probe.source} probe`
+        : error || "Gateway probe failed";
+      return [gateway.id, {
+        state,
+        detail,
+        checkedAt,
+        error: error || undefined,
+        latencyMs: probe?.latencyMs ?? null,
+        statusCode: probe?.status ?? null,
+        probeSource: probe?.source ?? null,
+      } satisfies IpfsGatewaySnapshot];
+    })) as Record<IpfsGatewayId, IpfsGatewaySnapshot>;
 
     setSnapshot({
       evm: {
@@ -481,15 +586,7 @@ export default function Monitor() {
         error: v1Error || undefined,
         snapshotHeight: v1Height,
       },
-      ipfs: {
-        state: ipfsState,
-        detail: ipfsDetail,
-        checkedAt,
-        error: ipfsResult?.error || ipfsError || undefined,
-        latencyMs: ipfsResult?.latencyMs ?? null,
-        statusCode: ipfsResult?.status ?? null,
-        probeSource: ipfsResult?.source ?? null,
-      },
+      ipfs,
     });
     setLastRefresh(checkedAt);
     setRefreshing(false);
@@ -505,7 +602,8 @@ export default function Monitor() {
   const maxBucket = Math.max(...buckets, 1);
   const suiteBadge = sourceBadge(snapshot.evm.state);
   const v1Badge = sourceBadge(snapshot.v1.state);
-  const ipfsBadge = sourceBadge(snapshot.ipfs.state, "Reachable");
+  const ipfsSnapshots = IPFS_GATEWAY_IDS.map((gatewayId) => snapshot.ipfs[gatewayId]);
+  const ipfsBadge = sourceBadge(aggregateGatewayState(ipfsSnapshots), "Reachable");
   const evmExplorer = `${profile.evmExplorer.replace(/\/+$/, "")}/address/${cfg.suiteDirectory}`;
 
   return (
@@ -558,34 +656,35 @@ export default function Monitor() {
           </div>
         </SourceCard>
 
-        <SourceCard
-          icon={HardDrive}
-          title="IPFS gateway"
-          source={snapshot.ipfs}
-          description="Server-side public gateway reachability probe"
-          healthyLabel="Reachable"
-        >
-          <div className="monitor-source-meta">
-            <span><Wifi size={13} /> Latency <b>{snapshot.ipfs.latencyMs == null ? "—" : `${snapshot.ipfs.latencyMs} ms`}</b></span>
-            <code title={cfg.ipfsGateway}>{shortAddress(cfg.ipfsGateway.replace(/^https?:\/\//, ""), 14)}</code>
-          </div>
-          <div className="monitor-link-row">
-            <Link to="/ipfs"><ArrowUpRight size={13} /> Open IPFS explorer</Link>
-          </div>
-        </SourceCard>
       </div>
+
+      <section className="monitor-gateway-section" aria-labelledby="monitor-gateway-title">
+        <div className="monitor-topology-heading">
+          <div>
+            <div className="monitor-topology-kicker"><Wifi size={14} /> IPFS gateways</div>
+            <h2 id="monitor-gateway-title">Public gateway reachability</h2>
+            <p>Independent status, latency, and freshness for each public read-only endpoint.</p>
+          </div>
+          <Link className="monitor-card-link" to="/ipfs">Open IPFS explorer <ArrowUpRight size={13} /></Link>
+        </div>
+        <div className="monitor-gateway-grid">
+          {PUBLIC_IPFS_GATEWAYS.map((gateway) => (
+            <IpfsGatewayCard key={gateway.id} gateway={gateway} snapshot={snapshot.ipfs[gateway.id]} />
+          ))}
+        </div>
+      </section>
 
       <section className="monitor-topology" aria-labelledby="monitor-topology-title">
         <div className="monitor-topology-heading">
           <div>
-            <div className="monitor-topology-kicker"><Server size={14} /> Storage nodes</div>
-            <h2 id="monitor-topology-title">Public archive topology</h2>
-            <p>Read-only endpoints and provider roles for the current storage path.</p>
+            <div className="monitor-topology-kicker"><Database size={14} /> Storage providers</div>
+            <h2 id="monitor-topology-title">External archive providers</h2>
+            <p>Provider roles are inventory metadata, not live S3 health checks.</p>
           </div>
           <Badge variant="outline">Public inventory</Badge>
         </div>
         <div className="monitor-node-grid">
-          {PUBLIC_STORAGE_NODES.map((node) => <PublicStorageNodeCard key={node.id} node={node} />)}
+          {PUBLIC_STORAGE_PROVIDERS.map((provider) => <PublicStorageProviderCard key={provider.id} provider={provider} />)}
         </div>
         <p className="monitor-topology-note"><Info size={14} /> Provider badges describe the configured role; private capacity and operational telemetry stay server-side.</p>
       </section>
@@ -735,22 +834,29 @@ export default function Monitor() {
             <Card>
               <CardHeader className="monitor-card-header">
                 <div>
-                  <CardTitle>Gateway probe</CardTitle>
-                  <CardDescription>One server-side reachability check for the configured IPFS gateway.</CardDescription>
+                  <CardTitle>Gateway probes</CardTitle>
+                  <CardDescription>Independent server-side reachability checks for the HK and US IPFS gateways.</CardDescription>
                 </div>
                 <CardAction><Badge variant="outline" className={ipfsBadge.className}>{ipfsBadge.label}</Badge></CardAction>
               </CardHeader>
               <CardContent className="monitor-storage-content">
-                <div className="monitor-storage-metrics">
-                  <div><span>Endpoint</span><code title={cfg.ipfsGateway}>{cfg.ipfsGateway}</code></div>
-                  <div><span>HTTP status</span><b>{snapshot.ipfs.statusCode ?? "—"}</b></div>
-                  <div><span>Latency</span><b>{snapshot.ipfs.latencyMs == null ? "—" : `${snapshot.ipfs.latencyMs} ms`}</b></div>
-                  <div><span>Probe source</span><b>{snapshot.ipfs.probeSource === "server" ? "Website server" : snapshot.ipfs.probeSource === "browser" ? "Browser fallback" : "—"}</b></div>
-                  <div><span>Checked</span><b>{formatCheckedAt(snapshot.ipfs.checkedAt)}</b></div>
+                <div className="monitor-storage-gateway-list">
+                  {PUBLIC_IPFS_GATEWAYS.map((gateway) => {
+                    const gatewaySnapshot = snapshot.ipfs[gateway.id];
+                    return (
+                      <div className="monitor-storage-metrics" key={gateway.id}>
+                        <div><span>{gateway.title}</span><code title={gateway.endpoint}>{gateway.endpoint}</code></div>
+                        <div><span>HTTP status</span><b>{gatewaySnapshot.statusCode ?? "—"}</b></div>
+                        <div><span>Latency</span><b>{gatewaySnapshot.latencyMs == null ? "—" : `${gatewaySnapshot.latencyMs} ms`}</b></div>
+                        <div><span>Probe source</span><b>{gatewaySnapshot.probeSource === "server" ? "Website server" : gatewaySnapshot.probeSource === "browser" ? "Browser fallback" : "—"}</b></div>
+                        <div><span>Checked</span><b>{formatCheckedAt(gatewaySnapshot.checkedAt)}</b></div>
+                      </div>
+                    );
+                  })}
                 </div>
                 <Separator />
                 <div className="monitor-storage-footer">
-                  <span><HardDrive size={15} /> Packfile inspection remains available per repository.</span>
+                  <span><HardDrive size={15} /> Packfile inspection remains available per repository and gateway.</span>
                   <Link to="/ipfs">Open IPFS explorer <ArrowUpRight size={13} /></Link>
                 </div>
               </CardContent>
