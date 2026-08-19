@@ -153,7 +153,7 @@ const INITIAL_SNAPSHOT: MonitorSnapshot = {
   ipfs: initialIpfsSnapshot(),
 };
 
-const REFRESH_INTERVAL_MS = 60_000;
+const REFRESH_INTERVAL_MS = 90_000;
 
 type PublicProviderStatus = "current" | "legacy";
 

@@ -76,6 +76,13 @@ test("Monitor prefers the same-origin server gateway probe", async () => {
   assert.match(monitor, /probeIpfsGateway\(gateway, cfg\.profile\)/);
 });
 
+test("Monitor automatically refreshes all probes every 90 seconds", async () => {
+  const monitor = await source("../src/pages/Monitor.tsx");
+  assert.match(monitor, /const REFRESH_INTERVAL_MS = 90_000;/);
+  assert.match(monitor, /window\.setInterval\(\(\) => void refresh\(\), REFRESH_INTERVAL_MS\)/);
+  assert.match(monitor, /detail=\{`auto refresh · \$\{REFRESH_INTERVAL_MS \/ 1000\}s`\}/);
+});
+
 test("V1 archive source includes the public Injective contract explorer", () => {
   assert.equal(COSMWASM_V1_ARCHIVE.network, "Injective Testnet");
   assert.match(COSMWASM_V1_ARCHIVE.explorer, /^https:\/\/testnet\.explorer\.injective\.network\/contract\/inj1/);

@@ -63,7 +63,9 @@ target-ID allowlist (`target=hk` and `target=us`) and probes each gateway's
 rejected. A `403` from `/healthz` is therefore not used as a
 gateway signal: that path is an operational health route, while `/ipfs/` is
 the public read-only gateway path. The Vite-only local preview falls back to
-browser probes when the serverless function is not present.
+browser probes when the serverless function is not present. Monitor runs the
+full source and HK/US gateway probe cycle when the page opens and every 90
+seconds thereafter; visitors can also trigger the same cycle manually.
 
 ## First-Release Screen
 
