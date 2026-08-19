@@ -78,21 +78,34 @@ change the operational release boundary above.
 
 ## Verification Snapshot
 
-Verified locally on 2026-08-18:
+Verified locally on 2026-08-19; commit-bound CI history and the remaining P0
+evidence gaps are tracked in [P0 Evidence Record](p0-evidence.md):
 
 - [x] Locked Solidity `0.8.24` compilation, ABI/artifact generation, EIP-170
   and EIP-3860 checks: `npm run check` passed. `RepositoryCore` runtime is
   23,504 bytes, leaving 1,072 bytes of the required 1,024-byte headroom.
-- [ ] Foundry Suite tests were not executable on this host because `forge` is
-  unavailable. The protocol-parity, malformed-import, 20-recipient split, and
-  128-reserved-username regressions are checked in but still need a Foundry
-  toolchain run before release approval.
+- [x] Foundry Suite tests passed in the pinned CI toolchain (`v1.7.1`) on the
+  recorded green runs. This Windows host still cannot execute them because
+  `forge` is unavailable. The protocol-parity, malformed-import, 20-recipient
+  split, and 128-reserved-username regressions are covered by the CI run.
 - [x] Go client: `go test ./...` and `go vet ./...` passed; embedded chain ABIs
   match `contracts/evm-v2/abi`.
 - [x] Web API tests (41), typecheck, and production build passed.
 - [x] Suite source/readiness, identity, and compatibility ABI gates passed.
-- [ ] The race gate was not executed because the host has no gcc/clang. A
-  Linux toolchain run is still required before release approval.
+- [x] The required race gate passed in the recorded Linux CI runs. This host
+  still cannot execute it because neither `gcc` nor `clang` is installed; the
+  non-required local gate records that limitation as `SKIP`.
+
+- [x] The native Windows host has `zh-CN` current/user UI culture, and the
+  stable-code i18n/config tests pass without relying on English text. A
+  separately retained CI transcript that mutates and restores the runner's
+  user locale is still open.
+- [x] Native Windows tests validate the current-user/`LocalSystem` protected
+  DACL policy for config and keystore paths. A standalone `icacls` transcript
+  is still open for evidence retention.
+- [x] Timeout/fallback unit tests and both native Kubo lifecycle jobs pass;
+  the evidence is composed from deterministic fallback tests plus real
+  download/start/probe/shutdown smoke, not one forced-fallback E2E transcript.
 
 The following are intentional compatibility boundaries and are not represented
 as completed deployment work:

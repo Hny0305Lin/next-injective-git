@@ -162,6 +162,11 @@ jobs:
           go -C cli run ./cmd/igit-deploy-suite --artifacts ../contracts/evm-v2/artifacts --check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: clean Windows checkout Suite gate
+        shell: pwsh
+        working-directory: .
+        run: .\scripts\windows-suite-clean-check.ps1
+
       # This executes the Windows-specific Kubo wrapper/executable path rather
       # than relying only on a Linux cross-compile.
       - name: native setup, bootstrap, and backend tests

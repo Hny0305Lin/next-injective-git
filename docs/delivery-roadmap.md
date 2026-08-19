@@ -30,6 +30,7 @@ The surrounding documents retain their narrower authority:
 | [Open Decisions](open-questions.md) | Decisions that require explicit review rather than implementation inference |
 | [Release And Cutover](release.md) | Release contents and the cutover gate |
 | [Acceptance Evidence](acceptance-evidence.md) | Required real evidence and its binding rules |
+| [P0 Evidence Record](p0-evidence.md) | Commit-bound Windows/Linux CI and local P0 verification snapshot |
 | [Infrastructure](infrastructure.md) | As-built IPFS data plane; not EVM or object-storage acceptance |
 
 When this roadmap conflicts with an accepted ADR, the ADR wins. When it
@@ -70,6 +71,11 @@ Observed native Windows blockers at the initial assessment include:
 
 These findings must be reproduced in CI before being closed. They are not a
 substitute for a retained CI run.
+
+The retained CI and local verification ledger is [P0 Evidence
+Record](p0-evidence.md). It currently records historical green runs and the
+local host limitations; the newly added clean-clone gate remains open until its
+post-push run is bound to an exact commit.
 
 ## Non-Negotiable Guardrails
 
