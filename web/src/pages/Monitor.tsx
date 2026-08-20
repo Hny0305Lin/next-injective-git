@@ -617,18 +617,18 @@ export default function Monitor() {
         <p className="monitor-topology-note"><Info size={14} /> Provider badges describe the configured role; private capacity and operational telemetry stay server-side.</p>
       </section>
 
-      {snapshot.evm.state !== "healthy" && snapshot.evm.state !== "loading" && (
-        <Alert variant={snapshot.evm.state === "not-configured" ? "default" : "destructive"} className="monitor-alert">
+      {/* Only a resolved verification failure warrants this banner. `loading` is
+          the first-paint state, and `not-configured` is the expected default for
+          every published profile until cutover evidence is approved, so neither
+          should greet a visitor with an alert. The EVM V2 Suite SourceCard above
+          already carries the badge and detail for those two states. */}
+      {snapshot.evm.state === "unavailable" && snapshot.evm.checkedAt != null && (
+        <Alert variant="destructive" className="monitor-alert">
           <AlertTriangle />
           <div>
-            <AlertTitle>{snapshot.evm.state === "not-configured" ? "EVM V2 is not configured" : "EVM V2 is unavailable"}</AlertTitle>
-            <AlertDescription>
-              {snapshot.evm.state === "not-configured"
-                ? "The public monitor is still available, but EVM activity needs a verified SuiteDirectory."
-                : snapshot.evm.detail}
-            </AlertDescription>
+            <AlertTitle>EVM V2 is unavailable</AlertTitle>
+            <AlertDescription>{snapshot.evm.detail}</AlertDescription>
           </div>
-          {snapshot.evm.state === "not-configured" && <Link className="monitor-alert-link" to="/settings">Review settings <ArrowUpRight size={13} /></Link>}
         </Alert>
       )}
 
