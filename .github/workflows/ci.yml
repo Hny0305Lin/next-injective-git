@@ -377,41 +377,71 @@ jobs:
       # present. Token reach is the only untested variable left, and the error
       # text cannot distinguish it from a bad identifier. This step names which
       # it is, so the next failure is diagnosed rather than re-guessed.
-      - name: verify token reach
+      # Split one check per step on purpose. Step logs need an authenticated API
+      # call, but step names and conclusions do not, so a reader without a token
+      # can still tell which check failed from the conclusion pattern alone.
+      # Each runs independently via continue-on-error, then a gate reads the
+      # outcomes, so one failure does not mask the checks after it.
+      - name: 'probe 1: token authenticates'
+        id: p_whoami
+        continue-on-error: true
+        run: vercel whoami --token="$VERCEL_TOKEN"
+
+      - name: 'probe 2: identifiers are well formed'
+        id: p_shape
+        continue-on-error: true
         run: |
           set -uo pipefail
+          org="$(printf '%s' "$VERCEL_ORG_ID" | tr -d '[:space:]')"
+          proj="$(printf '%s' "$VERCEL_PROJECT_ID" | tr -d '[:space:]')"
+          [[ "$org" == "$VERCEL_ORG_ID" ]] || { echo "VERCEL_ORG_ID has stray whitespace" >&2; exit 1; }
+          [[ "$proj" == "$VERCEL_PROJECT_ID" ]] || { echo "VERCEL_PROJECT_ID has stray whitespace" >&2; exit 1; }
+          [[ "$org" == team_* || "$org" == user_* ]] || { echo "VERCEL_ORG_ID should start team_ or user_" >&2; exit 1; }
+          [[ "$proj" == prj_* ]] || { echo "VERCEL_PROJECT_ID should start prj_" >&2; exit 1; }
 
-          # Findings also go to the job summary. Step logs need an authenticated
-          # API call, but a job summary is exposed in the check-run output that
-          # anyone can read, so the diagnosis stays reachable without a token.
-          note() { echo "$*"; echo "$*" >>"$GITHUB_STEP_SUMMARY"; }
+      - name: 'probe 3: token lists any scope'
+        id: p_teams
+        continue-on-error: true
+        run: vercel teams ls --token="$VERCEL_TOKEN"
 
-          note "### Vercel token reach"
+      - name: 'probe 4: project readable via scope flag'
+        id: p_scoped
+        continue-on-error: true
+        run: |
+          vercel project inspect "$VERCEL_PROJECT_ID" \
+            --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN"
 
-          if ! vercel whoami --token="$VERCEL_TOKEN" >/dev/null 2>&1; then
-            note "- whoami: **FAILED** — token rejected outright"
-            note "- Cause: token invalid, expired, or pasted with whitespace."
-            note "- Fix: mint a new token and update the VERCEL_TOKEN secret."
+      - name: 'probe 5: project readable without scope flag'
+        id: p_bare
+        continue-on-error: true
+        run: vercel project inspect "$VERCEL_PROJECT_ID" --token="$VERCEL_TOKEN"
+
+      - name: interpret probe outcomes
+        run: |
+          set -uo pipefail
+          w='${{ steps.p_whoami.outcome }}'
+          s='${{ steps.p_shape.outcome }}'
+          t='${{ steps.p_teams.outcome }}'
+          c='${{ steps.p_scoped.outcome }}'
+          b='${{ steps.p_bare.outcome }}'
+          echo "whoami=$w shape=$s teams=$t scoped=$c bare=$b"
+
+          [[ "$s" == success ]] || {
+            echo "FAIL: a secret is malformed. Re-paste it with no trailing newline." >&2
+            exit 1
+          }
+          [[ "$w" == success ]] || {
+            echo "FAIL: Vercel rejected the token. Invalid or expired." >&2
+            exit 1
+          }
+          if [[ "$c" != success && "$b" != success ]]; then
+            echo "FAIL: the token authenticates but cannot read the project" >&2
+            echo "either with or without --scope. Its scope does not include" >&2
+            echo "the team that owns this project. Create a token with Scope" >&2
+            echo "set to the team and update VERCEL_TOKEN." >&2
             exit 1
           fi
-          note "- whoami: OK — token authenticates"
-
-          note "- scopes visible to this token:"
-          scopes="$(vercel teams ls --token="$VERCEL_TOKEN" 2>&1 || true)"
-          printf '%s\n' "$scopes"
-          printf '```\n%s\n```\n' "$scopes" >>"$GITHUB_STEP_SUMMARY"
-
-          if ! vercel project inspect "$VERCEL_PROJECT_ID" \
-                 --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN" >/dev/null 2>&1; then
-            note "- project inspect: **FAILED** — token cannot reach the project"
-            note "- The identifiers are correct; both were verified against the"
-            note "  live project. The token cannot reach the owning team, which"
-            note "  is what a Personal Account scoped token does."
-            note "- Fix: create a token with Scope set to the team, then update"
-            note "  the VERCEL_TOKEN secret."
-            exit 1
-          fi
-          note "- project inspect: OK — token reaches the target project"
+          echo "token reaches the project"
 
       - name: pull production project settings
         run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
