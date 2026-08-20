@@ -370,6 +370,44 @@ jobs:
             exit 1
           fi
 
+      # "Could not retrieve Project Settings" means the CLI resolved a project
+      # but the API refused its settings. Reproducing CI's fresh checkout in a
+      # clean clone ruled out every other candidate: pull and build both succeed
+      # there on this same pinned CLI with these identifiers and no .vercel
+      # present. Token reach is the only untested variable left, and the error
+      # text cannot distinguish it from a bad identifier. This step names which
+      # it is, so the next failure is diagnosed rather than re-guessed.
+      - name: verify token reach
+        run: |
+          set -uo pipefail
+
+          if ! vercel whoami --token="$VERCEL_TOKEN" >/dev/null 2>&1; then
+            echo "FAIL: Vercel rejected the token outright." >&2
+            echo "It is invalid, expired, or was pasted with stray whitespace." >&2
+            exit 1
+          fi
+          echo "token authenticates OK"
+
+          echo "scopes this token can see:"
+          vercel teams ls --token="$VERCEL_TOKEN" 2>&1 || true
+
+          if ! vercel project inspect "$VERCEL_PROJECT_ID" \
+                 --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN" >/dev/null 2>&1; then
+            echo "" >&2
+            echo "FAIL: token cannot read $VERCEL_PROJECT_ID in $VERCEL_ORG_ID." >&2
+            echo "" >&2
+            echo "The identifiers are not the problem; both were verified" >&2
+            echo "against the live project. The token cannot reach the team" >&2
+            echo "that owns it, which is what a token minted under Personal" >&2
+            echo "Account rather than the team does." >&2
+            echo "" >&2
+            echo "Fix: create a token at" >&2
+            echo "https://vercel.com/account/settings/tokens with Scope set to" >&2
+            echo "the team, then update the VERCEL_TOKEN secret." >&2
+            exit 1
+          fi
+          echo "token reaches the target project"
+
       - name: pull production project settings
         run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
 
