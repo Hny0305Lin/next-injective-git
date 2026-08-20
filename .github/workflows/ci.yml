@@ -384,8 +384,37 @@ jobs:
         run: |
           set -uo pipefail
           mkdir -p .vercel
-          printf '{"projectId":"%s","orgId":"%s"}\n' \
-            "$VERCEL_PROJECT_ID" "$VERCEL_ORG_ID" >.vercel/project.json
+
+          # The settings block is written out in full rather than fetched. With
+          # only projectId and orgId present, vercel build needs --yes and then
+          # performs its own full pull, which includes the environment step this
+          # token cannot complete. Supplying settings locally removes that
+          # dependency entirely.
+          #
+          # rootDirectory is the load-bearing field: the project builds from web/,
+          # which is also why web/vercel.json rather than a root one is read.
+          # Values mirror the live project as returned by vercel pull.
+          python3 - <<'PY'
+          import json, os
+          link = {
+              "projectId": os.environ["VERCEL_PROJECT_ID"],
+              "orgId": os.environ["VERCEL_ORG_ID"],
+              "settings": {
+                  "framework": "vite",
+                  "devCommand": None,
+                  "installCommand": None,
+                  "buildCommand": None,
+                  "outputDirectory": None,
+                  "rootDirectory": "web",
+                  "directoryListing": False,
+                  "nodeVersion": "22.x",
+              },
+          }
+          with open(".vercel/project.json", "w", encoding="utf-8") as fh:
+              json.dump(link, fh, indent=2)
+              fh.write("\n")
+          print("wrote link file with settings")
+          PY
           cat .vercel/project.json
 
       # A Vercel token can read project metadata but cannot decrypt environment
@@ -417,8 +446,12 @@ jobs:
       # Builds from the checked-out commit using the repository's vercel.json,
       # so the published bundle is the one this run just gated.
       - name: build production bundle
+        # Deliberately without --yes. That flag makes build perform its own full
+        # pull, including the environment step this token cannot complete, which
+        # is what failed here. With the settings block written locally there is
+        # nothing left to fetch.
         run: |
-          vercel build --prod --yes \
+          vercel build --prod \
             --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN"
 
       - name: deploy prebuilt bundle to production
