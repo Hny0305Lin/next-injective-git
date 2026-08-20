@@ -3115,6 +3115,27 @@ html.dark .action-badge.a-award_badge {
   max-width: 560px;
 }
 
+.settings-suite-input[readonly] {
+  color: var(--fg-muted);
+  background: var(--bg-inset);
+  cursor: text;
+  user-select: all;
+}
+
+.settings-suite-input[readonly]:focus {
+  border-color: var(--border);
+  box-shadow: none;
+  outline: none;
+}
+
+.settings-locked-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--fg-muted);
+  font-size: 0.76rem;
+}
+
 .settings-field-help {
   max-width: 720px;
   margin: 7px 0 0;

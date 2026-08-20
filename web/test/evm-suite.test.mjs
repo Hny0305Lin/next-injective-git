@@ -14,7 +14,7 @@ import {
   boundModuleAbi,
   directoryAbi,
 } from "../src/lib/abis.ts";
-import { configForProfile, loadConfig, saveConfig } from "../src/lib/profile.ts";
+import { configForProfile, isLocalDeploymentHost, loadConfig, saveConfig } from "../src/lib/profile.ts";
 import {
   EVMReceiptUnconfirmedError,
   SuiteConfigurationError,
@@ -228,6 +228,49 @@ test("an explicit local SuiteDirectory override round-trips without restoring le
     });
   } finally {
     globalThis.localStorage = previous;
+  }
+});
+
+test("SuiteDirectory editing is limited to local deployment origins", () => {
+  for (const host of [
+    "localhost",
+    "igit.localhost",
+    "127.0.0.1",
+    "127.1.2.3",
+    "[::1]",
+    "dev.local",
+    "10.0.0.4",
+    "192.168.1.20",
+    "172.16.0.9",
+    "172.31.255.255",
+    "",
+  ]) {
+    assert.equal(isLocalDeploymentHost(host), true, `expected ${host || "(empty)"} to be local`);
+  }
+  for (const host of [
+    "www.igit.xyz",
+    "igit.xyz",
+    "igit-web.vercel.app",
+    "172.32.0.1",
+    "172.15.0.1",
+    "11.0.0.1",
+    "192.169.1.1",
+    "127.0.0.256",
+    "localhost.attacker.example",
+    "8.8.8.8",
+  ]) {
+    assert.equal(isLocalDeploymentHost(host), false, `expected ${host} to be public`);
+  }
+});
+
+test("public Settings keeps the Directory copy-only and both write actions disabled", async () => {
+  const source = await readFile(new URL("../src/pages/Settings.tsx", import.meta.url), "utf8");
+  assert.match(source, /useState\(isLocalDeployment\)/);
+  assert.match(source, /readOnly=\{!suiteEditable\}/);
+  assert.equal(source.match(/(?<!aria-)disabled=\{saving \|\| !suiteEditable\}/g).length, 2);
+  assert.equal(source.match(/aria-disabled=\{saving \|\| !suiteEditable\}/g).length, 2);
+  for (const guarded of ["const persist = async () => {\n    if (!suiteEditable) return;", "const restoreDefaults = () => {\n    if (!suiteEditable) return;"]) {
+    assert.ok(source.includes(guarded), `missing guard: ${guarded}`);
   }
 });
 

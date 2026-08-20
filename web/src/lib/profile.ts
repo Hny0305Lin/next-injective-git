@@ -40,6 +40,32 @@ export function isSuiteDirectoryConfigured(value: string): boolean {
   return /^0x[0-9a-fA-F]{40}$/.test(value.trim());
 }
 
+// Loopback, `.localhost`/`.local`, and RFC1918 LAN hosts are the only origins
+// treated as a local deployment. A public origin (igit.xyz, a preview URL, or
+// anything else) must not let a visitor point the app at an arbitrary Suite,
+// so the Settings form there is read-only and copy-only.
+export function isLocalDeploymentHost(hostname: string): boolean {
+  const host = hostname.trim().toLowerCase().replace(/^\[|\]$/g, "");
+  if (!host) return true; // file:// and similar origins expose no hostname.
+  if (host === "localhost" || host.endsWith(".localhost")) return true;
+  if (host === "::1" || host === "0.0.0.0") return true;
+  if (host.endsWith(".local")) return true;
+  const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (!ipv4) return false;
+  const [a, b] = ipv4.slice(1).map(Number);
+  if ([a, ...ipv4.slice(2).map(Number)].some((part) => part > 255)) return false;
+  if (a === 127) return true;
+  if (a === 10) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  return false;
+}
+
+export function isLocalDeployment(): boolean {
+  if (typeof window === "undefined" || !window.location) return false;
+  return isLocalDeploymentHost(window.location.hostname);
+}
+
 export function configForProfile(profile: NetworkProfileId = DEFAULT_PROFILE): AppConfig {
   const selected = NETWORK_PROFILES[profile] ?? NETWORK_PROFILES[DEFAULT_PROFILE];
   return {

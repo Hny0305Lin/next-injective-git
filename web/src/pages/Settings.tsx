@@ -1,10 +1,11 @@
-import { CheckCircle2, ExternalLink, LoaderCircle, RotateCcw, Save } from "lucide-react";
+import { CheckCircle2, ExternalLink, LoaderCircle, Lock, RotateCcw, Save } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import {
   NETWORK_PROFILES,
   configForProfile,
   formatError,
+  isLocalDeployment,
   isSuiteDirectoryConfigured,
   loadConfig,
   saveConfig,
@@ -27,8 +28,10 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [suiteVerified, setSuiteVerified] = useState(false);
+  const [suiteEditable] = useState(isLocalDeployment);
 
   const restoreDefaults = () => {
+    if (!suiteEditable) return;
     const defaults = configForProfile();
     setCfg(defaults);
     setSuiteInput(defaults.suiteDirectory);
@@ -47,6 +50,7 @@ export default function Settings() {
   };
 
   const persist = async () => {
+    if (!suiteEditable) return;
     const suiteDirectory = suiteInput.trim();
     const next = { ...cfg, suiteDirectory };
     setSaving(true);
@@ -106,6 +110,7 @@ export default function Settings() {
           className="field mono settings-suite-input"
           value={suiteInput}
           onChange={(event) => {
+            if (!suiteEditable) return;
             setSuiteInput(event.target.value);
             setSaved(false);
             setSaveError("");
@@ -114,23 +119,37 @@ export default function Settings() {
           placeholder="0x..."
           spellCheck={false}
           autoComplete="off"
+          readOnly={!suiteEditable}
+          aria-readonly={!suiteEditable}
+          title={suiteEditable ? undefined : "Read-only on a public deployment. Select the text to copy it."}
+          onFocus={(event) => {
+            if (!suiteEditable) event.currentTarget.select();
+          }}
         />
         <p className="muted settings-field-help">
-          The public testnet profile intentionally has no Directory yet. A local override is saved only after the active Suite, all seven modules, code hashes, and bindings verify successfully.
+          {suiteEditable
+            ? "The public testnet profile intentionally has no Directory yet. A local override is saved only after the active Suite, all seven modules, code hashes, and bindings verify successfully."
+            : "This public deployment pins the Directory from its released profile, so the address is copy-only here. Run igit-web locally to verify and save your own override."}
         </p>
 
         <div className="settings-actions">
           <button
             className="primary"
             onClick={persist}
-            disabled={saving}
+            disabled={saving || !suiteEditable}
+            aria-disabled={saving || !suiteEditable}
           >
             {saving ? <LoaderCircle className="suite-alert-spinner" size={14} /> : <Save size={14} />}
             {saving ? "Verifying Suite..." : suiteInput.trim() ? "Verify and save" : "Save profile"}
           </button>
-          <button onClick={restoreDefaults} disabled={saving}>
+          <button onClick={restoreDefaults} disabled={saving || !suiteEditable} aria-disabled={saving || !suiteEditable}>
             <RotateCcw size={14} /> Restore defaults
           </button>
+          {!suiteEditable && (
+            <span className="settings-locked-note">
+              <Lock size={13} /> Locked on public deployment
+            </span>
+          )}
           {saved && (
             <span className="success-message">
               <CheckCircle2 size={14} /> {suiteVerified ? "Suite verified and saved" : "Saved without a Suite"}
