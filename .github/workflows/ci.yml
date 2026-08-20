@@ -1,8 +1,10 @@
 name: ci
 
 on:
-  # Buildable source trees, migration docs, web assets, and repository
-  # acceptance fixtures gate CI.
+  # Buildable source trees, migration docs, and repository acceptance fixtures
+  # gate CI. The Web tree is developed and deployed outside this pipeline, so
+  # it neither triggers CI nor is built here; its source boundaries are still
+  # enforced by scripts/suite-readiness.sh and scripts/identity-readiness.mjs.
   push:
     branches: [main, master, dev]
     paths:
@@ -11,7 +13,6 @@ on:
       - "contracts/evm-v2/**"
       - "docs/**"
       - "scripts/**"
-      - "web/**"
       - ".gitattributes"
       - ".github/workflows/ci.yml"
       - ".github/workflows/release.yml"
@@ -22,7 +23,6 @@ on:
       - "contracts/evm-v2/**"
       - "docs/**"
       - "scripts/**"
-      - "web/**"
       - ".gitattributes"
       - ".github/workflows/ci.yml"
       - ".github/workflows/release.yml"
@@ -206,36 +206,6 @@ jobs:
           go build -trimpath -o dist/igit.exe ./cmd/igit
           go build -trimpath -o dist/git-remote-igit.exe ./cmd/git-remote-igit
 
-  web:
-    name: web (node)
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: web
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-
-      - name: install dependencies
-        run: npm ci
-
-      - name: strict SemVer release-tag regression vectors
-        run: node --test ../scripts/semver-check.test.mjs
-
-      - name: published Web profile release guard
-        run: npm run check:release-profile
-
-      - name: API tests
-        run: npm run test:api
-
-      - name: production build
-        run: npm run build
-
   evm-suite:
     name: immutable EVM Suite (Foundry)
     runs-on: ubuntu-latest
@@ -275,6 +245,11 @@ jobs:
 
       - name: install locked Solidity compiler
         run: npm ci --prefix contracts/evm-v2
+
+      # Release-tag parsing is repository tooling rather than Web code, so it
+      # stays gated here now that the Web job is gone. Pure node: builtins.
+      - name: strict SemVer release-tag regression vectors
+        run: node --test scripts/semver-check.test.mjs
 
       - name: validate bootstrap shell script
         run: bash -n scripts/bootstrap-push.sh

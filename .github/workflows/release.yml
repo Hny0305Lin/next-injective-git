@@ -28,9 +28,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: |
-            web/package-lock.json
-            contracts/evm-v2/package-lock.json
+          cache-dependency-path: contracts/evm-v2/package-lock.json
 
       - name: validate release tag
         env:
@@ -38,10 +36,6 @@ jobs:
         run: |
           node --test scripts/semver-check.test.mjs
           node scripts/semver-check.mjs "$RELEASE_VERSION"
-
-      - name: install Web dependencies
-        working-directory: web
-        run: npm ci
 
       - name: install locked Solidity compiler
         run: npm ci --prefix contracts/evm-v2
@@ -69,10 +63,6 @@ jobs:
       - name: enforce immutable Suite CLI profile shape
         working-directory: cli
         run: go run ./cmd/igit-release-profile-check
-
-      - name: enforce immutable Suite Web profile shape
-        working-directory: web
-        run: npm run check:release-profile
 
       - name: verify version linker injection
         working-directory: cli
