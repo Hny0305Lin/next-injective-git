@@ -377,8 +377,24 @@ jobs:
           for name in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
             raw="${!name}"
             clean="$(printf '%s' "$raw" | tr -d '[:space:]')"
+
+            # Surrounding quotes survive whitespace stripping and fail auth
+            # exactly like an invalid value, as does a copied Bearer prefix.
+            # Both are ordinary paste mistakes, so they are corrected here and
+            # reported, rather than being left to look like a bad credential.
+            case "$clean" in
+              \"*\") clean="${clean#\"}"; clean="${clean%\"}"
+                     echo "note: $name had surrounding double quotes; removed" ;;
+              \'*\') clean="${clean#\'}"; clean="${clean%\'}"
+                     echo "note: $name had surrounding single quotes; removed" ;;
+            esac
+            case "$clean" in
+              Bearer*) clean="${clean#Bearer}"
+                       echo "note: $name had a Bearer prefix; removed" ;;
+            esac
+
             if [[ "$raw" != "$clean" ]]; then
-              echo "note: $name contained whitespace; trimmed ${#raw} -> ${#clean} chars"
+              echo "note: $name normalized, ${#raw} -> ${#clean} chars"
             else
               echo "note: $name clean, ${#clean} chars"
             fi
