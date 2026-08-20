@@ -617,7 +617,7 @@ export default function Monitor() {
         <p className="monitor-topology-note"><Info size={14} /> Provider badges describe the configured role; private capacity and operational telemetry stay server-side.</p>
       </section>
 
-      {snapshot.evm.state !== "healthy" && (
+      {snapshot.evm.state !== "healthy" && snapshot.evm.state !== "loading" && (
         <Alert variant={snapshot.evm.state === "not-configured" ? "default" : "destructive"} className="monitor-alert">
           <AlertTriangle />
           <div>
