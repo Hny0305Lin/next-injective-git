@@ -381,32 +381,37 @@ jobs:
         run: |
           set -uo pipefail
 
+          # Findings also go to the job summary. Step logs need an authenticated
+          # API call, but a job summary is exposed in the check-run output that
+          # anyone can read, so the diagnosis stays reachable without a token.
+          note() { echo "$*"; echo "$*" >>"$GITHUB_STEP_SUMMARY"; }
+
+          note "### Vercel token reach"
+
           if ! vercel whoami --token="$VERCEL_TOKEN" >/dev/null 2>&1; then
-            echo "FAIL: Vercel rejected the token outright." >&2
-            echo "It is invalid, expired, or was pasted with stray whitespace." >&2
+            note "- whoami: **FAILED** — token rejected outright"
+            note "- Cause: token invalid, expired, or pasted with whitespace."
+            note "- Fix: mint a new token and update the VERCEL_TOKEN secret."
             exit 1
           fi
-          echo "token authenticates OK"
+          note "- whoami: OK — token authenticates"
 
-          echo "scopes this token can see:"
-          vercel teams ls --token="$VERCEL_TOKEN" 2>&1 || true
+          note "- scopes visible to this token:"
+          scopes="$(vercel teams ls --token="$VERCEL_TOKEN" 2>&1 || true)"
+          printf '%s\n' "$scopes"
+          printf '```\n%s\n```\n' "$scopes" >>"$GITHUB_STEP_SUMMARY"
 
           if ! vercel project inspect "$VERCEL_PROJECT_ID" \
                  --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN" >/dev/null 2>&1; then
-            echo "" >&2
-            echo "FAIL: token cannot read $VERCEL_PROJECT_ID in $VERCEL_ORG_ID." >&2
-            echo "" >&2
-            echo "The identifiers are not the problem; both were verified" >&2
-            echo "against the live project. The token cannot reach the team" >&2
-            echo "that owns it, which is what a token minted under Personal" >&2
-            echo "Account rather than the team does." >&2
-            echo "" >&2
-            echo "Fix: create a token at" >&2
-            echo "https://vercel.com/account/settings/tokens with Scope set to" >&2
-            echo "the team, then update the VERCEL_TOKEN secret." >&2
+            note "- project inspect: **FAILED** — token cannot reach the project"
+            note "- The identifiers are correct; both were verified against the"
+            note "  live project. The token cannot reach the owning team, which"
+            note "  is what a Personal Account scoped token does."
+            note "- Fix: create a token with Scope set to the team, then update"
+            note "  the VERCEL_TOKEN secret."
             exit 1
           fi
-          echo "token reaches the target project"
+          note "- project inspect: OK — token reaches the target project"
 
       - name: pull production project settings
         run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
