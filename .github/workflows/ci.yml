@@ -378,31 +378,39 @@ jobs:
       # text cannot distinguish it from a bad identifier. This step names which
       # it is, so the next failure is diagnosed rather than re-guessed.
       - name: pull production project settings
+        # Written directly from the two identifiers rather than discovered, since
+        # discovery is what was failing. vercel build --yes fills in the settings
+        # block afterwards.
         run: |
           set -uo pipefail
-
-          # vercel pull does two things: fetch project settings and decrypt
-          # environment variables. Writing the link file directly covers the
-          # first, which removes the discovery step that was failing. The second
-          # still matters because VITE_WALLETCONNECT_PROJECT_ID is baked into the
-          # bundle at build time, so it is fetched separately below and its
-          # failure is fatal rather than ignored.
           mkdir -p .vercel
           printf '{"projectId":"%s","orgId":"%s"}\n' \
             "$VERCEL_PROJECT_ID" "$VERCEL_ORG_ID" >.vercel/project.json
-          echo "wrote .vercel/project.json"
+          cat .vercel/project.json
 
+      # Kept as its own step so its conclusion is readable without an
+      # authenticated log fetch. Separates "cannot decrypt env vars" from
+      # "cannot read project settings", which vercel pull conflated.
+      - name: pull production environment
+        run: |
           vercel env pull .vercel/.env.production.local \
             --environment=production --yes \
             --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN"
 
-          # Confirm the build-time variable actually arrived. An empty or absent
-          # file would otherwise yield a bundle missing its WalletConnect id.
+      # VITE_WALLETCONNECT_PROJECT_ID is inlined at build time, so a silent miss
+      # would publish a bundle without it. Checked rather than assumed.
+      - name: verify build-time env arrived
+        run: |
+          set -uo pipefail
+          test -s .vercel/.env.production.local || {
+            echo "FAIL: pulled env file is empty or missing" >&2
+            exit 1
+          }
           grep -q 'VITE_WALLETCONNECT_PROJECT_ID' .vercel/.env.production.local || {
             echo "FAIL: VITE_WALLETCONNECT_PROJECT_ID absent from pulled env" >&2
             exit 1
           }
-          echo "production env pulled and verified"
+          echo "build-time env present"
 
       # Builds from the checked-out commit using the repository's vercel.json,
       # so the published bundle is the one this run just gated.
