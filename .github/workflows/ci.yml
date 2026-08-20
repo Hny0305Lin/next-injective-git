@@ -470,14 +470,34 @@ jobs:
       #                    it lacks production-alias permission
       #   deploy fails  -> the token cannot write at all despite reading fine,
       #                    so it is effectively read-only
-      # Fallback: let Vercel build remotely instead of uploading a prebuilt
-      # bundle. This is the path Vercel's own Git integration used successfully
-      # for months, so it needs no capability this token is known to lack. It
-      # runs only when the prebuilt publish failed, and its own failure is fatal.
-      - name: publish by remote build
+      # Runs only after a direct production deploy fails. No continue-on-error
+      # anywhere below: that flag makes the jobs API report a failed step as
+      # successful, which previously hid which path actually worked.
+      #
+      # Promotion reaches production through a different permission than a
+      # targeted production deploy, so a token that cannot do the latter may
+      # still be able to do the former.
+      - name: build preview bundle
         if: failure() && steps.publish.outcome == 'failure'
         run: |
-          vercel deploy --prod \
+          rm -rf .vercel/output
+          vercel build --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN"
+
+      - name: deploy preview bundle
+        id: preview
+        if: failure() && steps.publish.outcome == 'failure'
+        run: |
+          set -uo pipefail
+          url="$(vercel deploy --prebuilt \
+            --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN")"
+          test -n "$url"
+          echo "url=$url" >>"$GITHUB_OUTPUT"
+          echo "preview deployed: $url"
+
+      - name: promote preview to production
+        if: failure() && steps.publish.outcome == 'failure'
+        run: |
+          vercel promote "${{ steps.preview.outputs.url }}" \
             --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN"
 
   evm-suite:
