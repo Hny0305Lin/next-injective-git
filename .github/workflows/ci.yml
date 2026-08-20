@@ -31,6 +31,11 @@ on:
       - ".gitattributes"
       - ".github/workflows/ci.yml"
       - ".github/workflows/release.yml"
+  # Vercel's Git integration is disabled for the deployment branches (see
+  # web/vercel.json), so this pipeline is the only publisher. A manual trigger
+  # is therefore required to re-publish or roll back without inventing a
+  # commit. It runs every gate, since a dispatch has no diff base.
+  workflow_dispatch:
 
 jobs:
   # Routes each push or PR to the gates that its changed paths actually need.
@@ -326,9 +331,10 @@ jobs:
     name: web Vercel production deploy
     runs-on: ubuntu-latest
     needs: web
-    # Only a landed push publishes. Pull requests stop at the `web` gate above;
-    # Vercel's own Git integration still serves PR previews.
-    if: github.event_name == 'push'
+    # A landed push or an explicit manual dispatch publishes. Pull requests
+    # stop at the `web` gate above; Vercel's own Git integration still serves
+    # PR previews.
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     # Serializes publishes so two pushes cannot race the production alias.
     concurrency:
       group: vercel-production
