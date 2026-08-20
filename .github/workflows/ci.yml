@@ -455,9 +455,40 @@ jobs:
             --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN"
 
       - name: deploy prebuilt bundle to production
+        id: publish
         run: |
           vercel deploy --prebuilt --prod \
             --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN"
+
+      # Runs only when the production publish failed. A preview build and deploy
+      # use the same write path but never touch the production alias, so this
+      # separates "the token cannot write at all" from "the token cannot move the
+      # production alias". Both a preview build and a preview deploy are needed
+      # because --prebuilt refuses a target mismatch.
+      - name: classify publish failure
+        if: failure() && steps.publish.outcome == 'failure'
+        run: |
+          set -uo pipefail
+
+          rm -rf .vercel/output
+          if ! vercel build \
+                 --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN"; then
+            echo "preview build also failed; not a production-alias problem" >&2
+            exit 1
+          fi
+
+          if vercel deploy --prebuilt \
+               --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN"; then
+            echo "DIAGNOSIS: the token can create a preview deployment but not" >&2
+            echo "a production one. It lacks permission to move the production" >&2
+            echo "alias, which a limited team role produces. Use a token whose" >&2
+            echo "role allows production deployment." >&2
+          else
+            echo "DIAGNOSIS: the token cannot create any deployment, preview or" >&2
+            echo "production, though it reads project metadata fine. It is a" >&2
+            echo "read-only credential. Use a token with write access." >&2
+          fi
+          exit 1
 
   evm-suite:
     name: immutable EVM Suite (Foundry)
