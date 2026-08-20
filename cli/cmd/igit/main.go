@@ -1517,7 +1517,13 @@ func cmdSuite(cfg config.Config, args []string) error {
 		return err
 	}
 	registry := chain.NewEVMSuiteRegistry(cfg)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Full suite verification is a long sequence of dependent reads: chain ID,
+	// block, directory code and fields, coordinator code and bindings, then six
+	// calls for each of the seven modules. Against the public Injective testnet
+	// RPC that measured about a minute, so a 30-second budget failed at a
+	// different module on every attempt. Keep the bound generous; the checks
+	// themselves stay fail-closed.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	info, err := registry.SuiteInfo(ctx)
 	if err != nil {

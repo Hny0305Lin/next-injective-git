@@ -18,7 +18,7 @@ export const SUPPORTED_WALLETS: SupportedWallet[] = [
   { id: "coinbase", label: "Coinbase Wallet", icon: "token-branded:coinbase", installUrl: "https://www.coinbase.com/wallet" },
   { id: "gate", label: "Gate Wallet", icon: "token-branded:gate-io", installUrl: "https://chromewebstore.google.com/detail/gate-wallet/cpmkedoipcpimgecpmgpldfpohjplkpp" },
   { id: "brave", label: "Brave Wallet", icon: "thesvg-color:brave", installUrl: "https://brave.com/wallet/" },
-  { id: "keplr", label: "Keplr (EVM)", icon: "token:keplr", installUrl: "https://www.keplr.app/download" },
+  { id: "keplr", label: "Keplr (EVM)", icon: "token-branded:keplr", installUrl: "https://www.keplr.app/download" },
   { id: "compass", label: "Compass (Leap EVM)", icon: "CP", installUrl: "https://chrome.google.com/webstore/detail/compass-wallet/anokgmphncpekkhclmingpimjmcooifb" },
 ];
 

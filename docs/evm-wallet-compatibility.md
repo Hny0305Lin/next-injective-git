@@ -38,6 +38,9 @@ connection, network-management, signing, and receipt checks.
 - All writes retain the current single-provider in-flight lock, explicit
   legacy type-0 transaction policy, gas estimation, minimum gas price, and
   receipt confirmation behavior.
+- WalletConnect/Reown is available as a separate desktop-to-mobile EVM
+  session path. It is opt-in through `VITE_WALLETCONNECT_PROJECT_ID` and does
+  not replace the injected-provider compatibility path below.
 
 ### Explicit Non-Goals
 
@@ -46,8 +49,6 @@ connection, network-management, signing, and receipt checks.
   only through its documented `window.keplr.ethereum` EVM provider.
 - Do not use a V1 fallback, a dual-write mode, a relayer, or a Cosmos-to-EVM
   bridge as part of this work.
-- Do not add WalletConnect/Reown or mobile deep-link support in the first
-  compatibility release. It is a separate EVM session product decision.
 - Do not select an arbitrary `window.ethereum` provider merely because one is
   present. Multiple extensions can inject concurrently, and choosing the
   wrong provider is a signing-risk and user-experience failure.
@@ -112,6 +113,30 @@ This means that connection and basic network validation can be tested before
 cutover, while any real write acceptance requires a separately reviewed,
 configured test directory and funded test account. A source fixture or mocked
 provider is not a substitute for that acceptance.
+
+### WalletConnect Configuration
+
+Copy `web/.env.example` to a local environment file and set
+`VITE_WALLETCONNECT_PROJECT_ID` to a Reown project ID whose allowlist contains
+the deployed Web origin. The ID is a public frontend identifier, not a wallet
+secret. The custom modal keeps each `wc:` pairing URI in memory only and clears
+it after connection, failure, or cancellation.
+
+The QR entry is desktop-only. It requires Injective EVM testnet chain `1439`
+through the standard WalletConnect EIP-1193 provider, then reuses the same
+session-pinned chain checks and transaction path as injected wallets. A wallet
+that does not advertise `eip155:1439` must reject the proposal before the Web
+creates an account session. Mobile visitors continue to use a wallet's injected
+DApp-browser provider; the site does not maintain a hard-coded list of mobile
+wallet deep links.
+
+As of 2026-08-20, Keplr Mobile advertises WalletConnect support for selected
+EIP-155 networks but does not list `eip155:1439`. Its Android app can recognize
+the `wc:` URI but cannot approve the EVM namespace required by this application.
+The QR UI therefore names chain `1439` explicitly and does not present Keplr
+Mobile as compatible. Keplr support would require either official chain `1439`
+support in its EVM WalletConnect provider or a separately designed and audited
+Keplr mobile signing adapter; successful QR parsing alone is not acceptance.
 
 ## Compatibility Contract
 
@@ -404,8 +429,11 @@ status, and transaction serialization independently.
 
 ## Deferred Decisions
 
-- Decide whether WalletConnect/Reown is needed for mobile OKX and other mobile
-  wallets after browser-extension compatibility is accepted.
+- Record WalletConnect/Reown Android acceptance separately from browser
+  extension acceptance. A successful pairing does not by itself prove that a
+  wallet supports chain `1439`, chain management, or the current legacy EVM
+  transaction path. Keplr Mobile remains unsupported on this path while its
+  WalletConnect metadata omits `eip155:1439`.
 - Choose the supported browser and extension-version floor after the first live
   matrix establishes reliable combinations.
 - Promote Keplr (EVM) or Compass (Leap EVM) only after their exact provider and

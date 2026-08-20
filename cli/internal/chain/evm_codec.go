@@ -36,6 +36,13 @@ func NormalizeEVMAddress(value string) (string, error) {
 	return normalizeEVMAddress(value)
 }
 
+// UserAddressFromEVM converts either an inj1 or hex address into the Injective
+// bech32 user form. Read-only tooling uses it to compose an igit:// remote URL,
+// whose owner segment accepts a bech32 address or a registered username.
+func UserAddressFromEVM(value string) (string, error) {
+	return userAddressFromEVM(value)
+}
+
 func userAddressFromEVM(value string) (string, error) {
 	decoded, err := parseEVMAddress(value)
 	if err != nil {

@@ -27,6 +27,7 @@ import {
   ensureWalletChain,
   nativeBalance,
   verifySuite,
+  walletChainId,
 } from "../src/lib/transport.ts";
 import {
   cancelOwnershipTransferWithEvm,
@@ -503,7 +504,56 @@ test("wallet connect is independent from Suite verification and keeps failures v
   assert.match(walletContext, /await ensureWalletChain\(provider, cfg\)/);
   assert.doesNotMatch(walletContext, /await verifySuite\(cfg\)/);
   assert.match(walletContext, /method: "eth_accounts"/);
-  assert.match(walletModal, /if \(await connect\(w\.id\)\) onClose\(\)/);
+  assert.match(walletModal, /if \(await connect\(w\.id\)\) close\(\)/);
+  assert.match(walletModal, /const close = \(\) => \{[\s\S]*?onClose\(\);[\s\S]*?\};/);
+  assert.match(walletModal, /Scan with a supported EVM wallet/);
+  assert.match(walletModal, /supports Injective EVM testnet \(chain 1439\)/);
+  assert.match(walletModal, /Keplr Mobile does not currently list chain 1439 for EVM WalletConnect/);
+  assert.doesNotMatch(walletModal, /WalletConnect-compatible Android wallet/);
+  assert.match(
+    walletModal,
+    /<QrCode size=\{17\} \/>\s*<IconifyIcon className="walletconnect-trigger-brand" icon="thesvg-color:walletconnect"[\s\S]*?<span>Scan with WalletConnect<\/span>/,
+  );
+  assert.doesNotMatch(walletModal, /walletconnect-brand/);
+  assert.match(walletModal, /QRCodeSVG/);
+  assert.match(walletModal, /walletconnect-entry/);
+  assert.match(walletContext, /connectWalletConnect/);
+  assert.match(walletContext, /restoreWalletConnect/);
+  assert.match(walletContext, /WalletConnect pairing failed/);
+});
+
+test("WalletConnect uses a custom URI surface and preserves the EIP-1193 session boundary", async () => {
+  const source = await readFile(new URL("../src/lib/walletconnect.ts", import.meta.url), "utf8");
+  assert.match(source, /showQrModal: false/);
+  assert.match(source, /chains: \[cfg\.evmChainId\]/);
+  assert.doesNotMatch(source, /optionalChains/);
+  assert.match(source, /display_uri/);
+  assert.match(source, /provider\.session/);
+  assert.match(source, /pairingPromise/);
+  assert.match(source, /cleanupPendingPairings/);
+  assert.doesNotMatch(source, /localStorage/);
+});
+
+test("WalletConnect chain incompatibility remains actionable and does not expose raw logger objects", async () => {
+  const walletContext = await readFile(new URL("../src/lib/WalletContext.tsx", import.meta.url), "utf8");
+  assert.match(walletContext, /wallet may not support Injective EVM testnet \(chain 1439\)/);
+  assert.doesNotMatch(walletContext, /JSON\.stringify\(cause\)/);
+});
+
+test("wallet chain IDs accept numeric WalletConnect responses and hex injected responses", async () => {
+  assert.equal(await walletChainId({ request: async () => 1439 }), 1439n);
+  assert.equal(await walletChainId({ request: async () => "0x59f" }), 1439n);
+});
+
+test("WalletConnect QR entry is hidden at the existing mobile breakpoint", async () => {
+  const styles = await readFile(new URL("../src/styles.css", import.meta.url), "utf8");
+  assert.match(styles, /@media \(max-width: 600px\)[\s\S]*?\.walletconnect-entry\s*\{\s*display: none;/);
+});
+
+test("WalletConnect brand icon is bundled for offline rendering", async () => {
+  const icons = await readFile(new URL("../src/lib/wallet-icons.ts", import.meta.url), "utf8");
+  assert.match(icons, /prefix: "thesvg-color"/);
+  assert.match(icons, /walletconnect:\s*\{[\s\S]*?fill=\\?"#3b99fc\\?"/);
 });
 
 test("EIP-6963 announcements are matched by wallet RDNS", async () => {
@@ -699,7 +749,7 @@ test("wallet metadata uses the requested brand icons and keeps Compass unchanged
     coinbase: "token-branded:coinbase",
     gate: "token-branded:gate-io",
     brave: "thesvg-color:brave",
-    keplr: "token:keplr",
+    keplr: "token-branded:keplr",
     compass: "CP",
   });
 });

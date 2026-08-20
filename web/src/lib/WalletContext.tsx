@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { toInjectiveAddress } from "./address";
 import { clearQueryCache, injBalanceOf, loadConfig } from "./chain";
 import { ensureWalletChain, walletChainId, type Eip1193 } from "./transport";
-import { formatWalletError } from "./errors";
+import { formatWalletError, providerErrorCode } from "./errors";
 import {
   resolveEvmProvider,
   prepareEvmProvider,
@@ -10,6 +10,16 @@ import {
   SUPPORTED_WALLETS,
   type ResolvedEvmProvider,
 } from "./wallet";
+import {
+  WALLETCONNECT_ID,
+  WALLETCONNECT_LABEL,
+  WalletConnectPairingCancelledError,
+  cancelWalletConnectPairing,
+  connectWalletConnect as startWalletConnect,
+  disconnectWalletConnect,
+  restoreWalletConnect,
+  walletConnectConfigured,
+} from "./walletconnect";
 
 export interface Connected {
   kind: "evm";
@@ -30,6 +40,11 @@ interface WalletState {
   connecting: boolean;
   error: string;
   connect: (walletId: string) => Promise<boolean>;
+  connectWalletConnect: () => Promise<boolean>;
+  walletConnectUri: string;
+  walletConnectPairing: boolean;
+  walletConnectConfigured: boolean;
+  cancelWalletConnect: () => void;
   disconnect: () => void;
   refreshBalance: () => Promise<void>;
   walletModalOpen: boolean;
@@ -37,9 +52,22 @@ interface WalletState {
   closeWalletModal: () => void;
 }
 
+interface WalletConnectResolution {
+  walletId: typeof WALLETCONNECT_ID;
+  provider: Eip1193;
+  identity: { source: "walletconnect" };
+}
+
+type SessionResolution = ResolvedEvmProvider | WalletConnectResolution;
+
 interface WalletSession {
-  resolution: ResolvedEvmProvider;
+  resolution: SessionResolution;
   connected: Connected;
+}
+
+interface WalletConnectAttempt {
+  cancelled: boolean;
+  provider: Eip1193 | null;
 }
 
 const Ctx = createContext<WalletState | null>(null);
@@ -58,6 +86,16 @@ function firstAccount(value: unknown): string | undefined {
 function chainNumber(value: bigint | null): number | null {
   if (value == null || value > BigInt(Number.MAX_SAFE_INTEGER)) return null;
   return Number(value);
+}
+
+function formatWalletConnectError(cause: unknown): string {
+  const code = providerErrorCode(cause);
+  if (code !== undefined) return formatWalletError(cause);
+  const message = formatWalletError(cause).toLowerCase();
+  if (message.includes("wrong evm chain") || message.includes("switch the wallet")) {
+    return "Switch the wallet to Injective EVM testnet and try again.";
+  }
+  return "WalletConnect pairing failed. The wallet may not support Injective EVM testnet (chain 1439).";
 }
 
 function listen(
@@ -86,8 +124,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState("");
   const [walletModalOpen, setWalletModalOpen] = useState(false);
+  const [walletConnectUri, setWalletConnectUri] = useState("");
+  const [walletConnectPairing, setWalletConnectPairing] = useState(false);
   const sessionRef = useRef<WalletSession | null>(null);
   const connectingRef = useRef(false);
+  const walletConnectAttemptRef = useRef<WalletConnectAttempt | null>(null);
 
   const clearSession = useCallback((removeStored = true) => {
     sessionRef.current = null;
@@ -110,14 +151,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const adoptAccount = useCallback(async (
-    resolution: ResolvedEvmProvider,
+    resolution: SessionResolution,
     ethAddress: string,
     persist = false,
   ): Promise<boolean> => {
     const current = sessionRef.current;
     if (current && (current.resolution.provider !== resolution.provider || current.resolution.walletId !== resolution.walletId)) return false;
     const definition = SUPPORTED_WALLETS.find((wallet) => wallet.id === resolution.walletId);
-    if (!definition || !validEthAddress(ethAddress)) return false;
+    const label = resolution.walletId === WALLETCONNECT_ID ? WALLETCONNECT_LABEL : definition?.label;
+    if (!label || !validEthAddress(ethAddress)) return false;
     const cfg = loadConfig();
     let activeChain: bigint | null = null;
     try {
@@ -130,7 +172,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const next: Connected = {
       kind: "evm",
       id: resolution.walletId,
-      label: definition.label,
+      label,
       address: toInjectiveAddress(ethAddress),
       ethAddress,
       chainId: chainNumber(activeChain),
@@ -142,6 +184,22 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     else setError("");
     if (persist && typeof localStorage !== "undefined") localStorage.setItem(LS_PROVIDER, resolution.walletId);
     return true;
+  }, []);
+
+  const walletConnectResolution = useCallback((provider: Eip1193): WalletConnectResolution => ({
+    walletId: WALLETCONNECT_ID,
+    provider,
+    identity: { source: "walletconnect" },
+  }), []);
+
+  const cancelWalletConnect = useCallback(() => {
+    const attempt = walletConnectAttemptRef.current;
+    if (attempt) {
+      attempt.cancelled = true;
+      cancelWalletConnectPairing();
+      if (attempt.provider) void disconnectWalletConnect(attempt.provider);
+    }
+    setWalletConnectUri("");
   }, []);
 
   const connect = useCallback(async (walletId: string) => {
@@ -194,6 +252,73 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   }, [clearSession]);
 
+  const connectWalletConnect = useCallback(async () => {
+    if (connectingRef.current) return false;
+    connectingRef.current = true;
+    const attempt: WalletConnectAttempt = { cancelled: false, provider: null };
+    walletConnectAttemptRef.current = attempt;
+    setConnecting(true);
+    setWalletConnectPairing(true);
+    setWalletConnectUri("");
+    setError("");
+    clearQueryCache();
+    const previous = sessionRef.current;
+    try {
+      const provider = await startWalletConnect(setWalletConnectUri);
+      attempt.provider = provider;
+      if (attempt.cancelled) throw new WalletConnectPairingCancelledError();
+      const ethAddress = firstAccount(provider.accounts)
+        ?? firstAccount(await provider.request({ method: "eth_accounts" }));
+      if (attempt.cancelled) throw new WalletConnectPairingCancelledError();
+      if (!ethAddress) throw new Error("WalletConnect returned no valid account");
+      const cfg = loadConfig();
+      await ensureWalletChain(provider, cfg);
+      if (attempt.cancelled) throw new WalletConnectPairingCancelledError();
+      const activeChain = await walletChainId(provider);
+      if (attempt.cancelled) throw new WalletConnectPairingCancelledError();
+      if (activeChain !== BigInt(cfg.evmChainId)) {
+        throw new Error(`wallet is connected to the wrong EVM chain: ${activeChain.toString()}`);
+      }
+      const adopted = await adoptAccount(walletConnectResolution(provider), ethAddress, true);
+      if (attempt.cancelled) {
+        if (sessionRef.current?.resolution.provider === provider) clearSession(true);
+        throw new WalletConnectPairingCancelledError();
+      }
+      if (!adopted) throw new Error("WalletConnect session changed; choose the wallet again");
+      return true;
+    } catch (cause) {
+      if (attempt.cancelled && attempt.provider) await disconnectWalletConnect(attempt.provider);
+      if (!previous) clearSession(false);
+      setError(cause instanceof WalletConnectPairingCancelledError ? "" : formatWalletConnectError(cause));
+      return false;
+    } finally {
+      if (walletConnectAttemptRef.current === attempt) walletConnectAttemptRef.current = null;
+      setWalletConnectPairing(false);
+      setWalletConnectUri("");
+      connectingRef.current = false;
+      setConnecting(false);
+    }
+  }, [adoptAccount, clearSession, walletConnectResolution]);
+
+  const restoreWalletConnectConnection = useCallback(async () => {
+    try {
+      const provider = await restoreWalletConnect();
+      if (!provider) {
+        if (typeof localStorage !== "undefined") localStorage.removeItem(LS_PROVIDER);
+        return;
+      }
+      const ethAddress = firstAccount(provider.accounts)
+        ?? firstAccount(await provider.request({ method: "eth_accounts" }));
+      if (!ethAddress) {
+        if (typeof localStorage !== "undefined") localStorage.removeItem(LS_PROVIDER);
+        return;
+      }
+      await adoptAccount(walletConnectResolution(provider), ethAddress, false);
+    } catch {
+      // Silent restore must never open a QR prompt or show a blocking error.
+    }
+  }, [adoptAccount, walletConnectResolution]);
+
   const restoreConnection = useCallback(async (
     walletId: string,
     pinned?: ResolvedEvmProvider,
@@ -217,6 +342,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [adoptAccount, clearSession]);
 
   const disconnect = useCallback(() => {
+    const current = sessionRef.current;
+    if (current?.resolution.walletId === WALLETCONNECT_ID) {
+      void disconnectWalletConnect(current.resolution.provider);
+    }
     clearSession(true);
   }, [clearSession]);
 
@@ -224,6 +353,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     if (typeof localStorage === "undefined") return;
     const previous = localStorage.getItem(LS_PROVIDER);
     if (!previous) return;
+    if (previous === WALLETCONNECT_ID) {
+      void restoreWalletConnectConnection();
+      return;
+    }
     const isSupported = SUPPORTED_WALLETS.some((wallet) => wallet.id === previous);
     if (!isSupported) {
       localStorage.removeItem(LS_PROVIDER);
@@ -232,8 +365,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const onProvidersChanged = () => {
       const current = sessionRef.current;
       if (current) {
-        const stillPresent = resolveEvmProvider(current.resolution.walletId, { pinned: current.resolution });
-        if (!stillPresent) clearSession(true);
+        if (current.resolution.walletId !== WALLETCONNECT_ID) {
+          const stillPresent = resolveEvmProvider(current.resolution.walletId, { pinned: current.resolution as ResolvedEvmProvider });
+          if (!stillPresent) clearSession(true);
+        }
         return;
       }
       void restoreConnection(previous);
@@ -241,7 +376,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = subscribeWalletProviders(onProvidersChanged);
     void restoreConnection(previous);
     return unsubscribe;
-  }, [clearSession, restoreConnection]);
+  }, [clearSession, restoreConnection, restoreWalletConnectConnection]);
 
   useEffect(() => {
     void refreshBalance();
@@ -284,7 +419,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       }
       const account = firstAccount(value);
       if (account) void adoptAccount(session.resolution, account, false);
-      else void restoreConnection(session.resolution.walletId, session.resolution);
+      else if (session.resolution.walletId === WALLETCONNECT_ID) void restoreWalletConnectConnection();
+      else void restoreConnection(session.resolution.walletId, session.resolution as ResolvedEvmProvider);
     };
     const onChainChanged = () => {
       if (sameSession()) void syncChain(session);
@@ -298,7 +434,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       listen(provider, "disconnect", onDisconnect),
     ];
     return () => cleanups.forEach((cleanup) => cleanup());
-  }, [adoptAccount, clearSession, connected, restoreConnection, syncChain]);
+  }, [adoptAccount, clearSession, connected, restoreConnection, restoreWalletConnectConnection, syncChain]);
 
   return (
     <Ctx.Provider value={{
@@ -309,6 +445,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       connecting,
       error,
       connect,
+      connectWalletConnect,
+      walletConnectUri,
+      walletConnectPairing,
+      walletConnectConfigured: walletConnectConfigured(),
+      cancelWalletConnect,
       disconnect,
       refreshBalance,
       walletModalOpen,

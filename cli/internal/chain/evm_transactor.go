@@ -70,6 +70,20 @@ func NewEVMTransactor(cfg config.Config, rpc *EVMRPC, signer EVMSigner) *EVMTran
 	return newEVMTransactor(cfg, rpc, signer, nil)
 }
 
+// SetReceiptTimeout adjusts how long Send waits for a receipt after the raw
+// transaction has already been accepted by the RPC. Injective's public RPC
+// can lag on receipt indexing; state-aware administrative callers may use a
+// shorter bound and then verify the resulting contract/storage directly.
+func (t *EVMTransactor) SetReceiptTimeout(timeout time.Duration) {
+	if t == nil {
+		return
+	}
+	if timeout <= 0 {
+		timeout = defaultEVMReceiptTimeout
+	}
+	t.receiptTimeout = timeout
+}
+
 // Send signs, broadcasts, and confirms one replay-protected legacy
 // transaction. The Suite keeps its tested type-0 policy until a funded type-2
 // canary has produced a retained receipt on the target Injective EVM network.

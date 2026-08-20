@@ -249,6 +249,14 @@ export async function readModule(
 
 export async function ensureWalletChain(provider: Eip1193, cfg: AppConfig): Promise<void> {
   const chainId = `0x${cfg.evmChainId.toString(16)}`;
+  if ((provider as { isWalletConnect?: boolean }).isWalletConnect) {
+    try {
+      if (await walletChainId(provider) === BigInt(cfg.evmChainId)) return;
+    } catch {
+      // Continue with the normal switch/add flow if the remote provider has
+      // not exposed a chain until its session is fully approved.
+    }
+  }
   try {
     await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId }] });
   } catch (error) {
@@ -273,7 +281,12 @@ export async function ensureWalletChain(provider: Eip1193, cfg: AppConfig): Prom
 }
 
 export async function walletChainId(provider: Eip1193): Promise<bigint> {
-  return quantity(await provider.request({ method: "eth_chainId" }), "wallet chain ID");
+  const value = await provider.request({ method: "eth_chainId" });
+  // WalletConnect's EthereumProvider returns its chain ID as a number while
+  // injected providers usually return a 0x-prefixed quantity string.
+  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return BigInt(value);
+  if (typeof value === "bigint" && value >= 0n) return value;
+  return quantity(value, "wallet chain ID");
 }
 
 function delay(milliseconds: number): Promise<void> {

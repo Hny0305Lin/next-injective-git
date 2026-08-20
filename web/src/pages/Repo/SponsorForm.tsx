@@ -1,6 +1,5 @@
 import { useCallback, useState } from "react";
 import { useWallet } from "../../lib/WalletContext";
-import { WalletModal } from "../../components/WalletModal";
 import {
   formatError,
   sponsorWithEconomicModule,
@@ -19,7 +18,7 @@ export default function SponsorForm({
   repo: string;
   repoId: Hex | null;
 }) {
-  const { connected, provider, walletModalOpen, openWalletModal, closeWalletModal, refreshBalance } = useWallet();
+  const { connected, provider, openWalletModal, refreshBalance } = useWallet();
   const [amount, setAmount] = useState("0.1");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -104,7 +103,6 @@ export default function SponsorForm({
           to see it on the wall.
         </div>
       )}
-      {walletModalOpen && <WalletModal onClose={closeWalletModal} />}
     </div>
   );
 }

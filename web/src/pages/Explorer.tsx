@@ -2,7 +2,6 @@ import { ArrowUpRight, Info } from "lucide-react";
 import { memo, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useWallet } from "../lib/WalletContext";
-import { WalletModal } from "../components/WalletModal";
 import {
   contractActivity,
   contractConfig,
@@ -24,7 +23,7 @@ const ActionBadge = memo(function ActionBadge({ action }: { action: string }) {
 // A compact, contract-scoped block explorer: recent activity + tx lookup.
 export default function Explorer() {
   const cfg = useMemo(() => loadConfig(), []);
-  const { address, walletModalOpen, openWalletModal, closeWalletModal } = useWallet();
+  const { address, openWalletModal } = useWallet();
   const [scope, setScope] = useState<"mine" | "all">("mine");
   const [cc, setCc] = useState<ContractConfig | null>(null);
   const [rows, setRows] = useState<ContractTx[]>([]);
@@ -158,7 +157,6 @@ export default function Explorer() {
           </tbody>
         </table>
       )}
-      {walletModalOpen && <WalletModal onClose={closeWalletModal} />}
     </div>
   );
 }

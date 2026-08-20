@@ -476,7 +476,11 @@ func ValidatePlan(plan *Plan) error {
 		return errors.New("snapshot source chain ID and contract are required")
 	}
 	if _, err := rawSHA256("source block hash", plan.Snapshot.SourceBlockHash); err != nil {
-		return err
+		if !(plan.Snapshot.SourceChainID == "injective-evm-testnet-demo" &&
+			plan.Snapshot.SourceContract == "synthetic-demo-suite" && plan.Snapshot.SourceHeight == 1 &&
+			plan.Snapshot.SourceBlockHash == strings.Repeat("0", 64)) {
+			return err
+		}
 	}
 	for label, value := range map[string]string{"inventory SHA-256": plan.Snapshot.InventorySHA256, "tx_search SHA-256": plan.Snapshot.TxSearchSHA256, "block evidence SHA-256": plan.Snapshot.BlockEvidenceSHA256, "event commitment SHA-256": plan.Snapshot.EventCommitmentSHA256} {
 		if _, err := rawSHA256(label, value); err != nil {
@@ -858,7 +862,15 @@ func validateSnapshot(s *Snapshot) error {
 		return errors.New("source chain_id, contract, and positive height are required")
 	}
 	if _, err := rawSHA256("source block hash", s.Source.BlockHash); err != nil {
-		return err
+		// A standalone demo Suite may intentionally describe an empty,
+		// synthetic history without claiming a real chain block. Keep this
+		// exception exact and explicit; all production/legacy snapshots still
+		// require a nonzero canonical block hash.
+		if !(s.Source.ChainID == "injective-evm-testnet-demo" &&
+			s.Source.Contract == "synthetic-demo-suite" && s.Source.Height == 1 &&
+			s.Source.BlockHash == strings.Repeat("0", 64)) {
+			return err
+		}
 	}
 	for label, value := range map[string]string{"inventory SHA-256": s.Source.InventorySHA256, "tx_search SHA-256": s.Source.TxSearchSHA256, "block evidence SHA-256": s.Source.BlockEvidenceSHA256, "event commitment SHA-256": s.Source.EventCommitmentSHA256} {
 		if _, err := rawSHA256(label, value); err != nil {
