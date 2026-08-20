@@ -37,6 +37,11 @@ import {
 } from "../src/lib/registry.ts";
 import { setRevenueSplitsWithEconomicModule, sponsorWithEconomicModule } from "../src/lib/modules.ts";
 import {
+  EVM_ACTIVITY_BLOCK_WINDOW,
+  EVM_LOG_RANGE_LIMIT,
+  contractActivity,
+} from "../src/lib/activity.ts";
+import {
   clearDiscoveredWalletProviders,
   getEvmProvider,
   isWalletInstalled,
@@ -81,6 +86,7 @@ function functionResult(abi, functionName, result) {
 
 function suiteFixture(options = {}) {
   const requests = [];
+  const latestBlock = options.latestBlock ?? BLOCK_TAG;
   const moduleCalls = options.moduleCalls ?? (() => undefined);
   const moduleCodeHashes = Object.fromEntries(MODULE_KEYS.map((key) => [key, keccak256(MODULE_CODES[key])]));
   if (options.badCodeHashFor) moduleCodeHashes[options.badCodeHashFor] = `0x${"99".repeat(32)}`;
@@ -141,7 +147,23 @@ function suiteFixture(options = {}) {
       requests.push(request);
       switch (request.method) {
         case "eth_chainId": return json("0x59f");
-        case "eth_blockNumber": return json(BLOCK_TAG);
+        case "eth_blockNumber": return json(latestBlock);
+        case "eth_getLogs": {
+          assert.ok(options.getLogs, "fixture received an unexpected eth_getLogs");
+          return options.getLogs(request.params[0], json);
+        }
+        case "eth_getTransactionByHash": {
+          assert.ok(options.transaction, "fixture received an unexpected eth_getTransactionByHash");
+          return json(options.transaction(request.params[0]));
+        }
+        case "eth_getTransactionReceipt": {
+          assert.ok(options.receipt, "fixture received an unexpected eth_getTransactionReceipt");
+          return json(options.receipt(request.params[0]));
+        }
+        case "eth_getBlockByNumber": {
+          assert.ok(options.block, "fixture received an unexpected eth_getBlockByNumber");
+          return json(options.block(request.params[0]));
+        }
         case "eth_getCode": {
           const address = request.params[0].toLowerCase();
           if (address === DIRECTORY.toLowerCase()) return json("0x60006000");
@@ -152,7 +174,7 @@ function suiteFixture(options = {}) {
         }
         case "eth_call": {
           const [{ to, data }, tag] = request.params;
-          assert.equal(tag, BLOCK_TAG);
+          assert.equal(tag, latestBlock);
           if (to.toLowerCase() === DIRECTORY.toLowerCase()) return json(directoryCall(data));
           const module = ADDRESS_TO_MODULE.get(to.toLowerCase());
           assert.ok(module, `unexpected call address ${to}`);
@@ -354,6 +376,136 @@ test("Suite verification rejects code hash and binding mismatches", async () => 
   const badBinding = suiteFixture({ badDirectoryBindingFor: "release" });
   await withFetch(badBinding.fetch, () =>
     assert.rejects(verifySuite(configured(), true), /suite module release directory binding mismatch/));
+});
+
+function activityLog(overrides = {}) {
+  return {
+    address: MODULE_ADDRESSES[MODULE_KEYS[0]],
+    topics: [`0x${"11".repeat(32)}`],
+    data: "0x",
+    blockNumber: "0x30d3f",
+    transactionHash: TX_HASH,
+    logIndex: "0x0",
+    ...overrides,
+  };
+}
+
+function activityTxFixture(extra = {}) {
+  return {
+    transaction: (hash) => ({
+      hash,
+      from: OWNER,
+      to: MODULE_ADDRESSES[MODULE_KEYS[0]],
+      input: "0x",
+      value: "0x0",
+      type: "0x0",
+      blockNumber: "0x30d3f",
+    }),
+    receipt: () => ({ status: "0x1", gasUsed: "0x5208", logs: [activityLog()] }),
+    block: () => ({ timestamp: "0x66c00000" }),
+    ...extra,
+  };
+}
+
+test("activity log reads never exceed the RPC [from, to] block distance cap", async () => {
+  const latest = 200_000n;
+  const spans = [];
+  const fixture = suiteFixture({
+    ...activityTxFixture(),
+    latestBlock: `0x${latest.toString(16)}`,
+    getLogs: (filter, json) => {
+      spans.push({ from: BigInt(filter.fromBlock), to: BigInt(filter.toBlock) });
+      return json([]);
+    },
+  });
+
+  const events = await withFetch(fixture.fetch, () => contractActivity(configured(), 50));
+  assert.deepEqual(events, []);
+
+  const window = BigInt(EVM_ACTIVITY_BLOCK_WINDOW);
+  const cap = BigInt(EVM_LOG_RANGE_LIMIT);
+  assert.ok(spans.length > 1, "the window must be split into multiple bounded spans");
+  for (const span of spans) {
+    assert.ok(span.to - span.from < cap, `span ${span.from}-${span.to} exceeds the ${cap} block cap`);
+    assert.ok(span.from <= span.to, `span ${span.from}-${span.to} is inverted`);
+  }
+  // Newest first, contiguous, and covering exactly the documented window.
+  assert.equal(spans[0].to, latest);
+  assert.equal(spans[spans.length - 1].from, latest - window);
+  for (let index = 1; index < spans.length; index += 1) {
+    assert.equal(spans[index].to, spans[index - 1].from - 1n, "spans must be contiguous");
+  }
+});
+
+test("activity stops requesting older spans once the limit is filled", async () => {
+  const spans = [];
+  const fixture = suiteFixture({
+    ...activityTxFixture(),
+    latestBlock: "0x30d40",
+    getLogs: (filter, json) => {
+      spans.push(filter);
+      return json(spans.length === 1 ? [activityLog()] : []);
+    },
+  });
+
+  const events = await withFetch(fixture.fetch, () => contractActivity(configured(), 1));
+  assert.equal(events.length, 1);
+  assert.equal(events[0].txhash, TX_HASH);
+  assert.equal(events[0].height, "199999");
+  assert.equal(spans.length, 1, "a filled limit must not keep scanning older spans");
+});
+
+test("activity halves a span when the provider still reports a range cap", async () => {
+  const accepted = [];
+  const fixture = suiteFixture({
+    ...activityTxFixture(),
+    latestBlock: "0x2710",
+    getLogs: (filter, json) => {
+      const from = BigInt(filter.fromBlock);
+      const to = BigInt(filter.toBlock);
+      if (to - from > 2_500n) {
+        return new Response(JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          error: { code: -32000, message: "maximum [from, to] blocks distance: 10000" },
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      accepted.push({ from, to });
+      return json([]);
+    },
+  });
+
+  const events = await withFetch(fixture.fetch, () => contractActivity(configured(), 50));
+  assert.deepEqual(events, []);
+  assert.ok(accepted.length >= 4, "a rejected span must be split and retried");
+  for (const span of accepted) {
+    assert.ok(span.to - span.from <= 2_500n, `retry span ${span.from}-${span.to} was not narrowed`);
+  }
+  // The split must still cover the whole window without gaps.
+  const ordered = [...accepted].sort((left, right) => (left.from < right.from ? -1 : 1));
+  assert.equal(ordered[0].from, 0n);
+  assert.equal(ordered[ordered.length - 1].to, 10_000n);
+});
+
+test("activity surfaces non-range RPC failures instead of splitting forever", async () => {
+  let calls = 0;
+  const fixture = suiteFixture({
+    ...activityTxFixture(),
+    latestBlock: "0x2710",
+    getLogs: () => {
+      calls += 1;
+      return new Response(JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        error: { code: -32000, message: "rate limit exceeded for this key" },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    },
+  });
+
+  await withFetch(fixture.fetch, async () => {
+    await assert.rejects(contractActivity(configured(), 50), /rate limit exceeded/);
+  });
+  assert.equal(calls, 1, "an unrelated RPC error must not trigger range splitting");
 });
 
 test("registry reads use viem tuple decoding and stable repo IDs", async () => {

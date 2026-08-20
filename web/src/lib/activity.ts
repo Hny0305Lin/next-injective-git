@@ -7,6 +7,16 @@ import type { AppConfig } from "./profile";
 /** Number of recent EVM blocks sampled by the public activity view. */
 export const EVM_ACTIVITY_BLOCK_WINDOW = 100_000;
 
+/**
+ * Injective JSON-RPC rejects `eth_getLogs` when `to - from` exceeds 10000
+ * ("maximum [from, to] blocks distance: 10000"), so the activity window is
+ * walked in chunks that stay inside the limit instead of one wide query.
+ */
+export const EVM_LOG_RANGE_LIMIT = 10_000;
+
+/** Bounds the adaptive split when a provider enforces a stricter range. */
+const LOG_RANGE_SPLIT_DEPTH = 6;
+
 export interface ContractTx {
   txhash: string;
   height: string;
@@ -129,6 +139,75 @@ async function blockTimestamp(cfg: AppConfig, height: Hex, cache: Map<string, st
   return timestamp;
 }
 
+/** Recognizes provider range/result caps so the span can be split and retried. */
+function isLogRangeError(error: unknown): boolean {
+  const message = (error instanceof Error ? error.message : String(error ?? "")).toLowerCase();
+  return (
+    message.includes("blocks distance") ||
+    message.includes("block range") ||
+    message.includes("block distance") ||
+    message.includes("range is too large") ||
+    message.includes("too many blocks") ||
+    message.includes("query returned more than") ||
+    message.includes("more than 10000 results") ||
+    message.includes("log response size exceeded") ||
+    message.includes("query timeout exceeded")
+  );
+}
+
+/**
+ * Reads one bounded span, halving it when the provider still reports a range or
+ * result cap. Returns logs in ascending block order.
+ */
+async function logsInSpan(
+  cfg: AppConfig,
+  addresses: readonly Address[],
+  from: bigint,
+  to: bigint,
+  depth = 0,
+): Promise<RpcLog[]> {
+  try {
+    return await rpcRequest<RpcLog[]>(cfg, "eth_getLogs", [{
+      address: addresses,
+      fromBlock: blockTag(from),
+      toBlock: blockTag(to),
+    }]);
+  } catch (error) {
+    if (from >= to || depth >= LOG_RANGE_SPLIT_DEPTH || !isLogRangeError(error)) throw error;
+    const middle = from + (to - from) / 2n;
+    const head = await logsInSpan(cfg, addresses, from, middle, depth + 1);
+    const tail = await logsInSpan(cfg, addresses, middle + 1n, to, depth + 1);
+    return [...head, ...tail];
+  }
+}
+
+/**
+ * Yields newest-first chunks of the activity window, each within the range
+ * limit, so a caller can stop as soon as it has enough events.
+ */
+function* descendingSpans(from: bigint, to: bigint): Generator<{ from: bigint; to: bigint }> {
+  const step = BigInt(EVM_LOG_RANGE_LIMIT);
+  let end = to;
+  while (end >= from) {
+    // A span is inclusive on both ends, so `step - 1` keeps `to - from` at the cap.
+    const start = end - step + 1n > from ? end - step + 1n : from;
+    yield { from: start, to: end };
+    if (start === 0n || start <= from) return;
+    end = start - 1n;
+  }
+}
+
+function orderLogs(logs: readonly RpcLog[]): RpcLog[] {
+  const unique = new Map<string, RpcLog>();
+  for (const log of logs) {
+    if (!log.removed) unique.set(log.transactionHash.toLowerCase(), log);
+  }
+  return [...unique.values()].sort((left, right) => {
+    const block = quantity(right.blockNumber) - quantity(left.blockNumber);
+    return block === 0n ? Number(quantity(right.logIndex) - quantity(left.logIndex)) : block > 0n ? 1 : -1;
+  });
+}
+
 export async function contractActivity(
   cfg: AppConfig,
   limit = 50,
@@ -138,43 +217,38 @@ export async function contractActivity(
   const latest = quantity(await rpcRequest<Hex>(cfg, "eth_blockNumber"));
   const window = BigInt(EVM_ACTIVITY_BLOCK_WINDOW);
   const from = latest > window ? latest - window : 0n;
-  const logs = await rpcRequest<RpcLog[]>(cfg, "eth_getLogs", [{
-    address: Object.values(suite.modules),
-    fromBlock: blockTag(from),
-    toBlock: blockTag(latest),
-  }]);
-  const unique = new Map<string, RpcLog>();
-  for (const log of logs) {
-    if (!log.removed) unique.set(log.transactionHash.toLowerCase(), log);
-  }
-  const ordered = [...unique.values()].sort((left, right) => {
-    const block = quantity(right.blockNumber) - quantity(left.blockNumber);
-    return block === 0n ? Number(quantity(right.logIndex) - quantity(left.logIndex)) : block > 0n ? 1 : -1;
-  });
+  const addresses = Object.values(suite.modules);
   const timestampCache = new Map<string, string>();
   const targetSender = sender?.toLowerCase();
   const output: ContractTx[] = [];
-  for (const log of ordered) {
-    const [transaction, receipt, timestamp] = await Promise.all([
-      rpcRequest<RpcTransaction>(cfg, "eth_getTransactionByHash", [log.transactionHash]),
-      rpcRequest<RpcReceipt>(cfg, "eth_getTransactionReceipt", [log.transactionHash]),
-      blockTimestamp(cfg, log.blockNumber, timestampCache),
-    ]);
-    const normalizedSender = toInjectiveAddress(transaction.from);
-    if (targetSender && normalizedSender.toLowerCase() !== targetSender && transaction.from.toLowerCase() !== targetSender) {
-      continue;
+  const seen = new Set<string>();
+  for (const span of descendingSpans(from, latest)) {
+    const logs = await logsInSpan(cfg, addresses, span.from, span.to);
+    for (const log of orderLogs(logs)) {
+      const hash = log.transactionHash.toLowerCase();
+      if (seen.has(hash)) continue;
+      seen.add(hash);
+      const [transaction, receipt, timestamp] = await Promise.all([
+        rpcRequest<RpcTransaction>(cfg, "eth_getTransactionByHash", [log.transactionHash]),
+        rpcRequest<RpcReceipt>(cfg, "eth_getTransactionReceipt", [log.transactionHash]),
+        blockTimestamp(cfg, log.blockNumber, timestampCache),
+      ]);
+      const normalizedSender = toInjectiveAddress(transaction.from);
+      if (targetSender && normalizedSender.toLowerCase() !== targetSender && transaction.from.toLowerCase() !== targetSender) {
+        continue;
+      }
+      const primary = receipt.logs.map(decodeLog).find((event) => event.action !== "contract_event") ?? decodeLog(log);
+      output.push({
+        txhash: transaction.hash,
+        height: quantity(log.blockNumber).toString(),
+        timestamp,
+        code: quantity(receipt.status) === 1n ? 0 : 1,
+        action: primary.action,
+        sender: normalizedSender,
+        attributes: primary.attributes,
+      });
+      if (output.length >= limit) return output;
     }
-    const primary = receipt.logs.map(decodeLog).find((event) => event.action !== "contract_event") ?? decodeLog(log);
-    output.push({
-      txhash: transaction.hash,
-      height: quantity(log.blockNumber).toString(),
-      timestamp,
-      code: quantity(receipt.status) === 1n ? 0 : 1,
-      action: primary.action,
-      sender: normalizedSender,
-      attributes: primary.attributes,
-    });
-    if (output.length >= limit) break;
   }
   return output;
 }
