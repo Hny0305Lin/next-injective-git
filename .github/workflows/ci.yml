@@ -399,7 +399,35 @@ jobs:
       # is the first unmasked test of that, and it must run before anything that
       # would fail for the same reason.
       - name: token authenticates
-        run: vercel whoami --token="$V_TOKEN"
+        run: |
+          set -uo pipefail
+
+          # A Vercel access token is 24 characters. A different length usually
+          # means the token name was copied instead of the value, or the value
+          # was truncated, both of which the CLI reports the same way as an
+          # expired token.
+          n=${#V_TOKEN}
+          if (( n != 24 )); then
+            echo "note: token is $n characters; Vercel access tokens are 24."
+            echo "      Check that the secret holds the token value and not its"
+            echo "      name, and that it was not truncated."
+          fi
+
+          if ! vercel whoami --token="$V_TOKEN"; then
+            echo "" >&2
+            echo "FAIL: Vercel rejected VERCEL_TOKEN." >&2
+            echo "" >&2
+            echo "This is authentication, not permissions: no request that needs" >&2
+            echo "the token has ever succeeded in this job, while every step that" >&2
+            echo "contacts no API passes. vercel build passes because it needs no" >&2
+            echo "auth once the link file is written locally." >&2
+            echo "" >&2
+            echo "Fix: create a token at" >&2
+            echo "https://vercel.com/account/settings/tokens scoped to the team," >&2
+            echo "then replace the VERCEL_TOKEN secret. Copy the value with no" >&2
+            echo "trailing newline; a stray newline is rejected identically." >&2
+            exit 1
+          fi
 
       - name: pull production project settings
         # Written directly from the two identifiers rather than discovered, since
