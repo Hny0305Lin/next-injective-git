@@ -1,10 +1,11 @@
 name: ci
 
 on:
-  # Buildable source trees, migration docs, and repository acceptance fixtures
-  # gate CI. The Web tree is developed and deployed outside this pipeline, so
-  # it neither triggers CI nor is built here; its source boundaries are still
-  # enforced by scripts/suite-readiness.sh and scripts/identity-readiness.mjs.
+  # Buildable source trees, migration docs, Web assets, and repository
+  # acceptance fixtures gate CI. Every tree that can trigger a run is listed
+  # here; which jobs actually execute is then narrowed per changed tree by the
+  # `changes` job below, so a Web-only push does not pay for Go/Foundry gates
+  # and a CLI-only push does not rebuild or redeploy the Web tree.
   push:
     branches: [main, master, dev]
     paths:
@@ -13,6 +14,8 @@ on:
       - "contracts/evm-v2/**"
       - "docs/**"
       - "scripts/**"
+      - "web/**"
+      - "vercel.json"
       - ".gitattributes"
       - ".github/workflows/ci.yml"
       - ".github/workflows/release.yml"
@@ -23,14 +26,93 @@ on:
       - "contracts/evm-v2/**"
       - "docs/**"
       - "scripts/**"
+      - "web/**"
+      - "vercel.json"
       - ".gitattributes"
       - ".github/workflows/ci.yml"
       - ".github/workflows/release.yml"
 
 jobs:
+  # Routes each push or PR to the gates that its changed paths actually need.
+  # Hand-rolled rather than a third-party filter action: this pipeline pins
+  # every external action by SHA, and a git diff needs no new supply chain.
+  # Fails open to running everything, so a detection miss can never silently
+  # drop a required gate.
+  changes:
+    name: changed source trees
+    runs-on: ubuntu-latest
+    outputs:
+      native: ${{ steps.filter.outputs.native }}
+      web: ${{ steps.filter.outputs.web }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: classify changed paths
+        id: filter
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+
+          emit() {
+            echo "native=$1" >>"$GITHUB_OUTPUT"
+            echo "web=$2" >>"$GITHUB_OUTPUT"
+            echo "native=$1 web=$2"
+          }
+
+          base=""
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            git fetch --no-tags --depth=1 origin "$BASE_REF" || true
+            base="$(git merge-base HEAD FETCH_HEAD 2>/dev/null || true)"
+          elif [[ -n "${BEFORE_SHA:-}" && "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]]; then
+            git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null && base="$BEFORE_SHA"
+          fi
+
+          if [[ -z "$base" ]]; then
+            echo "no usable base revision; running every gate"
+            emit true true
+            exit 0
+          fi
+
+          changed="$(git diff --name-only "$base" HEAD)"
+          echo "changed files:"
+          echo "$changed"
+
+          native=false
+          web=false
+          while IFS= read -r path; do
+            [[ -n "$path" ]] || continue
+            case "$path" in
+              # Workflow and shared script changes can alter either pipeline,
+              # so they deliberately arm both gates.
+              .github/workflows/*|scripts/*)
+                native=true
+                web=true
+                ;;
+              web/*|vercel.json)
+                web=true
+                ;;
+              cli/*|contracts/evm-v2/*|docs/*|README.md|.gitattributes)
+                native=true
+                ;;
+              *)
+                native=true
+                web=true
+                ;;
+            esac
+          done <<<"$changed"
+
+          emit "$native" "$web"
+
   cli:
     name: cli (go 1.22)
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
     defaults:
       run:
         working-directory: cli
@@ -102,6 +184,8 @@ jobs:
   cli-windows:
     name: cli native Windows (go 1.22)
     runs-on: windows-latest
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
     defaults:
       run:
         working-directory: cli
@@ -206,9 +290,96 @@ jobs:
           go build -trimpath -o dist/igit.exe ./cmd/igit
           go build -trimpath -o dist/git-remote-igit.exe ./cmd/git-remote-igit
 
+  web:
+    name: web (node)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: install dependencies
+        run: npm ci
+
+      - name: published Web profile release guard
+        run: npm run check:release-profile
+
+      - name: API tests
+        run: npm run test:api
+
+      - name: typecheck
+        run: npm run typecheck
+
+      - name: production build
+        run: npm run build
+
+  web-deploy:
+    name: web Vercel production deploy
+    runs-on: ubuntu-latest
+    needs: web
+    # Only a landed push publishes. Pull requests stop at the `web` gate above;
+    # Vercel's own Git integration still serves PR previews.
+    if: github.event_name == 'push'
+    # Serializes publishes so two pushes cannot race the production alias.
+    concurrency:
+      group: vercel-production
+      cancel-in-progress: false
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: install pinned Vercel CLI
+        run: npm install --global --no-save vercel@59.1.4
+
+      # Fail closed: a missing credential must break the deploy rather than
+      # silently leave production on an older bundle, which is exactly the
+      # failure mode that kept the block-range fix off www.igit.xyz.
+      - name: require deployment credentials
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -n "${VERCEL_TOKEN:-}" ]] || missing+=(VERCEL_TOKEN)
+          [[ -n "${VERCEL_ORG_ID:-}" ]] || missing+=(VERCEL_ORG_ID)
+          [[ -n "${VERCEL_PROJECT_ID:-}" ]] || missing+=(VERCEL_PROJECT_ID)
+          if (( ${#missing[@]} )); then
+            echo "FAIL: missing repository secrets: ${missing[*]}" >&2
+            exit 1
+          fi
+
+      - name: pull production project settings
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      # Builds from the checked-out commit using the repository's vercel.json,
+      # so the published bundle is the one this run just gated.
+      - name: build production bundle
+        run: vercel build --prod --token="$VERCEL_TOKEN"
+
+      - name: deploy prebuilt bundle to production
+        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+
   evm-suite:
     name: immutable EVM Suite (Foundry)
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
     steps:
       - uses: actions/checkout@v5
 
@@ -234,6 +405,8 @@ jobs:
   acceptance-fixtures:
     name: acceptance fixtures (bash + go)
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
     steps:
       - uses: actions/checkout@v5
 
@@ -247,7 +420,7 @@ jobs:
         run: npm ci --prefix contracts/evm-v2
 
       # Release-tag parsing is repository tooling rather than Web code, so it
-      # stays gated here now that the Web job is gone. Pure node: builtins.
+      # is gated here rather than in the Web job. Pure node: builtins.
       - name: strict SemVer release-tag regression vectors
         run: node --test scripts/semver-check.test.mjs
 

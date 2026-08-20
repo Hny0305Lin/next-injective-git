@@ -55,3 +55,4 @@ web/.vercel/
 .vercel/
 .claude/
 .vercel
+.env*
