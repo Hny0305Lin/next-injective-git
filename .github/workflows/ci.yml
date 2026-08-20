@@ -370,6 +370,22 @@ jobs:
             exit 1
           fi
 
+          # A secret pasted with a trailing newline fails identically to a wrong
+          # one, and every token-using command in this job has failed while every
+          # command that touches no API has passed. Normalize before use and say
+          # whether trimming was needed, since that alone would explain it.
+          for name in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
+            raw="${!name}"
+            clean="$(printf '%s' "$raw" | tr -d '[:space:]')"
+            if [[ "$raw" != "$clean" ]]; then
+              echo "note: $name contained whitespace; trimmed ${#raw} -> ${#clean} chars"
+            else
+              echo "note: $name clean, ${#clean} chars"
+            fi
+            echo "::add-mask::$clean"
+            echo "V_${name#VERCEL_}=$clean" >>"$GITHUB_ENV"
+          done
+
       # "Could not retrieve Project Settings" means the CLI resolved a project
       # but the API refused its settings. Reproducing CI's fresh checkout in a
       # clean clone ruled out every other candidate: pull and build both succeed
@@ -377,6 +393,14 @@ jobs:
       # present. Token reach is the only untested variable left, and the error
       # text cannot distinguish it from a bad identifier. This step names which
       # it is, so the next failure is diagnosed rather than re-guessed.
+      # No continue-on-error, deliberately. Every earlier probe carried that flag,
+      # which makes the jobs API report a failed step as successful, so nothing
+      # was ever actually established about whether the token authenticates. This
+      # is the first unmasked test of that, and it must run before anything that
+      # would fail for the same reason.
+      - name: token authenticates
+        run: vercel whoami --token="$V_TOKEN"
+
       - name: pull production project settings
         # Written directly from the two identifiers rather than discovered, since
         # discovery is what was failing. vercel build --yes fills in the settings
@@ -428,7 +452,7 @@ jobs:
         run: |
           vercel env pull .vercel/.env.production.local \
             --environment=production --yes \
-            --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN"
+            --scope="$V_ORG_ID" --token="$V_TOKEN"
 
       - name: report build-time env availability
         run: |
@@ -452,13 +476,13 @@ jobs:
         # nothing left to fetch.
         run: |
           vercel build --prod \
-            --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN"
+            --scope="$V_ORG_ID" --token="$V_TOKEN"
 
       - name: deploy prebuilt bundle to production
         id: publish
         run: |
           vercel deploy --prebuilt --prod \
-            --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN"
+            --scope="$V_ORG_ID" --token="$V_TOKEN"
 
       # These two run only after a failed production publish, and exist to make
       # the cause readable from step conclusions alone, since step logs need an
@@ -481,7 +505,7 @@ jobs:
         if: failure() && steps.publish.outcome == 'failure'
         run: |
           rm -rf .vercel/output
-          vercel build --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN"
+          vercel build --scope="$V_ORG_ID" --token="$V_TOKEN"
 
       - name: deploy preview bundle
         id: preview
@@ -489,7 +513,7 @@ jobs:
         run: |
           set -uo pipefail
           url="$(vercel deploy --prebuilt \
-            --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN")"
+            --scope="$V_ORG_ID" --token="$V_TOKEN")"
           test -n "$url"
           echo "url=$url" >>"$GITHUB_OUTPUT"
           echo "preview deployed: $url"
@@ -498,7 +522,7 @@ jobs:
         if: failure() && steps.publish.outcome == 'failure'
         run: |
           vercel promote "${{ steps.preview.outputs.url }}" \
-            --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN"
+            --scope="$V_ORG_ID" --token="$V_TOKEN"
 
   evm-suite:
     name: immutable EVM Suite (Foundry)
