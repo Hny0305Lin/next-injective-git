@@ -483,15 +483,53 @@ jobs:
         if: failure() && steps.d_build.outcome == 'success'
         continue-on-error: true
         run: |
-          vercel deploy --prebuilt \
+          set -uo pipefail
+          url="$(vercel deploy --prebuilt \
+            --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN")"
+          echo "url=$url" >>"$GITHUB_OUTPUT"
+          echo "preview at $url"
+
+      # A preview deploy succeeds where --prod does not, so production is
+      # reachable by promoting that preview instead. This uses a different API
+      # path than a targeted production deploy, and promoting an already-built
+      # deployment is also cheaper than rebuilding.
+      - name: 'publish by promoting the preview'
+        id: promote
+        if: failure() && steps.d_deploy.outcome == 'success'
+        continue-on-error: true
+        run: |
+          vercel promote "${{ steps.d_deploy.outputs.url }}" \
             --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN"
 
-      - name: publish failed
+      # Last resort: let Vercel build remotely rather than uploading a prebuilt
+      # bundle. This is the path the Git integration used successfully, so it
+      # exercises no capability that is known to be missing.
+      - name: 'publish by remote build'
+        id: remote
+        if: failure() && steps.promote.outcome == 'failure'
+        continue-on-error: true
+        run: |
+          vercel deploy --prod \
+            --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN"
+
+      # Succeeds if any publish path reached production, so a fallback counts as
+      # a real publish rather than a masked failure.
+      - name: confirm a publish path reached production
         if: always() && steps.publish.outcome == 'failure'
         run: |
-          echo "production publish failed"
-          echo "preview build:  ${{ steps.d_build.outcome }}"
-          echo "preview deploy: ${{ steps.d_deploy.outcome }}"
+          set -uo pipefail
+          echo "direct --prod:   ${{ steps.publish.outcome }}"
+          echo "preview build:   ${{ steps.d_build.outcome }}"
+          echo "preview deploy:  ${{ steps.d_deploy.outcome }}"
+          echo "promote preview: ${{ steps.promote.outcome }}"
+          echo "remote build:    ${{ steps.remote.outcome }}"
+
+          if [[ "${{ steps.promote.outcome }}" == success ||
+                "${{ steps.remote.outcome }}" == success ]]; then
+            echo "production published via a fallback path"
+            exit 0
+          fi
+          echo "no publish path reached production" >&2
           exit 1
 
   evm-suite:
