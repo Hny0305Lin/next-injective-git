@@ -21,6 +21,7 @@ import {
   Server,
   ShieldCheck,
   Wifi,
+  WifiOff,
   XCircle,
   type LucideIcon,
 } from "lucide-react";
@@ -66,6 +67,7 @@ import {
   probeGatewayFromBrowser,
 } from "../lib/ipfs-probe";
 import { rpcRequest, verifySuite } from "../lib/transport";
+import { BlockSubscriptionManager, type ConnectionState } from "../lib/block-subscription";
 import type { AppConfig } from "../lib/profile";
 
 type SourceState = "loading" | "healthy" | "not-configured" | "unavailable" | "degraded";
@@ -156,6 +158,7 @@ const INITIAL_SNAPSHOT: MonitorSnapshot = {
 };
 
 const REFRESH_INTERVAL_MS = 90_000;
+const TENDERMINT_WS_ENDPOINT = "wss://testnet.tm.injective.network/websocket";
 
 type PublicProviderStatus = "current" | "legacy";
 
@@ -432,6 +435,8 @@ export default function Monitor() {
   const [snapshot, setSnapshot] = useState<MonitorSnapshot>(INITIAL_SNAPSHOT);
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<number | null>(null);
+  const [wsConnectionState, setWsConnectionState] = useState<ConnectionState>("disconnected");
+  const blockManagerRef = useState(() => new BlockSubscriptionManager(TENDERMINT_WS_ENDPOINT, cfg))[0];
 
   useEffect(() => {
     const refreshConfig = () => setConfigRevision((revision) => revision + 1);
@@ -522,9 +527,30 @@ export default function Monitor() {
 
   useEffect(() => {
     void refresh();
+
+    // Subscribe to WebSocket block updates
+    const unsubscribeBlocks = blockManagerRef.subscribeToBlocks((block) => {
+      setSnapshot((prev) => ({
+        ...prev,
+        latestBlock: block.blockNumber,
+      }));
+      setLastRefresh(Date.now());
+    });
+
+    // Subscribe to connection state changes
+    const unsubscribeState = blockManagerRef.subscribeToState((state) => {
+      setWsConnectionState(state);
+    });
+
+    // Refresh other data periodically (not block number, that comes from WebSocket)
     const interval = window.setInterval(() => void refresh(), REFRESH_INTERVAL_MS);
-    return () => window.clearInterval(interval);
-  }, [refresh]);
+
+    return () => {
+      unsubscribeBlocks();
+      unsubscribeState();
+      window.clearInterval(interval);
+    };
+  }, [refresh, blockManagerRef]);
 
   const buckets = useMemo(() => activityBuckets(snapshot.activity), [snapshot.activity]);
   const maxBucket = Math.max(...buckets, 1);
@@ -533,6 +559,20 @@ export default function Monitor() {
   const ipfsSnapshots = IPFS_GATEWAY_IDS.map((gatewayId) => snapshot.ipfs[gatewayId]);
   const ipfsBadge = sourceBadge(aggregateGatewayState(ipfsSnapshots), "Reachable");
   const evmExplorer = `${profile.evmExplorer.replace(/\/+$/, "")}/address/${cfg.suiteDirectory}`;
+
+  // Connection state indicator
+  const connectionBadge = useMemo(() => {
+    switch (wsConnectionState) {
+      case "connected":
+        return { label: "Live", className: "monitor-badge-healthy", icon: Wifi };
+      case "connecting":
+        return { label: "Connecting", className: "monitor-badge-loading", icon: LoaderCircle };
+      case "polling":
+        return { label: "Polling", className: "monitor-badge-warning", icon: RefreshCw };
+      case "disconnected":
+        return { label: "Disconnected", className: "monitor-badge-danger", icon: WifiOff };
+    }
+  }, [wsConnectionState]);
 
   return (
     <div className="monitor-page">
@@ -543,6 +583,10 @@ export default function Monitor() {
           <p>Live observation window for the igit protocol surface.</p>
         </div>
         <div className="monitor-heading-actions">
+          <span className="monitor-refresh-time">
+            <connectionBadge.icon size={14} className={wsConnectionState === "connecting" ? "animate-spin" : undefined} />
+            {connectionBadge.label}
+          </span>
           <span className="monitor-refresh-time"><Clock3 size={14} /> Updated {formatCheckedAt(lastRefresh)}</span>
           <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={refreshing}>
             <RefreshCw className={refreshing ? "animate-spin" : undefined} />
