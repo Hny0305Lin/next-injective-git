@@ -2379,17 +2379,22 @@ textarea.field:focus,
   gap: 6px;
   flex-wrap: nowrap;
   font-size: 0.9rem;
-  overflow: hidden;
+  min-width: 0;
 }
 
 .repo-list-item h3 a {
   color: var(--fg);
-  flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 0 1 auto;
 }
 
 .repo-list-item h3 .badge,
 .repo-list-item h3 .contract-type-badge {
   flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .repo-list-item .meta {
