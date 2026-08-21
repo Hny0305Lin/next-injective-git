@@ -402,48 +402,46 @@ jobs:
             echo "V_${name#VERCEL_}=$clean" >>"$GITHUB_ENV"
           done
 
-      # "Could not retrieve Project Settings" means the CLI resolved a project
-      # but the API refused its settings. Reproducing CI's fresh checkout in a
-      # clean clone ruled out every other candidate: pull and build both succeed
-      # there on this same pinned CLI with these identifiers and no .vercel
-      # present. Token reach is the only untested variable left, and the error
-      # text cannot distinguish it from a bad identifier. This step names which
-      # it is, so the next failure is diagnosed rather than re-guessed.
-      # No continue-on-error, deliberately. Every earlier probe carried that flag,
-      # which makes the jobs API report a failed step as successful, so nothing
-      # was ever actually established about whether the token authenticates. This
-      # is the first unmasked test of that, and it must run before anything that
-      # would fail for the same reason.
+      # Authenticates against the exact resource this job publishes to. A
+      # project-scoped vcp_ token (60 chars, the current format; the old
+      # 24-char one is legacy) is denied user-level endpoints by design, so
+      # `vercel whoami` fails with "User not found" even for a perfectly
+      # valid token. `GET /v9/projects/{id}` is project-level and succeeds
+      # for full-account, team, and project scopes alike, which makes it the
+      # only probe that distinguishes a bad token or project ID from a scope
+      # restriction. No continue-on-error: an unauthenticated publish must
+      # fail here, loudly, rather than deep inside the deploy step.
       - name: token authenticates
         run: |
           set -uo pipefail
 
-          # A Vercel access token is 24 characters. A different length usually
-          # means the token name was copied instead of the value, or the value
-          # was truncated, both of which the CLI reports the same way as an
-          # expired token.
-          n=${#V_TOKEN}
-          if (( n != 24 )); then
-            echo "note: token is $n characters; Vercel access tokens are 24."
-            echo "      Check that the secret holds the token value and not its"
-            echo "      name, and that it was not truncated."
+          status="$(curl --silent \
+            --output /tmp/project.json --write-out '%{http_code}' \
+            --header "Authorization: Bearer $V_TOKEN" \
+            "https://api.vercel.com/v9/projects/$V_PROJECT_ID")"
+
+          if [[ "$status" == "200" ]]; then
+            echo "token authenticated; project is reachable"
+            exit 0
           fi
 
-          if ! vercel whoami --token="$V_TOKEN"; then
-            echo "" >&2
-            echo "FAIL: Vercel rejected VERCEL_TOKEN." >&2
-            echo "" >&2
-            echo "This is authentication, not permissions: no request that needs" >&2
-            echo "the token has ever succeeded in this job, while every step that" >&2
-            echo "contacts no API passes. vercel build passes because it needs no" >&2
-            echo "auth once the link file is written locally." >&2
-            echo "" >&2
-            echo "Fix: create a token at" >&2
-            echo "https://vercel.com/account/settings/tokens scoped to the team," >&2
-            echo "then replace the VERCEL_TOKEN secret. Copy the value with no" >&2
-            echo "trailing newline; a stray newline is rejected identically." >&2
-            exit 1
-          fi
+          echo "" >&2
+          echo "FAIL: token check returned HTTP $status." >&2
+          cat /tmp/project.json >&2 || true
+          echo "" >&2
+          case "$status" in
+            401|403)
+              echo "The token was rejected or lacks access to this project." >&2
+              echo "Create a token at https://vercel.com/account/tokens whose" >&2
+              echo "scope covers this project (Full Account, Team, or Project)," >&2
+              echo "then update VERCEL_TOKEN." >&2
+              ;;
+            404)
+              echo "The token authenticated but VERCEL_PROJECT_ID does not" >&2
+              echo "match a project this token can see. Check that ID." >&2
+              ;;
+          esac
+          exit 1
 
       - name: pull production project settings
         # Written directly from the two identifiers rather than discovered, since
