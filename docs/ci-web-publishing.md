@@ -50,16 +50,25 @@ which `release.yml` invokes as `--required`. The required check documented in
 alone would run every job on every web commit, so a `changes` job now classifies
 the diff and emits two flags that downstream jobs consume.
 
-| Changed path | `native` | `web` |
-| --- | --- | --- |
-| `cli/**`, `contracts/evm-v2/**`, `docs/**`, `README.md`, `.gitattributes` | true | false |
-| `web/**`, `vercel.json` | false | true |
-| `.github/workflows/**`, `scripts/**` | true | true |
-| anything unrecognized | true | true |
+| Changed path | `native` | `web` | `lightweight` |
+| --- | --- | --- | --- |
+| `cli/**`, `contracts/evm-v2/**` | true | false | false |
+| `docs/**`, `README.md`, `CLAUDE.md`, `.gitattributes` | false | false | true |
+| `web/**`, `vercel.json` | false | true | false |
+| `.github/workflows/**`, `scripts/**` | true | true | true |
+| anything unrecognized | true | true | true |
 
 Workflow and shared-script changes arm both gates because either pipeline can be
 altered by them. Unrecognized paths arm both so a classification miss can never
 silently drop a required gate.
+
+Documentation and `.gitattributes` route only to the `lightweight` job. The
+single CI consumer of `docs/**` and the root markdown files is the banned-V1
+grep in `suite-readiness.sh --source-only`; no Go code or Go test reads them.
+`.gitattributes` matters to the Windows Suite byte-bound checks, but those run
+inside `cli-windows`, which any change that can alter Suite bytes
+(`cli/**` or `contracts/evm-v2/**`) still triggers. An attributes-only push
+therefore pays for the script gates, not the Go, Windows, and Foundry matrices.
 
 The classifier uses `git diff` rather than a third-party filter action. This
 pipeline pins every external action by commit SHA, and a diff introduces no new

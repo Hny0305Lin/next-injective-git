@@ -54,5 +54,6 @@ web/.vercel-tmp/
 web/.vercel/
 .vercel/
 .claude/
+.zcode/
 .vercel
 .env*
