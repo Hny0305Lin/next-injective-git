@@ -87,13 +87,19 @@ export function loadConfig(): AppConfig {
       const cfg = configForProfile(saved.profile);
       if (typeof saved.suiteDirectory === "string" && isSuiteDirectoryConfigured(saved.suiteDirectory)) {
         cfg.suiteDirectory = saved.suiteDirectory.trim();
+      } else if (isLocalDeployment() && !cfg.suiteDirectory) {
+        cfg.suiteDirectory = "0xf8844F90887731FFd607E1f59e39a3918F6eAb35";
       }
       return cfg;
     }
   } catch {
     // Malformed and legacy settings are replaced by the fail-closed profile.
   }
-  return configForProfile();
+  const cfg = configForProfile();
+  if (isLocalDeployment() && !cfg.suiteDirectory) {
+    cfg.suiteDirectory = "0xf8844F90887731FFd607E1f59e39a3918F6eAb35";
+  }
+  return cfg;
 }
 
 export function saveConfig(cfg: AppConfig): void {
