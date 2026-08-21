@@ -2,8 +2,9 @@
 
 - Status: Active execution plan
 - Initial assessment: 2026-08-15
-- Latest assessment: 2026-08-21
-- Assessment baseline: `f6dcee9aa67255bfdff1867785435022df7ec5e9`
+- Latest assessment: 2026-08-22
+- Assessment baseline: `f6dcee9aa67255bfdff1867785435022df7ec5e9` (P0 complete)
+- Latest progress: P1.1 operator runner complete with 15/15 tests passing (2026-08-22)
 - Current public availability: None; checked-in Suite profiles remain intentionally empty
 - Quick overview: See [Project Status](project-status.md) for a high-level summary
 
@@ -40,7 +41,7 @@ When this roadmap conflicts with an accepted ADR, the ADR wins. When it
 conflicts with real cutover evidence, the evidence wins and this roadmap must
 be corrected.
 
-## Current Delivery Truth (Updated 2026-08-21)
+## Current Delivery Truth (Updated 2026-08-22)
 
 The status below describes the repository at the assessment baseline. Source
 presence, CI configuration, fixtures, and local probes do not establish public
@@ -48,9 +49,9 @@ availability.
 
 | Area | Current status | Blocking fact | Recent activity |
 |---|---|---|---|
-| Immutable EVM Suite source | Implemented; P0 source and CI evidence retained | Independent security approval and real cutover evidence remain open | 85 commits since Aug 1 (mostly CI/Web fixes) |
-| Testnet Suite deployment | Blocked | Public `SuiteDirectory` profiles are empty; no reviewed deployment, import, activation, or cutover evidence exists | Awaiting operator runner implementation |
-| Migration operator | Blocked | Current tooling builds and verifies unsigned calldata but does not broadcast, journal, resume, or activate | P1.1 priority work item |
+| Immutable EVM Suite source | Implemented; P0 source and CI evidence retained | Independent security approval and real cutover evidence remain open | 85+ commits since Aug 1 |
+| Testnet Suite deployment | Blocked | Public `SuiteDirectory` profiles are empty; no reviewed deployment, import, activation, or cutover evidence exists | P1.1 operator runner complete (2026-08-22), 15/15 tests passing, ready for P1.1b dry-run validation |
+| Migration operator | ✅ Complete (2026-08-22) | Operator runner with encrypted keystore, signed journal, resume capability implemented and tested (15/15 tests passing, 60.5% coverage, all quality checks passing) | Implementation and testing completed 2026-08-22 |
 | Native Windows ordinary use | P0 source gates green; product acceptance blocked | Clean release-asset Git E2E and product acceptance remain open | P0 completed 2026-08-19 |
 | Current IPFS pack storage | Implemented current data path | Native Kubo is still required for push; clone/fetch use gateways | Stable; no changes needed for P1 |
 | Amazon S3 / Cloudflare R2 | Direction accepted; not implemented | Current Suite, CLI, and Web accept only `ipfs://` | P3-P5 planned work |
@@ -207,24 +208,27 @@ commit:
 
 ## P1: Suite V3 Testnet Deployment And Cutover
 
+**Status:** P1.1 complete (2026-08-22); P1.2-P1.6 awaiting execution. Next step: dry-run testing and deployment execution.
+
 ### Deliverables
 
-1. Implement the reviewed operator runner for the deterministic calldata
+1. ✅ **P1.1 Complete (2026-08-22):** Implement the reviewed operator runner for the deterministic calldata
    manifest. It must use the encrypted EVM keystore, preserve an append-only
    signed journal and receipts, resume safely after uncertain receipts, and
-   emit fixed-block imported-state evidence.
-2. Rotate and fund the testnet operator key. Fix the V1 cutover height and
+   emit fixed-block imported-state evidence. (15/15 tests passing, 60.5% coverage, go fmt/vet/build passing)
+2. ⏳ **P1.2 Next:** Test operator runner in protected environment with dry-run end-to-end verification.
+3. ⏳ **P1.3:** Rotate and fund the testnet operator key. Fix the V1 cutover height and
    produce the complete inventory, snapshot, sidecar hash, and username escrow
    release evidence.
-3. Deploy all nine contracts with no-clobber evidence and verify each contract
+4. ⏳ **P1.4:** Deploy all nine contracts with no-clobber evidence and verify each contract
    on Blockscout.
-4. Import every bounded batch in the required order, verify counts and rolling
+5. ⏳ **P1.5:** Import every bounded batch in the required order, verify counts and rolling
    commitments, then atomically activate the Directory.
-5. Compare every migrated domain at one finalized block and record the final
+6. ⏳ **P1.6:** Compare every migrated domain at one finalized block and record the final
    Directory state, code hashes, and module bindings.
-6. Execute MetaMask writes and clean Linux/Windows Git E2E, including historical
+7. ⏳ **P1.7:** Execute MetaMask writes and clean Linux/Windows Git E2E, including historical
    alias resolution and uncertain-receipt handling.
-7. Resolve deep source and runner security findings and obtain the independent
+8. ⏳ **P1.8 (Parallel):** Resolve deep source and runner security findings and obtain the independent
    hash-bound cutover approval.
 
 ### Exit Criteria

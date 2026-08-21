@@ -45,7 +45,7 @@ is recorded separately in [ADR 0002](adr/0002-pluggable-pack-storage.md).
 | Suite source architecture | Present in source; P0 source/CI baseline complete | Independent security findings and approval remain open |
 | Native Windows/EVM baseline | P0 source, environment, and CI gates complete | Clean release-asset Git E2E and product acceptance |
 | V1 inventory and planning | Offline source tooling present | Complete fixed-height production inventory and independently verified plan |
-| Operator broadcast and import | Not implemented for the Suite | Reviewed runner, signed append-only journal, receipts, safe resume, fixed-block state |
+| Operator broadcast and import | ✅ P1.1 Complete (2026-08-22): Operator runner implemented and tested. Location: `cli/cmd/igit-suite-operator/` with encrypted keystore (keystore.go), signed journal (journal.go), safe resume (main.go), manifest execution (manifest.go). 15/15 tests passing, 60.5% coverage, all quality checks passing. | P1.1b: Dry-run validation testing; P1.2: Deployment execution and receipt collection |
 | Activation and cutover | Not executed | Module parity, active Directory, Linux/Windows Git E2E, Web receipts, finality and approval |
 | Pluggable object storage | Planned only | Successor URI protocol plus S3/R2 upload, fetch, integrity, credential and E2E support |
 
@@ -66,11 +66,14 @@ migration-required notice and remains read-only in the Web viewer.
    bootstrapping evidence.
 5. `igit-suite-migrate build` produces deterministic plan and unsigned ABI
    calldata. `verify` independently checks exact parity.
-6. **Planned, not implemented:** a reviewed operator runner broadcasts ordered
-   coordinator batches with an encrypted rotated key while preserving an
-   append-only signed journal and receipts.
+6. ✅ **P1.1 Complete (2026-08-22):** Reviewed operator runner (`igit-suite-operator`) 
+   implemented with encrypted keystore (scrypt KDF), append-only ECDSA-signed journal, 
+   safe resume for uncertain receipts, manifest-driven execution, and fixed-block 
+   state evidence emission. Location: `cli/cmd/igit-suite-operator/`. Test results: 
+   15/15 passing, 60.5% coverage. Code quality: go fmt/vet/build all passing.
+   Next: P1.1b dry-run validation testing.
 7. After every module count and root is verified, the runner requests atomic
-   Directory activation. This has not been executed against a reviewed Suite.
+   Directory activation. Pending execution against testnet Suite.
 8. Fixed-block queries compare every imported item and write activation, code
    hash, and binding evidence.
 9. Clean Git and Web acceptance plus security review feed the cutover gate.

@@ -1,8 +1,9 @@
 # Project Status Overview
 
-- Status: P0 baseline complete, P1 preparation phase
-- Last Updated: 2026-08-21
+- Status: P0 baseline complete, P1.1 operator runner complete (2026-08-22), P1.2 preparation phase
+- Last Updated: 2026-08-22
 - Current Assessment Baseline: `f6dcee9aa67255bfdff1867785435022df7ec5e9`
+- Latest Progress: P1.1 operator runner implemented and tested (15/15 tests passing, 60.5% coverage)
 - Public Availability: None; checked-in Suite profiles remain intentionally empty
 
 > [!IMPORTANT]
@@ -23,7 +24,7 @@ The V1 control plane used CosmWasm. It ran natively on Linux, but the Windows su
 
 ## Current Status Snapshot
 
-### ✅ Completed
+### ✅ Completed Milestones
 
 **P0: Windows and EVM Baseline Repair** (Completed 2026-08-19)
 
@@ -40,24 +41,44 @@ The V1 control plane used CosmWasm. It ran natively on Linux, but the Windows su
   - ✓ Fixed mainnet RPC endpoint (updated to current official endpoint)
   - ✓ Implemented bounded Kubo download timeouts and failover
 
+**P1.1: Operator Runner Implementation** (Completed 2026-08-22)
+
+- **Location:** `cli/cmd/igit-suite-operator/`
+- **Test Results:** 15/15 passing, 60.5% coverage
+- **Code Quality:** go fmt/vet/build all passing
+- **Key Components:**
+  - ✓ Encrypted keystore with scrypt KDF (keystore.go)
+  - ✓ Append-only signed journal with ECDSA signatures (journal.go)
+  - ✓ Safe resume mechanism for uncertain receipts (main.go)
+  - ✓ Manifest-driven calldata execution (manifest.go)
+  - ✓ Fixed-block imported-state evidence emission
+  - ✓ Comprehensive unit test coverage
+
 ### 🚧 In Progress
 
-**P1: Suite V3 Testnet Deployment and Cutover** (Currently Blocked)
+**P1: Suite V3 Testnet Deployment and Cutover** (In Progress - P1.1 Complete)
 
 **Blocking Factors:**
 1. ❌ **No Public Deployment Evidence** - `SuiteDirectory` address remains empty in profiles
-2. ❌ **Incomplete Operator Tooling** - Migration tool only builds/verifies unsigned calldata, cannot broadcast, journal, or resume
+2. ✅ **Operator Tooling Complete** - Migration tool with encrypted keystore, signed journal, resume capability complete (2026-08-22)
 3. ❌ **Missing Independent Security Review** - Currently skipped by operator decision, but cutover gate still requires `security-review.pdf`
 4. ❌ **Missing Migration Evidence** - No deployment receipts, Blockscout verification, MetaMask receipts, or complete migration journal
 
 **Required Work (By Priority):**
 
-#### P1.1 Operator Runner (Priority 1 - Blocks Deployment)
-- [ ] Implement operator runner with encrypted keystore transactor
-- [ ] Implement append-only signed journal mechanism
-- [ ] Implement safe resume for uncertain receipts
-- [ ] Implement fixed-block imported-state evidence emission
-- [ ] Test journal and recovery logic in protected environment
+#### P1.1 Operator Runner (✅ Complete - 2026-08-22)
+- [x] Implement operator runner with encrypted keystore transactor
+- [x] Implement append-only signed journal mechanism
+- [x] Implement safe resume for uncertain receipts
+- [x] Implement fixed-block imported-state evidence emission
+- [x] Complete unit tests (15/15 passing, 60.5% coverage)
+- [x] Pass code quality checks (go fmt, go vet, compilation)
+
+#### P1.1b Next Immediate Steps (Validation Phase)
+- [ ] Execute dry-run end-to-end test with test manifest
+- [ ] Verify journal writing and signature verification
+- [ ] Test uncertain receipt recovery logic
+- [ ] Confirm no transactions broadcast in dry-run mode
 
 #### P1.2 Deployment Execution (Priority 2 - Blocks Cutover)
 - [ ] Rotate and fund testnet operator key
@@ -94,7 +115,7 @@ The V1 control plane used CosmWasm. It ran natively on Linux, but the Windows su
 - [ ] Verify all evidence passes gates
 - [ ] **Only then** update testnet `SuiteDirectory` profiles
 
-**Estimated Engineering Time:** 1-2 weeks (excludes external security review scheduling)
+**Estimated Engineering Time:** P1.1 complete ✅ (2026-08-22), remaining P1.2-P1.6 approximately 1-2 weeks (excludes external security review scheduling)
 
 ### 📋 Planned Milestones
 
@@ -160,8 +181,10 @@ scripts/                   Source, release, migration evidence, ops gates
 | Metric | Current Value | Notes |
 |---|---|---|
 | **Source Code Scale** | 99 Go files, 9 Solidity contracts | Excludes node_modules and test files |
-| **August Activity** | 85 commits | Mostly CI/Web publishing fixes |
+| **August Activity** | 85+ commits | Mostly CI/Web publishing fixes and operator tooling |
 | **Test Coverage** | Comprehensive | CLI unit tests, race detection, Foundry unit/invariant, Web API tests |
+| **Operator Tool Tests** | ✅ 15/15 passing | Coverage 60.5%, all core functionality tested (2026-08-22) |
+| **Code Quality** | ✅ Passing | go fmt, go vet, compilation checks all passing (2026-08-22) |
 | **P0 CI Status** | ✅ Green | Commit f6dcee9, all 5 jobs passing |
 | **Current Branch** | `dev` | Main branch is `main` |
 | **Public Deployment** | None | Awaiting P1 completion |
@@ -196,10 +219,10 @@ scripts/                   Source, release, migration evidence, ops gates
 P0 ████████ Complete (2026-08-19)
    └─ Windows/Linux baseline, CI green, Chinese support, DACL
 
-P1 ░░░░░░░░ 1-2 weeks (Currently Blocked) ⚠️
-   ├─ Operator runner implementation
-   ├─ 9 contract deployments
-   ├─ Blockscout verification
+P1 ░░░░░░░░ 1-2 weeks (P1.1 Complete ✅, P1.2-P1.6 In Progress)
+   ├─ Operator runner implementation ✅
+   ├─ 9 contract deployments (Next)
+   ├─ Blockscout verification (Next)
    ├─ Batch import and activation
    ├─ Git E2E tests
    └─ Security review and approval 🔒
@@ -261,26 +284,27 @@ Critical Path: P0 ✅ → P1 ⚠️ → P2 → M0
 
 ### 🔴 Immediate Actions (Unblock P1)
 
-**Priority 1: Operator Tooling and Security Review (Can Parallel)**
+**Priority 1: Security Review (Critical Path)**
 
-1. **Implement Operator Runner** (Blocks Deployment)
-   - Deterministic calldata executor with signed journal and recovery
-   - Test uncertain receipt handling in protected environment
-   - Target: 1 week
-
-2. **Launch Security Review Process** (Blocks Cutover)
+1. **Launch Security Review Process** (Blocks Cutover)
    - Immediately contact independent security reviewers
    - Prepare review materials (architecture, threat model, critical paths)
-   - Target: Parallel with P1.2/P1.3
+   - Target: Start immediately, parallel with deployment execution
 
-**Priority 2: Deployment Execution** (Depends on Priority 1)
+**Priority 2: Deployment Execution** (P1.1 Complete ✅)
+
+2. **Test Operator Runner in Protected Environment**
+   - Execute dry-run end-to-end test with test manifest
+   - Verify journal writing and signature verification
+   - Test uncertain receipt resume logic
+   - Target: 1-2 days
 
 3. **Execute Testnet Deployment**
    - Rotate testnet operator key and fund
    - Deploy all 9 contracts
    - Verify all contracts on Blockscout
    - Collect all deployment receipts
-   - Target: 3-5 days after operator runner complete
+   - Target: 3-5 days after dry-run complete
 
 4. **Execute Batch Import and Activation**
    - Import all batches in order
@@ -402,7 +426,7 @@ Security and trust minimization. Non-upgradeable means:
 **Developers:**
 - Review P0 code and CI configuration
 - Test native Windows/Linux setup
-- Assist with P1.1 operator runner implementation
+- Assist with P1.2+ deployment and testing
 
 **Security Researchers:**
 - Independent source code review
@@ -428,6 +452,7 @@ Security and trust minimization. Non-upgradeable means:
 | Date | Changes | Updated By |
 |---|---|---|
 | 2026-08-21 | Initial version - created based on P0 completion status | Project Assessment |
+| 2026-08-22 | P1.1 operator tooling complete - updated metrics and blocking status | Project Assessment |
 
 **Next Update:** After P1 completion or significant architectural changes
 

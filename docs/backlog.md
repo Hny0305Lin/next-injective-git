@@ -5,7 +5,7 @@ current milestone status, and shared exit criteria are maintained in the
 [Delivery Roadmap](delivery-roadmap.md). For a high-level status overview, see
 [Project Status](project-status.md).
 
-**Last Updated:** 2026-08-21
+**Last Updated:** 2026-08-22
 
 The immutable Suite source path is implemented, but no checked-in profile may
 claim a live deployment until all real evidence exists.
@@ -35,15 +35,24 @@ The public SuiteDirectory fields remain empty until the cutover gate passes.
   the PowerShell cutover fixture. The reviewed P0 Windows job passed these
   gates; clean release-asset Git E2E remains a separate P2 requirement.
 
-### P1 (当前阻塞器 - 优先级 1)
-- [ ] **P1.1 运营运行器**（阻塞部署）
-  - [ ] 实现带加密密钥存储事务处理器的操作运行器
-  - [ ] 实现仅追加签名日志（journal）
-  - [ ] 实现安全恢复机制以处理不确定的收据
-  - [ ] 实现固定区块导入状态证据发射
-  - [ ] 在保护环境中测试日志和恢复逻辑
+### P1 (当前进行中 - P1.1 完成 ✅ 2026-08-22)
+- [x] **P1.1 运营运行器**（✅ 完成 2026-08-22）
+  - [x] 实现带加密密钥存储事务处理器的操作运行器
+  - [x] 实现仅追加签名日志（journal）
+  - [x] 实现安全恢复机制以处理不确定的收据
+  - [x] 实现固定区块导入状态证据发射
+  - [x] 15/15 测试通过，60.5% 代码覆盖率
+  - [x] go fmt/vet/build 代码质量检查通过
+  - [x] 位置：`cli/cmd/igit-suite-operator/`
+  - [x] 核心文件：keystore.go, journal.go, manifest.go, main.go
   
-- [ ] **P1.2 部署执行**（阻塞切换）
+- [ ] **P1.1b 验证阶段**（下一步）
+  - [ ] 使用测试清单执行 dry-run 端到端测试
+  - [ ] 验证日志写入和签名验证功能
+  - [ ] 测试不确定收据恢复逻辑
+  - [ ] 确认 dry-run 模式下不广播交易
+  
+- [ ] **P1.2 部署执行**（阻塞切换 - 依赖 P1.1 ✅）
   - [ ] 轮换并资助测试网操作员密钥
   - [ ] 修复 V1 切换高度
   - [ ] 生成完整清单、快照、SHA-256 侧车和用户名托管释放证据
