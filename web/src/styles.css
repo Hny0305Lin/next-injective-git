@@ -2377,12 +2377,19 @@ textarea.field:focus,
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   font-size: 0.9rem;
+  overflow: hidden;
 }
 
 .repo-list-item h3 a {
   color: var(--fg);
+  flex-shrink: 0;
+}
+
+.repo-list-item h3 .badge,
+.repo-list-item h3 .contract-type-badge {
+  flex-shrink: 0;
 }
 
 .repo-list-item .meta {
