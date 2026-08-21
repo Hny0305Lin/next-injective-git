@@ -61,6 +61,18 @@ const verificationCache = new Map<string, { value: SuiteBinding; timestamp: numb
 const verificationPending = new Map<string, Promise<SuiteBinding>>();
 const transactionLocks = new WeakSet<object>();
 
+type VerificationListener = (event: { type: "started" | "completed" | "cached" }) => void;
+const verificationListeners = new Set<VerificationListener>();
+
+export function onVerificationEvent(listener: VerificationListener): () => void {
+  verificationListeners.add(listener);
+  return () => verificationListeners.delete(listener);
+}
+
+function notifyVerificationEvent(type: "started" | "completed" | "cached"): void {
+  verificationListeners.forEach((listener) => listener({ type }));
+}
+
 const RECEIPT_ATTEMPTS = 120;
 const RECEIPT_INTERVAL_MS = 1_000;
 const RECEIPT_INTERNAL_ERROR_LIMIT = 3;
@@ -220,11 +232,16 @@ export async function verifySuite(cfg: AppConfig, force = false): Promise<SuiteB
   requireDirectory(cfg);
   const key = cacheKey(cfg);
   const cached = verificationCache.get(key);
-  if (!force && cached && Date.now() - cached.timestamp < VERIFY_TTL_MS) return cached.value;
+  if (!force && cached && Date.now() - cached.timestamp < VERIFY_TTL_MS) {
+    notifyVerificationEvent("cached");
+    return cached.value;
+  }
   const pending = verificationPending.get(key);
   if (!force && pending) return pending;
+  notifyVerificationEvent("started");
   const promise = verifySuiteNow(cfg).then((value) => {
     verificationCache.set(key, { value, timestamp: Date.now() });
+    notifyVerificationEvent("completed");
     return value;
   }).finally(() => verificationPending.delete(key));
   verificationPending.set(key, promise);

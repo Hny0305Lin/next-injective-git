@@ -2,6 +2,7 @@ import {
   Activity,
   AlertTriangle,
   Archive as ArchiveIcon,
+  CheckCircle2,
   GitFork,
   HardDrive,
   Gauge,
@@ -17,6 +18,7 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import { Link, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import AccountMenu from "./components/AccountMenu";
 import Toast from "./components/Toast";
+import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert";
 import { Button } from "./components/ui/button";
 import { WalletModal } from "./components/WalletModal";
 import { useWallet } from "./lib/WalletContext";
@@ -26,6 +28,7 @@ import {
   isSuiteDirectoryConfigured,
   loadConfig,
   verifySuite,
+  onVerificationEvent,
 } from "./lib/chain";
 import Home from "./pages/Home";
 import Settings from "./pages/Settings";
@@ -50,6 +53,7 @@ const primaryNav = [
 ];
 
 type SuiteReadiness = "unconfigured" | "checking" | "ready" | "error";
+type CacheNotification = "refreshing" | "refreshed" | null;
 
 function RouteSpinner() {
   return <div className="spinner" aria-live="polite">loading...</div>;
@@ -63,6 +67,7 @@ export default function App() {
   const [history, setHistory] = useState<string[]>([]);
   const [configRevision, setConfigRevision] = useState(0);
   const [suiteReadiness, setSuiteReadiness] = useState<SuiteReadiness>("checking");
+  const [cacheNotification, setCacheNotification] = useState<CacheNotification>(null);
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     const saved = localStorage.getItem("igit_theme");
     if (saved === "light" || saved === "dark") return saved;
@@ -79,6 +84,20 @@ export default function App() {
     const refreshConfig = () => setConfigRevision((revision) => revision + 1);
     window.addEventListener(CONFIG_CHANGED_EVENT, refreshConfig);
     return () => window.removeEventListener(CONFIG_CHANGED_EVENT, refreshConfig);
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onVerificationEvent((event) => {
+      if (event.type === "started") {
+        setCacheNotification("refreshing");
+      } else if (event.type === "completed") {
+        setCacheNotification("refreshed");
+        setTimeout(() => setCacheNotification(null), 2000);
+      } else if (event.type === "cached") {
+        setCacheNotification(null);
+      }
+    });
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
@@ -253,6 +272,25 @@ export default function App() {
             <AccountMenu />
           ) : (
             <Button className="wallet-btn" onClick={openWalletModal}>Connect wallet</Button>
+          )}
+          {cacheNotification && (
+            <div className="cache-notification">
+              <Alert variant="default">
+                {cacheNotification === "refreshing" ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4" />
+                )}
+                <AlertTitle>
+                  {cacheNotification === "refreshing" ? "Refreshing cache" : "Cache updated"}
+                </AlertTitle>
+                <AlertDescription>
+                  {cacheNotification === "refreshing"
+                    ? "Verifying Suite directory and modules..."
+                    : "Suite verification cached for 30 seconds"}
+                </AlertDescription>
+              </Alert>
+            </div>
           )}
         </div>
       </header>
