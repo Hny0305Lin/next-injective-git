@@ -1,0 +1,6 @@
+# mise toolchain (alternative to .tool-versions; kept in sync)
+[tools]
+go = "1.22.12"
+node = "22.12.0"
+# solc is pinned via npm (contracts/evm-v2/package.json -> solc 0.8.24)
+# foundry is pinned via .github/workflows/ci.yml -> foundry-toolchain v1.7.1

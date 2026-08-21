@@ -98,11 +98,28 @@ jobs:
           while IFS= read -r path; do
             [[ -n "$path" ]] || continue
             case "$path" in
-              # Workflow and shared script changes can alter either pipeline,
-              # so they deliberately arm both gates.
-              .github/workflows/*|scripts/*)
+              # Workflow changes can alter any pipeline, so they arm all gates.
+              .github/workflows/*)
                 native=true
                 web=true
+                lightweight=true
+                ;;
+              # CI gates (suite-readiness, evm checks, race, semver) touch
+              # Go/Solidity/Web boundaries, so they arm all gates.
+              scripts/ci/*|scripts/lib/*|scripts/*.sh|scripts/*.mjs|scripts/*.ps1)
+                native=true
+                web=true
+                lightweight=true
+                ;;
+              # Deployment and migration scripts are release tooling; they
+              # affect both native and operational gates.
+              scripts/deploy/*|scripts/migration/*)
+                native=true
+                lightweight=true
+                ;;
+              # Ops scripts (monitoring, indexing, replication, feegrant
+              # daemons) are operational; they gate lightweight only.
+              scripts/ops/*|scripts/storage/*)
                 lightweight=true
                 ;;
               web/*|vercel.json)
@@ -115,7 +132,7 @@ jobs:
               # gates in `lightweight` (suite-readiness greps docs for banned
               # V1 paths); nothing in the Go, Windows, or Foundry trees reads
               # them, so they no longer arm the full native matrix.
-              docs/*|README.md|CLAUDE.md|.gitattributes)
+              docs/*|README.md|CLAUDE.md|.gitattributes|Makefile|.tool-versions|mise.toml)
                 lightweight=true
                 ;;
               *)
@@ -147,10 +164,10 @@ jobs:
       # Release-tag parsing is repository tooling rather than Web code, so it
       # is gated here rather than in the Web job. Pure node: builtins.
       - name: strict SemVer release-tag regression vectors
-        run: node --test scripts/semver-check.test.mjs
+        run: node --test scripts/ci/semver-check.test.mjs
 
       - name: validate bootstrap shell script
-        run: bash -n scripts/bootstrap-push.sh
+        run: bash -n scripts/storage/bootstrap-push.sh
 
       - name: validate bootstrap PowerShell script
         shell: pwsh
@@ -158,7 +175,7 @@ jobs:
           $tokens = $null
           $errors = $null
           [System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path scripts/bootstrap-push.ps1),
+            (Resolve-Path scripts/storage/bootstrap-push.ps1),
             [ref]$tokens,
             [ref]$errors
           ) > $null
@@ -167,13 +184,13 @@ jobs:
           }
 
       - name: immutable Suite source readiness gate
-        run: bash scripts/suite-readiness.sh --source-only
+        run: bash scripts/ci/suite-readiness.sh --source-only
 
       - name: replication reaper regression fixture
-        run: bash scripts/replication-reaper-test.sh
+        run: bash scripts/ci/replication-reaper-test.sh
 
       - name: replication config cutover guard fixture
-        run: bash scripts/replication-config-check-test.sh
+        run: bash scripts/ci/replication-config-check-test.sh
 
   cli:
     name: cli (go 1.22)
@@ -316,7 +333,7 @@ jobs:
       - name: clean Windows checkout Suite gate
         shell: pwsh
         working-directory: .
-        run: .\scripts\windows-suite-clean-check.ps1
+        run: .\scripts\ci\windows-suite-clean-check.ps1
 
       # This executes the Windows-specific Kubo wrapper/executable path rather
       # than relying only on a Linux cross-compile.
@@ -348,7 +365,7 @@ jobs:
         working-directory: .
         run: |
           Set-StrictMode -Version Latest
-          & .\scripts\migration-cutover-readiness-test.ps1
+          & .\scripts\migration\migration-cutover-readiness-test.ps1
 
       - name: build native commands
         shell: pwsh
@@ -653,10 +670,10 @@ jobs:
           version: v1.7.1
 
       - name: immutable Suite gate fail-closed regression
-        run: bash scripts/evm-v2-check-test.sh
+        run: bash scripts/ci/evm-v2-check-test.sh
 
       - name: immutable Suite build and tests
-        run: bash scripts/evm-v2-check.sh --required
+        run: bash scripts/ci/evm-v2-check.sh --required
 
   acceptance-fixtures:
     name: acceptance fixtures (go)
@@ -672,10 +689,10 @@ jobs:
           cache: false
 
       - name: immutable Suite source readiness gate
-        run: bash scripts/suite-readiness.sh --source-only
+        run: bash scripts/ci/suite-readiness.sh --source-only
 
       - name: migration and chain race gate
-        run: bash scripts/race-check.sh --required
+        run: bash scripts/ci/race-check.sh --required
 
       - name: gateway fallback acceptance fixture
-        run: bash scripts/gateway-fallback-acceptance.sh
+        run: bash scripts/ci/gateway-fallback-acceptance.sh

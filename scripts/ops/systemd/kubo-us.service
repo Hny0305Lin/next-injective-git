@@ -1,0 +1,17 @@
+[Unit]
+Description=igit US Kubo IPFS daemon
+After=network.target
+
+[Service]
+User=ipfs
+Group=ipfs
+Environment=IPFS_PATH=/var/lib/ipfs
+Environment=IPFS_TELEMETRY=off
+ExecStart=/usr/local/bin/ipfs daemon --migrate=true --enable-gc
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=1048576
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

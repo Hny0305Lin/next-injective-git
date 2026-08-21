@@ -1,16 +1,5 @@
-function Test-IgitNonEmptyFile {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory = $true)]
-    [string]$LiteralPath
-  )
-
-  if (-not (Test-Path -LiteralPath $LiteralPath -PathType Leaf)) {
-    return $false
-  }
-  try {
-    return (Get-Item -LiteralPath $LiteralPath -Force -ErrorAction Stop).Length -gt 0
-  } catch {
-    return $false
-  }
-}
+# Compatibility shim — moved to scripts/migration/readiness-file.ps1 (remove after one release cycle)
+$oldPath = Split-Path -Parent $MyInvocation.MyCommand.Path
+$newPath = Join-Path $oldPath "migration/readiness-file.ps1"
+& $newPath @args
+exit $LASTEXITCODE
