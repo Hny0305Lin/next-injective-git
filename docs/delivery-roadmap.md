@@ -33,6 +33,7 @@ The surrounding documents retain their narrower authority:
 | [Acceptance Evidence](acceptance-evidence.md) | Required real evidence and its binding rules |
 | [P0 Evidence Record](p0-evidence.md) | Commit-bound Windows/Linux CI and local P0 verification snapshot |
 | [Infrastructure](infrastructure.md) | As-built IPFS data plane; not EVM or object-storage acceptance |
+| [CI Path Routing And Web Publishing](ci-web-publishing.md) | Per-tree CI gating and the Web production publish path |
 
 When this roadmap conflicts with an accepted ADR, the ADR wins. When it
 conflicts with real cutover evidence, the evidence wins and this roadmap must

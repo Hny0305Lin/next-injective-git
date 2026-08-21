@@ -63,13 +63,14 @@ interface RpcTransaction {
 }
 
 interface RpcReceipt {
-  status: Hex;
-  gasUsed: Hex;
-  logs: RpcLog[];
+  status: Hex | null;
+  gasUsed: Hex | null;
+  from?: Address;
+  logs: RpcLog[] | null;
 }
 
 interface RpcBlock {
-  timestamp: Hex;
+  timestamp: Hex | null;
 }
 
 const EVENT_ACTIONS: Record<string, string> = {
@@ -130,10 +131,11 @@ function decodeLog(log: RpcLog): { action: string; attributes: Record<string, st
   return { action: "contract_event", attributes: {} };
 }
 
-async function blockTimestamp(cfg: AppConfig, height: Hex, cache: Map<string, string>): Promise<string> {
+async function blockTimestamp(cfg: AppConfig, height: Hex, cache: Map<string, string>): Promise<string | null> {
   const hit = cache.get(height);
   if (hit) return hit;
-  const block = await rpcRequest<RpcBlock>(cfg, "eth_getBlockByNumber", [height, false]);
+  const block = await rpcRequest<RpcBlock | null>(cfg, "eth_getBlockByNumber", [height, false]);
+  if (!block || !block.timestamp) return null;
   const timestamp = new Date(Number(quantity(block.timestamp)) * 1000).toISOString();
   cache.set(height, timestamp);
   return timestamp;
@@ -229,10 +231,13 @@ export async function contractActivity(
       if (seen.has(hash)) continue;
       seen.add(hash);
       const [transaction, receipt, timestamp] = await Promise.all([
-        rpcRequest<RpcTransaction>(cfg, "eth_getTransactionByHash", [log.transactionHash]),
-        rpcRequest<RpcReceipt>(cfg, "eth_getTransactionReceipt", [log.transactionHash]),
+        rpcRequest<RpcTransaction | null>(cfg, "eth_getTransactionByHash", [log.transactionHash]),
+        rpcRequest<RpcReceipt | null>(cfg, "eth_getTransactionReceipt", [log.transactionHash]),
         blockTimestamp(cfg, log.blockNumber, timestampCache),
       ]);
+      if (!transaction || !receipt || !transaction.from || !receipt.status || !receipt.logs || !timestamp) {
+        continue;
+      }
       const normalizedSender = toInjectiveAddress(transaction.from);
       if (targetSender && normalizedSender.toLowerCase() !== targetSender && transaction.from.toLowerCase() !== targetSender) {
         continue;
@@ -258,18 +263,19 @@ export async function txByHash(cfg: AppConfig, hash: string): Promise<TxDetail |
   const clean = hash.trim();
   if (!/^0x[0-9a-fA-F]{64}$/.test(clean)) throw new Error("invalid EVM transaction hash");
   const transaction = await rpcRequest<RpcTransaction | null>(cfg, "eth_getTransactionByHash", [clean]);
-  if (!transaction || !transaction.blockNumber) return null;
+  if (!transaction || !transaction.blockNumber || !transaction.from) return null;
   const [receipt, block] = await Promise.all([
-    rpcRequest<RpcReceipt>(cfg, "eth_getTransactionReceipt", [clean]),
-    rpcRequest<RpcBlock>(cfg, "eth_getBlockByNumber", [transaction.blockNumber, false]),
+    rpcRequest<RpcReceipt | null>(cfg, "eth_getTransactionReceipt", [clean]),
+    rpcRequest<RpcBlock | null>(cfg, "eth_getBlockByNumber", [transaction.blockNumber, false]),
   ]);
+  if (!receipt || !receipt.status || !receipt.logs || !block || !block.timestamp) return null;
   return {
     txhash: transaction.hash,
     height: quantity(transaction.blockNumber).toString(),
     timestamp: new Date(Number(quantity(block.timestamp)) * 1000).toISOString(),
     code: quantity(receipt.status) === 1n ? 0 : 1,
     rawLog: "",
-    gasUsed: quantity(receipt.gasUsed).toString(),
+    gasUsed: receipt.gasUsed ? quantity(receipt.gasUsed).toString() : "0",
     gasWanted: "",
     messages: [{
       type: `EVM type ${quantity(transaction.type)}`,
