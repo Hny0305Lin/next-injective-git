@@ -343,9 +343,12 @@ jobs:
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      # Let the CLI resolve a project-scoped vcp_ token through token
-      # introspection instead of the user endpoint, which such tokens are
-      # denied by design.
+      # Not --scope. An explicit scope forces the CLI through /v2/user and
+      # /v2/teams before the command runs, and a project-scoped vcp_ token
+      # is denied user-level endpoints by design, so every command would
+      # die with "User not found". Without an explicit scope the CLI reads
+      # orgId from the link file, which needs no user lookup. The team
+      # context is still pinned by that link file.
       APP_PRINCIPAL_ENABLED: "1"
     steps:
       - uses: actions/checkout@v5
@@ -487,18 +490,17 @@ jobs:
           PY
           cat .vercel/project.json
 
-      # A Vercel token can read project metadata but cannot decrypt environment
-      # variables; stored CLI auth can, which is why this succeeds locally and
-      # not here. Non-fatal on purpose: the only build-time variable is
-      # VITE_WALLETCONNECT_PROJECT_ID, and the bundle production currently serves
-      # was itself built without it, so proceeding without it is not a
-      # regression. The check below reports whether it made it in.
+      # Continue-on-error: a project-scoped token may be denied env reads.
+      # The only build-time variable is VITE_WALLETCONNECT_PROJECT_ID, and
+      # the bundle production currently serves was itself built without
+      # it, so proceeding without it is not a regression. The step below
+      # reports whether it made it in.
       - name: pull production environment
         continue-on-error: true
         run: |
           vercel env pull .vercel/.env.production.local \
             --environment=production --yes \
-            --scope="$V_ORG_ID" --token="$V_TOKEN"
+            --token="$V_TOKEN"
 
       - name: report build-time env availability
         run: |
@@ -513,22 +515,20 @@ jobs:
             echo "repository secret and pass it to the build step directly."
           fi
 
-      # Builds from the checked-out commit using the repository's vercel.json,
-      # so the published bundle is the one this run just gated.
       - name: build production bundle
-        # Deliberately without --yes. That flag makes build perform its own full
-        # pull, including the environment step this token cannot complete, which
-        # is what failed here. With the settings block written locally there is
-        # nothing left to fetch.
+        # Deliberately without --yes and without --scope. --yes makes build
+        # perform its own full pull, and --scope triggers the user lookup a
+        # project-scoped token cannot pass. The locally written link file
+        # carries the org and project IDs, so nothing needs to be fetched.
         run: |
           vercel build --prod \
-            --scope="$V_ORG_ID" --token="$V_TOKEN"
+            --token="$V_TOKEN"
 
       - name: deploy prebuilt bundle to production
         id: publish
         run: |
           vercel deploy --prebuilt --prod \
-            --scope="$V_ORG_ID" --token="$V_TOKEN"
+            --token="$V_TOKEN"
 
       # These two run only after a failed production publish, and exist to make
       # the cause readable from step conclusions alone, since step logs need an
@@ -551,15 +551,14 @@ jobs:
         if: failure() && steps.publish.outcome == 'failure'
         run: |
           rm -rf .vercel/output
-          vercel build --scope="$V_ORG_ID" --token="$V_TOKEN"
+          vercel build --token="$V_TOKEN"
 
       - name: deploy preview bundle
         id: preview
         if: failure() && steps.publish.outcome == 'failure'
         run: |
           set -uo pipefail
-          url="$(vercel deploy --prebuilt \
-            --scope="$V_ORG_ID" --token="$V_TOKEN")"
+          url="$(vercel deploy --prebuilt --token="$V_TOKEN")"
           test -n "$url"
           echo "url=$url" >>"$GITHUB_OUTPUT"
           echo "preview deployed: $url"
@@ -568,7 +567,7 @@ jobs:
         if: failure() && steps.publish.outcome == 'failure'
         run: |
           vercel promote "${{ steps.preview.outputs.url }}" \
-            --scope="$V_ORG_ID" --token="$V_TOKEN"
+            --token="$V_TOKEN"
 
   evm-suite:
     name: immutable EVM Suite (Foundry)
