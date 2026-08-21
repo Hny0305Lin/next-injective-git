@@ -1,3 +1,4 @@
+// Canonical moved to ./chain/abis.ts — this file remains for compatibility
 import { keccak256, parseAbi, toHex, type Abi, type Hex } from "viem";
 
 export type SuiteModuleKey =

@@ -1,3 +1,4 @@
+// Canonical moved to ./chain/activity.ts — this file remains for compatibility
 import { decodeEventLog, type Abi, type Address, type Hex } from "viem";
 import { activityAbis } from "./abis";
 import { toInjectiveAddress } from "./address";

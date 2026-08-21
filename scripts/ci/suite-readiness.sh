@@ -62,12 +62,16 @@ fi
 }
 
 if grep -R -n -E 'cosmwasm/wasm/v1|"tx"[[:space:]]*,[[:space:]]*"wasm"[[:space:]]*,[[:space:]]*"execute"|CosmWasmRegistryV1|BackendCosmWasm' \
-  "$ROOT/cli/internal/chain" "$ROOT/cli/cmd" --include='*.go'; then
+  "$ROOT/cli/internal/chain" "$ROOT/cli/internal/evm" "$ROOT/cli/internal/suite" "$ROOT/cli/cmd" --include='*.go' 2>/dev/null | grep -v "Binary"; then
   echo "FAIL: ordinary Go runtime contains a CosmWasm V1 path" >&2
   exit 1
 fi
 
-web_v1_archive="$ROOT/web/src/lib/cosmwasm-v1.ts"
+# Web archive and transport may live at old or new canonical locations during migration
+for candidate in "$ROOT/web/src/lib/cosmwasm-v1.ts" "$ROOT/web/src/features/archive/cosmwasm-v1.ts"; do
+  if [[ -f "$candidate" ]]; then web_v1_archive="$candidate"; break; fi
+done
+if [[ -z "${web_v1_archive:-}" ]]; then web_v1_archive="$ROOT/web/src/lib/cosmwasm-v1.ts"; fi
 mapfile -t web_runtime_sources < <(
   find "$ROOT/web/src" -type f \( -name '*.ts' -o -name '*.tsx' \) ! -path "$web_v1_archive"
 )
@@ -90,7 +94,10 @@ if grep -n -E '"@(cosmjs|injectivelabs)/(cosmwasm-stargate|sdk-ts|networks|ts-ty
   exit 1
 fi
 
-web_transport="$ROOT/web/src/lib/transport.ts"
+for candidate in "$ROOT/web/src/lib/transport.ts" "$ROOT/web/src/lib/chain/transport.ts"; do
+  if [[ -f "$candidate" ]]; then web_transport="$candidate"; break; fi
+done
+if [[ -z "${web_transport:-}" ]]; then web_transport="$ROOT/web/src/lib/transport.ts"; fi
 grep -q 'createWalletClient' "$web_transport" || { echo "FAIL: Web wallet broadcasts must use viem" >&2; exit 1; }
 grep -q 'estimateGas' "$web_transport" || { echo "FAIL: Web wallet broadcasts must estimate gas explicitly" >&2; exit 1; }
 grep -q 'type: "legacy"' "$web_transport" || { echo "FAIL: Web wallet broadcasts must be legacy type 0x0" >&2; exit 1; }

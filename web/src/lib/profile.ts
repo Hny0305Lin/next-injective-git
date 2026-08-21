@@ -1,3 +1,4 @@
+// Canonical moved to ./chain/profile.ts — this file remains for compatibility
 export type NetworkProfileId = "injective-testnet";
 
 export interface NetworkProfile {

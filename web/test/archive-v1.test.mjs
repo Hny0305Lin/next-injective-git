@@ -9,7 +9,7 @@ import {
   queryCosmWasmV1,
   resetCosmWasmV1Snapshot,
 } from "../src/lib/cosmwasm-v1.ts";
-import { isCosmWasmV1ArchivePath, repoNameFromBase } from "../src/pages/Repo/useRepoViews.ts";
+import { isCosmWasmV1ArchivePath, repoNameFromBase } from "../src/features/repo/useRepoViews.ts";
 
 const OWNER = "inj1sh4v00qgzjy25a73mqheew8q200punaglrzec5";
 const UPDATED_BY = OWNER;

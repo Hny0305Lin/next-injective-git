@@ -286,7 +286,7 @@ test("SuiteDirectory editing is limited to local deployment origins", () => {
 });
 
 test("public Settings keeps the Directory copy-only and both write actions disabled", async () => {
-  const source = await readFile(new URL("../src/pages/Settings.tsx", import.meta.url), "utf8");
+  const source = await readFile(new URL("../src/features/settings/Settings.tsx", import.meta.url), "utf8");
   assert.match(source, /useState\(isLocalDeployment\)/);
   assert.match(source, /readOnly=\{!suiteEditable\}/);
   assert.equal(source.match(/(?<!aria-)disabled=\{saving \|\| !suiteEditable\}/g).length, 2);

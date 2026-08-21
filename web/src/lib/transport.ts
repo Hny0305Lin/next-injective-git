@@ -1,3 +1,4 @@
+// Canonical moved to ./chain/transport.ts — this file remains for compatibility
 import {
   createPublicClient,
   createWalletClient,
