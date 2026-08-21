@@ -5,6 +5,11 @@ non-upgradeable Injective EVM Suite. Ordinary clients trust only one configured
 `SuiteDirectory`; never add a direct module address, compatibility backend,
 legacy fallback, proxy, diamond, or `delegatecall` path.
 
+**Current Project Status:** P0 baseline complete (2026-08-19), P1 testnet
+deployment preparation in progress. See [docs/project-status.md](docs/project-status.md)
+(English) or [docs/project-status-zh.md](docs/project-status-zh.md) (中文) for
+a comprehensive status overview.
+
 ## Why EVM V2
 
 CosmWasm V1 Push ran natively on Linux, but the supported Windows workflow

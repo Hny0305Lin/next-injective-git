@@ -16,10 +16,11 @@ or mixed backend mode.
 > fixed-block verification, and cutover evidence have passed. No deployment or
 > public testnet availability is claimed by this repository state.
 
-Delivery sequencing, current blockers, exit criteria, and implementation
-references are maintained in the [delivery roadmap](docs/delivery-roadmap.md).
-Architecture decisions and acceptance evidence remain authoritative in their
-dedicated documents.
+**Current Status:** P0 baseline complete (2026-08-19), P1 testnet deployment 
+preparation in progress. See [Project Status](docs/project-status.md) for a 
+quick overview or [Delivery Roadmap](docs/delivery-roadmap.md) for detailed 
+sequencing. Architecture decisions and acceptance evidence remain authoritative 
+in their dedicated documents.
 
 ## Why EVM V2
 

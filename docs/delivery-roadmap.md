@@ -2,9 +2,10 @@
 
 - Status: Active execution plan
 - Initial assessment: 2026-08-15
-- Latest assessment: 2026-08-19
+- Latest assessment: 2026-08-21
 - Assessment baseline: `f6dcee9aa67255bfdff1867785435022df7ec5e9`
 - Current public availability: None; checked-in Suite profiles remain intentionally empty
+- Quick overview: See [Project Status](project-status.md) for a high-level summary
 
 > [!IMPORTANT]
 > This document tracks sequencing, dependencies, delivery status, and exit
@@ -39,22 +40,22 @@ When this roadmap conflicts with an accepted ADR, the ADR wins. When it
 conflicts with real cutover evidence, the evidence wins and this roadmap must
 be corrected.
 
-## Current Delivery Truth
+## Current Delivery Truth (Updated 2026-08-21)
 
 The status below describes the repository at the assessment baseline. Source
 presence, CI configuration, fixtures, and local probes do not establish public
 availability.
 
-| Area | Current status | Blocking fact |
-|---|---|---|
-| Immutable EVM Suite source | Implemented; P0 source and CI evidence retained | Independent security approval and real cutover evidence remain open |
-| Testnet Suite deployment | Blocked | Public `SuiteDirectory` profiles are empty; no reviewed deployment, import, activation, or cutover evidence exists |
-| Migration operator | Blocked | Current tooling builds and verifies unsigned calldata but does not broadcast, journal, resume, or activate |
-| Native Windows ordinary use | P0 source gates green; product acceptance blocked | Clean release-asset Git E2E and product acceptance remain open |
-| Current IPFS pack storage | Implemented current data path | Native Kubo is still required for push; clone/fetch use gateways |
-| Amazon S3 / Cloudflare R2 | Direction accepted; not implemented | Current Suite, CLI, and Web accept only `ipfs://` |
-| ZKP on Injective testnet | Research only | No circuit, proving pipeline, verifier, deployment, or product authorization integration exists |
-| Mainnet | Not scheduled for release | Governance, storage scope, security, migration, and acceptance decisions remain open |
+| Area | Current status | Blocking fact | Recent activity |
+|---|---|---|---|
+| Immutable EVM Suite source | Implemented; P0 source and CI evidence retained | Independent security approval and real cutover evidence remain open | 85 commits since Aug 1 (mostly CI/Web fixes) |
+| Testnet Suite deployment | Blocked | Public `SuiteDirectory` profiles are empty; no reviewed deployment, import, activation, or cutover evidence exists | Awaiting operator runner implementation |
+| Migration operator | Blocked | Current tooling builds and verifies unsigned calldata but does not broadcast, journal, resume, or activate | P1.1 priority work item |
+| Native Windows ordinary use | P0 source gates green; product acceptance blocked | Clean release-asset Git E2E and product acceptance remain open | P0 completed 2026-08-19 |
+| Current IPFS pack storage | Implemented current data path | Native Kubo is still required for push; clone/fetch use gateways | Stable; no changes needed for P1 |
+| Amazon S3 / Cloudflare R2 | Direction accepted; not implemented | Current Suite, CLI, and Web accept only `ipfs://` | P3-P5 planned work |
+| ZKP on Injective testnet | Research only | No circuit, proving pipeline, verifier, deployment, or product authorization integration exists | Z0 can proceed after P0 |
+| Mainnet | Not scheduled for release | Governance, storage scope, security, migration, and acceptance decisions remain open | Dependent on P1/P2 completion |
 
 The initial assessment found the following native Windows blockers. They are
 retained here for audit context; the P0 evidence record below shows that the
