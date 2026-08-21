@@ -12,8 +12,7 @@ import {
   type ContractTx,
   type TxDetail,
 } from "../lib/chain";
-
-const short = (s: string, n = 8) => (s.length > n * 2 ? `${s.slice(0, n)}…${s.slice(-4)}` : s);
+import { truncateAddress } from "../lib/utils";
 
 // Colour per contract action for quick scanning.
 const ActionBadge = memo(function ActionBadge({ action }: { action: string }) {
@@ -78,7 +77,7 @@ export default function Explorer() {
         <Link className="muted icon-link" to="/ipfs">IPFS explorer <ArrowUpRight size={14} /></Link>
       </div>
       <p className="muted">
-        Activity across SuiteDirectory <code className="mono">{short(cfg.suiteDirectory, 10)}</code> ·
+        Activity across SuiteDirectory <code className="mono">{truncateAddress(cfg.suiteDirectory, 10)}</code> ·
         EVM chain <code className="mono">{cfg.evmChainId}</code>
       </p>
 
@@ -86,8 +85,8 @@ export default function Explorer() {
         <div className="card explorer-config">
           <span>platform fee <b>{(cc.platform_fee_bps / 100).toFixed(2)}%</b></span>
           <span>suite version <b>{cc.suite_version}</b></span>
-          <span>treasury <code className="mono">{short(cc.treasury, 8)}</code></span>
-          <span>admin <code className="mono">{short(cc.admin, 8)}</code></span>
+          <span>treasury <code className="mono">{truncateAddress(cc.treasury, 8)}</code></span>
+          <span>admin <code className="mono">{truncateAddress(cc.admin, 8)}</code></span>
         </div>
       )}
 
@@ -145,11 +144,11 @@ export default function Explorer() {
                   {r.code !== 0 && <span className="fail-tag">failed</span>}
                 </td>
                 <td className="mono small">{summarize(r)}</td>
-                <td className="mono small">{short(r.sender, 6)}</td>
+                <td className="mono small">{truncateAddress(r.sender, 6)}</td>
                 <td className="small">{r.height}</td>
                 <td>
                   <button className="linkish mono small" onClick={() => { setHash(r.txhash); lookup(r.txhash); }}>
-                    {short(r.txhash, 6)}
+                    {truncateAddress(r.txhash, 6)}
                   </button>
                 </td>
               </tr>

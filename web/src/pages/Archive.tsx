@@ -11,10 +11,7 @@ import {
   prepareCosmWasmV1Snapshot,
 } from "../lib/cosmwasm-v1";
 import { timeAgo, type RepoInfo } from "../lib/chain";
-
-function shortAddress(value: string) {
-  return `${value.slice(0, 13)}...${value.slice(-6)}`;
-}
+import { truncateAddress } from "../lib/utils";
 
 export default function Archive() {
   const navigate = useNavigate();
@@ -85,7 +82,7 @@ export default function Archive() {
         <span><b>Network</b>{COSMWASM_V1_ARCHIVE.network}</span>
         <span><b>Access</b>Live read-only</span>
         <span title={COSMWASM_V1_ARCHIVE.contract}>
-          <b>Contract</b><code>{shortAddress(COSMWASM_V1_ARCHIVE.contract)}</code>
+          <b>Contract</b><code>{truncateAddress(COSMWASM_V1_ARCHIVE.contract, 13, 6)}</code>
         </span>
         <span><b>Snapshot block</b>{snapshotBlock ?? "Loading"}</span>
       </div>

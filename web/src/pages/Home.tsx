@@ -21,13 +21,10 @@ import {
 } from "../lib/chain";
 import { useWallet } from "../lib/WalletContext";
 import { ContractTypeBadge } from "../components/ContractTypeBadge";
+import { truncateAddress } from "../lib/utils";
 
 const EVM_EXPLORER = "https://testnet-injective.cloud.blockscout.com";
 const ACTIVITY_LIMIT = 100;
-
-function shortAddr(value: string, size = 8) {
-  return value.length > size * 2 ? `${value.slice(0, size)}...${value.slice(-4)}` : value;
-}
 
 export default function Home() {
   const cfg = useMemo(() => loadConfig(), []);
@@ -246,7 +243,7 @@ export default function Home() {
                       {transaction.action || "unknown"}
                     </span>
                     <span className="activity-meta">
-                      <code>{shortAddr(transaction.sender, 6)}</code>
+                      <code>{truncateAddress(transaction.sender, 6)}</code>
                       <span>{timeAgo(Date.parse(transaction.timestamp) / 1000)}</span>
                     </span>
                     {transaction.code !== 0 && <span className="fail-tag">failed</span>}
@@ -266,7 +263,7 @@ export default function Home() {
 
       <div className="page-note">
         <span>Injective testnet</span>
-        <span>SuiteDirectory <code>{suiteConfigured ? shortAddr(cfg.suiteDirectory, 10) : "Not configured"}</code></span>
+        <span>SuiteDirectory <code>{suiteConfigured ? truncateAddress(cfg.suiteDirectory, 10) : "Not configured"}</code></span>
         {suiteConfigured ? (
           <a href={`${EVM_EXPLORER}/address/${cfg.suiteDirectory}`} target="_blank" rel="noreferrer">
             Open in Blockscout <ArrowUpRight size={13} />

@@ -18,6 +18,7 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import { Link, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import AccountMenu from "./components/AccountMenu";
 import Toast from "./components/Toast";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert";
 import { Button } from "./components/ui/button";
 import { WalletModal } from "./components/WalletModal";
@@ -374,18 +375,20 @@ export default function App() {
                 {suiteReadiness !== "checking" && <Link to="/settings">Configure</Link>}
               </div>
             )}
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/monitor" element={<Suspense fallback={<RouteSpinner />}><LazyMonitor /></Suspense>} />
-              <Route path="/explorer" element={<Suspense fallback={<RouteSpinner />}><LazyExplorer /></Suspense>} />
-              <Route path="/ipfs" element={<Suspense fallback={<RouteSpinner />}><LazyIpfsExplorer /></Suspense>} />
-              <Route path="/archive/cosmwasm-v1" element={<Suspense fallback={<RouteSpinner />}><LazyArchive /></Suspense>} />
-              <Route path="/archive/cosmwasm-v1/:owner" element={<Suspense fallback={<RouteSpinner />}><LazyArchiveOwner /></Suspense>} />
-              <Route path="/archive/cosmwasm-v1/:owner/:repo/*" element={<Suspense fallback={<RouteSpinner />}><LazyRepo key="cosmwasm-v1" contractKind="cosmwasm-v1" /></Suspense>} />
-              <Route path="/:owner" element={<Suspense fallback={<RouteSpinner />}><LazyOwner /></Suspense>} />
-              <Route path="/:owner/:repo/*" element={<Suspense fallback={<RouteSpinner />}><LazyRepo key="evm-v2" /></Suspense>} />
-            </Routes>
+            <ErrorBoundary>
+              <Routes>
+                <Route path="/" element={<Home />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="/monitor" element={<Suspense fallback={<RouteSpinner />}><LazyMonitor /></Suspense>} />
+                <Route path="/explorer" element={<Suspense fallback={<RouteSpinner />}><LazyExplorer /></Suspense>} />
+                <Route path="/ipfs" element={<Suspense fallback={<RouteSpinner />}><LazyIpfsExplorer /></Suspense>} />
+                <Route path="/archive/cosmwasm-v1" element={<Suspense fallback={<RouteSpinner />}><LazyArchive /></Suspense>} />
+                <Route path="/archive/cosmwasm-v1/:owner" element={<Suspense fallback={<RouteSpinner />}><LazyArchiveOwner /></Suspense>} />
+                <Route path="/archive/cosmwasm-v1/:owner/:repo/*" element={<Suspense fallback={<RouteSpinner />}><LazyRepo key="cosmwasm-v1" contractKind="cosmwasm-v1" /></Suspense>} />
+                <Route path="/:owner" element={<Suspense fallback={<RouteSpinner />}><LazyOwner /></Suspense>} />
+                <Route path="/:owner/:repo/*" element={<Suspense fallback={<RouteSpinner />}><LazyRepo key="evm-v2" /></Suspense>} />
+              </Routes>
+            </ErrorBoundary>
           </main>
 
           <footer className="footer">

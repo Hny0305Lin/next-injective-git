@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import type { Hex } from "viem";
 import {
@@ -7,7 +7,6 @@ import {
   Archive as ArchiveIcon,
   ArrowUpRight,
   Box,
-  CheckCircle2,
   Clock3,
   Cloud,
   Database,
@@ -16,14 +15,11 @@ import {
   HardDrive,
   Info,
   LoaderCircle,
-  MapPin,
   RefreshCw,
   Server,
   ShieldCheck,
   Wifi,
   WifiOff,
-  XCircle,
-  type LucideIcon,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "../components/ui/alert";
 import { Badge } from "../components/ui/badge";
@@ -69,45 +65,20 @@ import {
 import { rpcRequest, verifySuite } from "../lib/transport";
 import { BlockSubscriptionManager, type ConnectionState } from "../lib/block-subscription";
 import type { AppConfig } from "../lib/profile";
-
-type SourceState = "loading" | "healthy" | "not-configured" | "unavailable" | "degraded";
-
-interface SourceSnapshot {
-  state: SourceState;
-  detail: string;
-  checkedAt: number | null;
-  error?: string;
-}
-
-interface MonitorSnapshot {
-  evm: SourceSnapshot;
-  latestBlock: bigint | null;
-  activity: ContractTx[];
-  activityError: string;
-  v1: SourceSnapshot & { snapshotHeight: number | null };
-  ipfs: Record<IpfsGatewayId, IpfsGatewaySnapshot>;
-}
-
-type IpfsGatewayId = "hk" | "us";
-
-interface IpfsGatewayDefinition {
-  id: IpfsGatewayId;
-  title: string;
-  description: string;
-  region: string;
-  endpoint: string;
-  href: string;
-  icon: LucideIcon;
-}
-
-interface IpfsGatewaySnapshot extends SourceSnapshot {
-  latencyMs: number | null;
-  statusCode: number | null;
-  probeSource: "browser" | null;
-  sampleCount: number;
-  responseSamples: number;
-  reachableSamples: number;
-}
+import type {
+  SourceState,
+  MonitorSnapshot,
+  IpfsGatewayId,
+  IpfsGatewayDefinition,
+  IpfsGatewaySnapshot,
+  PublicStorageProvider,
+} from "../lib/types";
+import { SourceCard } from "./Monitor/SourceCard";
+import { MetricCard } from "./Monitor/MetricCard";
+import { IpfsGatewayCard } from "./Monitor/IpfsGatewayCard";
+import { PublicStorageProviderCard } from "./Monitor/PublicStorageProviderCard";
+import { shortAddress, formatBlock, formatCheckedAt, formatAction, activityContext, activityBuckets } from "./Monitor/utils";
+import { sourceBadge } from "./Monitor/badges";
 
 const PUBLIC_IPFS_GATEWAYS: readonly IpfsGatewayDefinition[] = [
   {
@@ -160,21 +131,6 @@ const INITIAL_SNAPSHOT: MonitorSnapshot = {
 const REFRESH_INTERVAL_MS = 90_000;
 const TENDERMINT_WS_ENDPOINT = "wss://testnet.tm.injective.network/websocket";
 
-type PublicProviderStatus = "current" | "legacy";
-
-interface PublicStorageProvider {
-  id: string;
-  title: string;
-  description: string;
-  kind: "Storage provider";
-  region: string;
-  role: string;
-  endpoint: string;
-  href: string;
-  status: PublicProviderStatus;
-  icon: LucideIcon;
-}
-
 // These are intentionally public provider facts, not live storage metrics.
 // Provider capacity and credentials remain on the server-side archive monitor.
 const PUBLIC_STORAGE_PROVIDERS: readonly PublicStorageProvider[] = [
@@ -203,214 +159,6 @@ const PUBLIC_STORAGE_PROVIDERS: readonly PublicStorageProvider[] = [
     icon: Cloud,
   },
 ];
-
-function shortAddress(value: string, size = 8) {
-  return value.length > size * 2 ? `${value.slice(0, size)}...${value.slice(-4)}` : value;
-}
-
-function formatBlock(value: bigint | number | null) {
-  return value == null ? "—" : typeof value === "bigint" ? value.toLocaleString("en-US") : value.toLocaleString("en-US");
-}
-
-function formatCheckedAt(value: number | null) {
-  return value == null ? "Not checked" : timeAgo(value / 1000);
-}
-
-function formatAction(action: string) {
-  return action.replaceAll("_", " ");
-}
-
-function activityContext(row: ContractTx) {
-  const attributes = row.attributes;
-  const repository = attributes.repo ?? attributes.repository ?? attributes.name;
-  if (repository) return repository;
-  const owner = attributes.owner ?? attributes.recipient;
-  if (owner) return shortAddress(owner, 8);
-  return "Suite module event";
-}
-
-function activityBuckets(rows: ContractTx[]) {
-  const buckets = Array.from({ length: 12 }, () => 0);
-  if (rows.length === 0) return buckets;
-  const heights = rows.map((row) => Number(row.height)).filter(Number.isFinite);
-  const minimum = Math.min(...heights);
-  const maximum = Math.max(...heights);
-  const span = Math.max(maximum - minimum, 1);
-  rows.forEach((row) => {
-    const height = Number(row.height);
-    if (!Number.isFinite(height)) return;
-    const index = Math.min(11, Math.floor(((height - minimum) / span) * 12));
-    buckets[index] += 1;
-  });
-  return buckets;
-}
-
-function sourceBadge(state: SourceState, healthyLabel = "Healthy") {
-  if (state === "healthy") {
-    return { label: healthyLabel, className: "monitor-badge-healthy", icon: CheckCircle2 };
-  }
-  if (state === "loading") {
-    return { label: "Checking", className: "monitor-badge-loading", icon: LoaderCircle };
-  }
-  if (state === "not-configured") {
-    return { label: "Not configured", className: "monitor-badge-warning", icon: AlertTriangle };
-  }
-  if (state === "degraded") {
-    return { label: "Degraded", className: "monitor-badge-warning", icon: AlertTriangle };
-  }
-  return { label: "Unavailable", className: "monitor-badge-danger", icon: XCircle };
-}
-
-function publicProviderBadge(status: PublicProviderStatus) {
-  return status === "current"
-    ? { label: "Current path", className: "monitor-badge-healthy" }
-    : { label: "Legacy copy", className: "monitor-badge-warning" };
-}
-
-function SourceCard({
-  icon: Icon,
-  title,
-  source,
-  description,
-  healthyLabel,
-  children,
-}: {
-  icon: LucideIcon;
-  title: string;
-  source: SourceSnapshot;
-  description: string;
-  healthyLabel?: string;
-  children?: ReactNode;
-}) {
-  const status = sourceBadge(source.state, healthyLabel);
-  const StatusIcon = status.icon;
-  return (
-    <Card className="monitor-source-card">
-      <CardHeader className="monitor-card-header">
-        <div className="monitor-source-title">
-          <span className="monitor-icon-tile"><Icon size={16} /></span>
-          <div>
-            <CardTitle>{title}</CardTitle>
-            <CardDescription>{description}</CardDescription>
-          </div>
-        </div>
-        <CardAction>
-          <Badge variant="outline" className={status.className}>
-            <StatusIcon className={source.state === "loading" ? "animate-spin" : undefined} />
-            {status.label}
-          </Badge>
-        </CardAction>
-      </CardHeader>
-      <CardContent className="monitor-source-content">
-        <p className="monitor-source-detail">{source.detail}</p>
-        {children}
-      </CardContent>
-    </Card>
-  );
-}
-
-function MetricCard({
-  icon: Icon,
-  label,
-  value,
-  detail,
-  loading,
-}: {
-  icon: LucideIcon;
-  label: string;
-  value: string;
-  detail: string;
-  loading?: boolean;
-}) {
-  return (
-    <Card size="sm" className="monitor-metric-card">
-      <CardContent className="monitor-metric-content">
-        <div className="monitor-metric-label"><Icon size={14} /> {label}</div>
-        {loading ? <Skeleton className="monitor-metric-skeleton" /> : <strong>{value}</strong>}
-        <span>{detail}</span>
-      </CardContent>
-    </Card>
-  );
-}
-
-function IpfsGatewayCard({
-  gateway,
-  snapshot,
-}: {
-  gateway: IpfsGatewayDefinition;
-  snapshot: IpfsGatewaySnapshot;
-}) {
-  const Icon = gateway.icon;
-  const status = sourceBadge(snapshot.state, "Reachable");
-  const StatusIcon = status.icon;
-  return (
-    <Card className="monitor-gateway-card">
-      <CardHeader className="monitor-card-header">
-        <div className="monitor-source-title">
-          <span className="monitor-icon-tile"><Icon size={16} /></span>
-          <div>
-            <CardTitle>{gateway.title}</CardTitle>
-            <CardDescription>{gateway.description}</CardDescription>
-          </div>
-        </div>
-        <CardAction>
-          <Badge variant="outline" className={status.className}>
-            <StatusIcon className={snapshot.state === "loading" ? "animate-spin" : undefined} />
-            {status.label}
-          </Badge>
-        </CardAction>
-      </CardHeader>
-      <CardContent className="monitor-node-content">
-        <div className="monitor-node-meta monitor-gateway-meta">
-          <span><MapPin size={13} /> {gateway.region}</span>
-          <span><Wifi size={13} /> {snapshot.probeSource === "browser" ? `${snapshot.sampleCount} browser samples` : "Probe pending"}</span>
-          <span><Clock3 size={13} /> {formatCheckedAt(snapshot.checkedAt)}</span>
-        </div>
-        <p className="monitor-node-role">{snapshot.detail}</p>
-        <div className="monitor-node-endpoint">
-          <code title={gateway.endpoint}>{gateway.endpoint}</code>
-          <a href={gateway.href} target="_blank" rel="noreferrer" title={`Open ${gateway.title} endpoint`}>
-            <ExternalLink size={13} /> Open gateway
-          </a>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function PublicStorageProviderCard({ provider }: { provider: PublicStorageProvider }) {
-  const Icon = provider.icon;
-  const status = publicProviderBadge(provider.status);
-  return (
-    <Card className="monitor-node-card">
-      <CardHeader className="monitor-card-header">
-        <div className="monitor-source-title">
-          <span className="monitor-icon-tile"><Icon size={16} /></span>
-          <div>
-            <CardTitle>{provider.title}</CardTitle>
-            <CardDescription>{provider.description}</CardDescription>
-          </div>
-        </div>
-        <CardAction>
-          <Badge variant="outline" className={status.className}>{status.label}</Badge>
-        </CardAction>
-      </CardHeader>
-      <CardContent className="monitor-node-content">
-        <div className="monitor-node-meta">
-          <span><MapPin size={13} /> {provider.region}</span>
-          <span><HardDrive size={13} /> {provider.kind}</span>
-        </div>
-        <p className="monitor-node-role">{provider.role}</p>
-        <div className="monitor-node-endpoint">
-          <code title={provider.endpoint}>{provider.endpoint}</code>
-          <a href={provider.href} target="_blank" rel="noreferrer" title={`Open ${provider.title} endpoint`}>
-            <ExternalLink size={13} /> Endpoint
-          </a>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
 
 async function latestEvmBlock(cfg: AppConfig): Promise<bigint> {
   const raw = await rpcRequest<Hex>(cfg, "eth_blockNumber");

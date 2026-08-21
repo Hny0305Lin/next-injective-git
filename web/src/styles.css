@@ -4337,3 +4337,70 @@ html.dark .action-badge.a-award_badge {
     gap: 4px;
   }
 }
+
+/* ============================================================
+   ErrorBoundary
+   ============================================================ */
+
+.error-boundary-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 32px;
+  background: var(--bg);
+}
+
+.error-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  max-width: 520px;
+  text-align: center;
+}
+
+.error-content svg {
+  color: var(--danger);
+}
+
+.error-content h1 {
+  font-size: 24px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.error-content p {
+  color: var(--fg-muted);
+  margin: 0;
+}
+
+.error-details {
+  width: 100%;
+  margin-top: 8px;
+  text-align: left;
+}
+
+.error-details summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--fg-muted);
+  padding: 8px;
+  border-radius: var(--radius);
+  background: var(--bg-inset);
+}
+
+.error-details summary:hover {
+  background: var(--bg-hover);
+}
+
+.error-details pre {
+  margin: 8px 0 0 0;
+  padding: 12px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 12px;
+  overflow-x: auto;
+  color: var(--danger);
+}
