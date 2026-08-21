@@ -8,8 +8,8 @@ import {
     IRecoveryState,
     ISuiteDirectory,
     SuiteIds
-} from "./suite/ISuite.sol";
-import {SuiteModule} from "./suite/SuiteModule.sol";
+} from "../suite/ISuite.sol";
+import {SuiteModule} from "../suite/SuiteModule.sol";
 
 contract RepositoryCore is SuiteModule, IRepositoryCore {
     uint256 public constant MAX_NAME_LENGTH = 64;

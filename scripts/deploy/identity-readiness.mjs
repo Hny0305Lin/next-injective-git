@@ -7,7 +7,12 @@ import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = resolve(process.argv[2] || fileURLToPath(new URL("..", import.meta.url)));
+import { existsSync } from "node:fs";
+const scriptDir = fileURLToPath(new URL(".", import.meta.url));
+const cand1 = resolve(scriptDir, "../..");
+const cand2 = resolve(scriptDir, "..");
+const autoRoot = existsSync(join(cand1, "CLAUDE.md")) ? cand1 : cand2;
+const root = resolve(process.argv[2] || autoRoot);
 const failures = [];
 const read = (relative) => readFileSync(join(root, relative), "utf8");
 const check = (condition, message) => {
@@ -22,7 +27,7 @@ try {
   process.exit(1);
 }
 
-const core = read("contracts/evm-v2/src/RepositoryCore.sol");
+const core = read("contracts/evm-v2/src/modules/RepositoryCore.sol");
 const webAbi = read("web/src/lib/abis.ts");
 const webRegistry = read("web/src/lib/registry.ts");
 const goRegistry = read("cli/internal/chain/evm_suite_registry.go");

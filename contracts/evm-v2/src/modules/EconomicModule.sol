@@ -8,8 +8,8 @@ import {
     IRepositoryCore,
     ISuiteDirectory,
     SuiteIds
-} from "./suite/ISuite.sol";
-import {SuiteModule} from "./suite/SuiteModule.sol";
+} from "../suite/ISuite.sol";
+import {SuiteModule} from "../suite/SuiteModule.sol";
 
 contract EconomicModule is SuiteModule, IEconomicOwnershipHook {
     uint16 public constant MAX_PLATFORM_FEE_BPS = 500;

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-import {IModerationPolicy, IRepositoryCore, ISuiteDirectory, SuiteIds} from "./suite/ISuite.sol";
-import {SuiteModule} from "./suite/SuiteModule.sol";
+import {IModerationPolicy, IRepositoryCore, ISuiteDirectory, SuiteIds} from "../suite/ISuite.sol";
+import {SuiteModule} from "../suite/SuiteModule.sol";
 
 contract ModerationModule is SuiteModule, IModerationPolicy {
     uint256 public constant MAX_REASON_LENGTH = 128;

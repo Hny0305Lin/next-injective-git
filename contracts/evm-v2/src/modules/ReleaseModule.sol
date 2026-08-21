@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-import {SuiteIds} from "./suite/ISuite.sol";
-import {SuiteModule} from "./suite/SuiteModule.sol";
+import {SuiteIds} from "../suite/ISuite.sol";
+import {SuiteModule} from "../suite/SuiteModule.sol";
 
 contract ReleaseModule is SuiteModule {
     uint256 public constant MAX_VERSION_LENGTH = 64;

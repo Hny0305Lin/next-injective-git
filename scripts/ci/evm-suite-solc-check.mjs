@@ -21,13 +21,13 @@ const require = createRequire(import.meta.url);
 const productionContracts = new Map([
   ["SuiteDirectory", "src/SuiteDirectory.sol"],
   ["BootstrapCoordinator", "src/BootstrapCoordinator.sol"],
-  ["RepositoryCore", "src/RepositoryCore.sol"],
-  ["RecoveryModule", "src/RecoveryModule.sol"],
-  ["ModerationModule", "src/ModerationModule.sol"],
-  ["EconomicModule", "src/EconomicModule.sol"],
-  ["UsernameModule", "src/UsernameModule.sol"],
-  ["BadgeModule", "src/BadgeModule.sol"],
-  ["ReleaseModule", "src/ReleaseModule.sol"],
+  ["RepositoryCore", "src/modules/RepositoryCore.sol"],
+  ["RecoveryModule", "src/modules/RecoveryModule.sol"],
+  ["ModerationModule", "src/modules/ModerationModule.sol"],
+  ["EconomicModule", "src/modules/EconomicModule.sol"],
+  ["UsernameModule", "src/modules/UsernameModule.sol"],
+  ["BadgeModule", "src/modules/BadgeModule.sol"],
+  ["ReleaseModule", "src/modules/ReleaseModule.sol"],
 ]);
 
 function walk(directory) {

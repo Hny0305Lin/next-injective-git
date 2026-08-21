@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-import {SuiteIds} from "./suite/ISuite.sol";
-import {SuiteModule} from "./suite/SuiteModule.sol";
+import {SuiteIds} from "../suite/ISuite.sol";
+import {SuiteModule} from "../suite/SuiteModule.sol";
 
 contract UsernameModule is SuiteModule {
     uint64 public constant ORIGINAL_OWNER_CLAIM_WINDOW = 90 days;

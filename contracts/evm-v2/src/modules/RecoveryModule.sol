@@ -8,8 +8,8 @@ import {
     IRepositoryCore,
     ISuiteDirectory,
     SuiteIds
-} from "./suite/ISuite.sol";
-import {SuiteModule} from "./suite/SuiteModule.sol";
+} from "../suite/ISuite.sol";
+import {SuiteModule} from "../suite/SuiteModule.sol";
 
 contract RecoveryModule is SuiteModule, IRecoveryState, IRecoveryOwnershipHook {
     uint256 public constant MAX_GUARDIANS = 10;

@@ -25,13 +25,13 @@ esac
 required_files=(
   contracts/evm-v2/src/SuiteDirectory.sol
   contracts/evm-v2/src/BootstrapCoordinator.sol
-  contracts/evm-v2/src/RepositoryCore.sol
-  contracts/evm-v2/src/RecoveryModule.sol
-  contracts/evm-v2/src/ModerationModule.sol
-  contracts/evm-v2/src/EconomicModule.sol
-  contracts/evm-v2/src/UsernameModule.sol
-  contracts/evm-v2/src/BadgeModule.sol
-  contracts/evm-v2/src/ReleaseModule.sol
+  contracts/evm-v2/src/modules/RepositoryCore.sol
+  contracts/evm-v2/src/modules/RecoveryModule.sol
+  contracts/evm-v2/src/modules/ModerationModule.sol
+  contracts/evm-v2/src/modules/EconomicModule.sol
+  contracts/evm-v2/src/modules/UsernameModule.sol
+  contracts/evm-v2/src/modules/BadgeModule.sol
+  contracts/evm-v2/src/modules/ReleaseModule.sol
   scripts/ci/evm-suite-solc-check.mjs
   cli/internal/chain/suite_directory.go
   cli/internal/chain/evm_suite_registry.go

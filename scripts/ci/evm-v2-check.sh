@@ -61,13 +61,13 @@ for file in \
   foundry.toml \
   src/SuiteDirectory.sol \
   src/BootstrapCoordinator.sol \
-  src/RepositoryCore.sol \
-  src/RecoveryModule.sol \
-  src/ModerationModule.sol \
-  src/EconomicModule.sol \
-  src/UsernameModule.sol \
-  src/BadgeModule.sol \
-  src/ReleaseModule.sol \
+  src/modules/RepositoryCore.sol \
+  src/modules/RecoveryModule.sol \
+  src/modules/ModerationModule.sol \
+  src/modules/EconomicModule.sol \
+  src/modules/UsernameModule.sol \
+  src/modules/BadgeModule.sol \
+  src/modules/ReleaseModule.sol \
   src/suite/ISuite.sol \
   src/suite/SuiteModule.sol \
   test/SuiteArchitecture.t.sol \

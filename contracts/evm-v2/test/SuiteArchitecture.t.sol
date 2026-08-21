@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-import {BadgeModule} from "../src/BadgeModule.sol";
+import {BadgeModule} from "../src/modules/BadgeModule.sol";
 import {BootstrapCoordinator} from "../src/BootstrapCoordinator.sol";
-import {EconomicModule} from "../src/EconomicModule.sol";
-import {ModerationModule} from "../src/ModerationModule.sol";
-import {RecoveryModule} from "../src/RecoveryModule.sol";
-import {ReleaseModule} from "../src/ReleaseModule.sol";
-import {RepositoryCore} from "../src/RepositoryCore.sol";
+import {EconomicModule} from "../src/modules/EconomicModule.sol";
+import {ModerationModule} from "../src/modules/ModerationModule.sol";
+import {RecoveryModule} from "../src/modules/RecoveryModule.sol";
+import {ReleaseModule} from "../src/modules/ReleaseModule.sol";
+import {RepositoryCore} from "../src/modules/RepositoryCore.sol";
 import {SuiteDirectory} from "../src/SuiteDirectory.sol";
-import {UsernameModule} from "../src/UsernameModule.sol";
+import {UsernameModule} from "../src/modules/UsernameModule.sol";
 import {SuiteIds} from "../src/suite/ISuite.sol";
 import {SuiteModule} from "../src/suite/SuiteModule.sol";
 
