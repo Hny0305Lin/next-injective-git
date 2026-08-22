@@ -1,3 +1,4 @@
+// Canonical moved to ./chain/chain.ts — this file remains for compatibility
 export * from "./profile";
 export * from "./errors";
 export * from "./registry";

@@ -1,0 +1,6 @@
+# Pinned toolchain — single source of truth for local dev
+# Companion: mise.toml (if using mise). Keep in sync with ci.yml / go.mod / foundry.toml.
+golang 1.22.12
+nodejs 22.12.0
+# solc 0.8.24 — managed via npm solc dep (contracts/evm-v2/package.json)
+# foundry 1.7.1 — managed via foundry-toolchain action + foundry.toml solc_version

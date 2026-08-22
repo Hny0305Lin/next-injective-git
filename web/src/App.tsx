@@ -31,18 +31,18 @@ import {
   verifySuite,
   onVerificationEvent,
 } from "./lib/chain";
-import Home from "./pages/Home";
-import Settings from "./pages/Settings";
-import { isCosmWasmV1ArchivePath } from "./pages/Repo/useRepoViews";
+import Home from "./features/home/Home";
+import Settings from "./features/settings/Settings";
+import { isCosmWasmV1ArchivePath } from "./features/repo/useRepoViews";
 import "./lib/architecture-icons";
 
-const LazyOwner = lazy(() => import("./pages/Owner"));
-const LazyRepo = lazy(() => import("./pages/Repo/index"));
-const LazyExplorer = lazy(() => import("./pages/Explorer"));
-const LazyMonitor = lazy(() => import("./pages/Monitor"));
-const LazyIpfsExplorer = lazy(() => import("./pages/IpfsExplorer"));
-const LazyArchive = lazy(() => import("./pages/Archive"));
-const LazyArchiveOwner = lazy(() => import("./pages/ArchiveOwner"));
+const LazyOwner = lazy(() => import("./features/owner/Owner"));
+const LazyRepo = lazy(() => import("./features/repo/index"));
+const LazyExplorer = lazy(() => import("./features/explorer/Explorer"));
+const LazyMonitor = lazy(() => import("./features/monitor/Monitor"));
+const LazyIpfsExplorer = lazy(() => import("./features/ipfs/IpfsExplorer"));
+const LazyArchive = lazy(() => import("./features/archive/Archive"));
+const LazyArchiveOwner = lazy(() => import("./features/archive/ArchiveOwner"));
 
 const primaryNav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },

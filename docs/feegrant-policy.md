@@ -1,11 +1,7 @@
-# Gas Sponsorship Status
+# Moved
 
-The former chain-native feegrant wrappers are not part of the immutable EVM
-Suite runtime or default CI/release path. Every current write is a legacy EVM
-transaction paid by its signer with explicit estimated gas and a minimum gas
-price of `160000000 wei`.
+This document has been moved to [`operations/feegrant-policy.md`](operations/feegrant-policy.md).
 
-Any future user gas sponsorship must be designed as a separate EVM-compatible
-service with bounded authorization, replay protection, rate limits, accounting,
-and abuse controls. It must not introduce a second chain backend or bypass
-SuiteDirectory verification.
+Please update your links. This shim will be removed after one release cycle.
+
+See [LEGACY_PATHS.md](LEGACY_PATHS.md) for full mapping.

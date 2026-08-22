@@ -1,3 +1,4 @@
+// Canonical moved to ./chain/modules.ts — this file remains for compatibility
 import { zeroAddress, type Address, type Hex } from "viem";
 import { toEvmAddress, toInjectiveAddress } from "./address";
 import {

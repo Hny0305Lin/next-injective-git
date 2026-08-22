@@ -1,3 +1,4 @@
+// Canonical moved to ./chain/registry.ts — this file remains for compatibility
 import { zeroAddress, zeroHash, type Address, type Hex } from "viem";
 import { sameAddress, toEvmAddress, toInjectiveAddress } from "./address";
 import { readModule, verifySuite, writeModule, type Eip1193, type SuiteBinding } from "./transport";

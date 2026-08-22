@@ -264,7 +264,12 @@ func workingBinary(ctx context.Context, configured string, args []string) (strin
 	if err != nil {
 		return "", false
 	}
-	checkCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	// 30s instead of a tight timeout: on Windows runners the first execution of
+	// a freshly extracted binary can stall while Defender scans it, which made
+	// the pinned Kubo smoke test report "its version command failed" even
+	// though the install itself was sound. Healthy daemons answer in <1s, so
+	// only pathological binaries ever pay the full window.
+	checkCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if err := exec.CommandContext(checkCtx, path, args...).Run(); err != nil {
 		return "", false

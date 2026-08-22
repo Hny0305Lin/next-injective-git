@@ -52,9 +52,10 @@ example, source artifact, or unreviewed deployment.
 (cd cli && go vet ./... && go test ./...)
 (cd web && npm ci && npm run test:api && npm run typecheck && npm run build)
 npm ci --prefix contracts/evm-v2
-bash scripts/evm-v2-check.sh --required
-bash scripts/suite-readiness.sh --required
-bash scripts/migration-cutover-readiness-test.sh
+bash scripts/ci/evm-v2-check.sh --required
+bash scripts/ci/suite-readiness.sh --required
+bash scripts/migration/migration-cutover-readiness-test.sh
+# Or via Make: make vet test check
 ```
 
 CI also runs Go race tests, native Windows tests, source/profile guards, and

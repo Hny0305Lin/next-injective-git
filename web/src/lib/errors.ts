@@ -1,3 +1,4 @@
+// Canonical moved to ./chain/errors.ts — this file remains for compatibility
 export class SuiteConfigurationError extends Error {
   constructor(message = "EVM SuiteDirectory is not configured for this network profile") {
     super(message);

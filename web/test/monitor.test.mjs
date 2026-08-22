@@ -18,7 +18,7 @@ test("public Monitor is routed and suppresses the duplicate global Suite alert",
 });
 
 test("Monitor composes shadcn primitives and remains wallet independent", async () => {
-  const monitor = await source("../src/pages/Monitor.tsx");
+  const monitor = await source("../src/features/monitor/Monitor.tsx");
   for (const primitive of ["Card", "Badge", "Tabs", "Alert", "Skeleton", "Table", "Tooltip", "Separator", "Button"]) {
     assert.match(monitor, new RegExp(`<${primitive}(?:[\\s>])`), `${primitive} is not used by Monitor`);
   }
@@ -28,7 +28,7 @@ test("Monitor composes shadcn primitives and remains wallet independent", async 
 });
 
 test("Monitor exposes V1 status without enumerating or ranking V1 repositories", async () => {
-  const monitor = await source("../src/pages/Monitor.tsx");
+  const monitor = await source("../src/features/monitor/Monitor.tsx");
   assert.match(monitor, /prepareCosmWasmV1Snapshot/);
   assert.match(monitor, /COSMWASM_V1_ARCHIVE\.explorer/);
   assert.doesNotMatch(monitor, /listCosmWasmV1Repos|listCosmWasmV1Refs|leaderboard|ranking/i);
@@ -37,7 +37,7 @@ test("Monitor exposes V1 status without enumerating or ranking V1 repositories",
 
 test("Monitor activity retains an explicit bounded observation window", async () => {
   assert.equal(EVM_ACTIVITY_BLOCK_WINDOW, 100_000);
-  const monitor = await source("../src/pages/Monitor.tsx");
+  const monitor = await source("../src/features/monitor/Monitor.tsx");
   const activity = await source("../src/lib/activity.ts");
   assert.match(monitor, /EVM_ACTIVITY_BLOCK_WINDOW\.toLocaleString/);
   assert.match(activity, /BigInt\(EVM_ACTIVITY_BLOCK_WINDOW\)/);
@@ -45,7 +45,7 @@ test("Monitor activity retains an explicit bounded observation window", async ()
 });
 
 test("Monitor keeps HK and US in one IPFS gateway surface", async () => {
-  const monitor = await source("../src/pages/Monitor.tsx");
+  const monitor = await source("../src/features/monitor/Monitor.tsx");
   assert.match(monitor, /IPFS gateways/);
   assert.match(monitor, /Hong Kong gateway/);
   assert.match(monitor, /US gateway/);
@@ -57,7 +57,7 @@ test("Monitor keeps HK and US in one IPFS gateway surface", async () => {
 });
 
 test("Monitor keeps Filebase and Fil.one as provider metadata", async () => {
-  const monitor = await source("../src/pages/Monitor.tsx");
+  const monitor = await source("../src/features/monitor/Monitor.tsx");
   assert.match(monitor, /External archive providers/);
   assert.match(monitor, /Filebase/);
   assert.match(monitor, /https:\/\/s3\.filebase\.com/);
@@ -68,7 +68,7 @@ test("Monitor keeps Filebase and Fil.one as provider metadata", async () => {
 });
 
 test("Monitor measures each gateway directly from the browser using three-sample medians", async () => {
-  const monitor = await source("../src/pages/Monitor.tsx");
+  const monitor = await source("../src/features/monitor/Monitor.tsx");
   const probe = await source("../src/lib/ipfs-probe.ts");
   assert.match(probe, /BROWSER_GATEWAY_PROBE_SAMPLE_COUNT = 3/);
   assert.match(probe, /samples\.push\(await probeGatewayOnce/);
@@ -81,7 +81,7 @@ test("Monitor measures each gateway directly from the browser using three-sample
 });
 
 test("Monitor automatically refreshes all probes every 90 seconds", async () => {
-  const monitor = await source("../src/pages/Monitor.tsx");
+  const monitor = await source("../src/features/monitor/Monitor.tsx");
   assert.match(monitor, /const REFRESH_INTERVAL_MS = 90_000;/);
   assert.match(monitor, /window\.setInterval\(\(\) => void refresh\(\), REFRESH_INTERVAL_MS\)/);
   assert.match(monitor, /detail=\{`auto refresh · \$\{REFRESH_INTERVAL_MS \/ 1000\}s`\}/);

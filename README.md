@@ -51,7 +51,10 @@ clients accept only `ipfs://` pack URIs. See
 | `contracts/evm-v2/` | Immutable Solidity Suite, checked ABIs/artifacts, and Foundry tests |
 | `cli/` | `igit`, `git-remote-igit`, deployment and offline migration tools |
 | `web/` | React/Vite browser UI using viem for Suite reads and legacy EVM transactions |
-| `scripts/` | Source, release, migration evidence, IPFS replication, and operations gates |
+| `scripts/ci/` | Immutable Suite, Solc, and migration cutover gates |
+| `scripts/ops/` | IPFS replication, monitoring, and indexer operations |
+| `scripts/deploy/` | Gateway and testnet deployment helpers |
+| `scripts/migration/` | Cutover evidence and migration gates |
 | `archive/cosmwasm-v1/` | Isolated read-only V1 source, protocol material, and evidence tools |
 
 The Suite consists of `SuiteDirectory`, `BootstrapCoordinator`,
@@ -106,10 +109,13 @@ Historical locators resolve through immutable aliases to the canonical repo ID.
 
 # Solidity, fixed solc 0.8.24
 npm ci --prefix contracts/evm-v2
-bash scripts/evm-v2-check.sh --required
+bash scripts/ci/evm-v2-check.sh --required
 
 # Full immutable-Suite source gate
-bash scripts/suite-readiness.sh --required
+bash scripts/ci/suite-readiness.sh --required
+
+# Or via Makefile
+make vet && make test && make check
 ```
 
 Foundry is pinned by CI. All Injective EVM writes use estimated gas, explicit
@@ -137,7 +143,7 @@ The default profile is changed only after this gate passes against real,
 reviewed evidence:
 
 ```sh
-bash scripts/migration-cutover-readiness.sh EVIDENCE_DIR EXPECTED_COMMIT
+bash scripts/migration/migration-cutover-readiness.sh EVIDENCE_DIR EXPECTED_COMMIT
 ```
 
 The gate checks evidence hashes, approval binding, deployment receipts,

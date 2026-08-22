@@ -1,3 +1,5 @@
+# DEPRECATED: moved to scripts/ops/systemd/kubo-us.service
+# Compatibility shim — please update install scripts to new path.
 [Unit]
 Description=igit US Kubo IPFS daemon
 After=network.target

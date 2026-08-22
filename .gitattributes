@@ -15,3 +15,13 @@ contracts/evm-v2/**/*.sol text eol=lf
 contracts/evm-v2/abi/*.json text eol=lf
 contracts/evm-v2/artifacts/*.json text eol=lf
 cli/internal/chain/abi/*.json text eol=lf
+cli/internal/evm/abi/*.json text eol=lf
+
+# Standardized scripts/ subdirectories — keep LF for cross-platform execution.
+scripts/**/*.sh text eol=lf
+scripts/**/*.mjs text eol=lf
+scripts/**/*.ps1 text eol=lf
+
+# CLI internal packages and generated ABIs — LF for reproducible builds.
+cli/internal/**/*.go text eol=lf
+cli/tools/** text eol=lf
