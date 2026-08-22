@@ -12,19 +12,42 @@ import (
 )
 
 // LoadPrivateKey loads and decrypts a private key from keystore
-func LoadPrivateKey(keystorePath string) (*ecdsa.PrivateKey, error) {
+func LoadPrivateKey(keystorePath string, passphraseFile string) (*ecdsa.PrivateKey, error) {
 	// Read keystore file
 	data, err := os.ReadFile(keystorePath)
 	if err != nil {
 		return nil, fmt.Errorf("read keystore: %w", err)
 	}
 
-	// Prompt for passphrase (no echo)
-	fmt.Fprint(os.Stderr, "🔐 Enter keystore passphrase: ")
-	passphrase, err := term.ReadPassword(int(syscall.Stdin))
-	fmt.Fprintln(os.Stderr)
-	if err != nil {
-		return nil, fmt.Errorf("read passphrase: %w", err)
+	var passphrase []byte
+
+	// Read passphrase from file if provided (TESTING ONLY)
+	if passphraseFile != "" {
+		fmt.Fprintf(os.Stderr, "⚠️  Reading passphrase from file (INSECURE - testing only)\n")
+		passphrase, err = os.ReadFile(passphraseFile)
+		if err != nil {
+			return nil, fmt.Errorf("read passphrase file: %w", err)
+		}
+		// Trim trailing newline/whitespace
+		passphraseStr := string(passphrase)
+		// Remove all trailing whitespace including \r\n
+		for len(passphraseStr) > 0 {
+			lastChar := passphraseStr[len(passphraseStr)-1]
+			if lastChar == '\n' || lastChar == '\r' || lastChar == ' ' || lastChar == '\t' {
+				passphraseStr = passphraseStr[:len(passphraseStr)-1]
+			} else {
+				break
+			}
+		}
+		passphrase = []byte(passphraseStr)
+	} else {
+		// Prompt for passphrase (no echo)
+		fmt.Fprint(os.Stderr, "🔐 Enter keystore passphrase: ")
+		passphrase, err = term.ReadPassword(int(syscall.Stdin))
+		fmt.Fprintln(os.Stderr)
+		if err != nil {
+			return nil, fmt.Errorf("read passphrase: %w", err)
+		}
 	}
 
 	// Decrypt keystore

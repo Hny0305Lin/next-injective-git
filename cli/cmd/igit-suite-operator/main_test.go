@@ -18,16 +18,16 @@ func TestRun_RequiresManifestAndKeystore(t *testing.T) {
 }
 
 func TestRun_AcceptsDryRun(t *testing.T) {
-	// Test that dry-run flag is accepted
-	// This will fail until we create test fixtures
+	// Test that dry-run flag is accepted with passphrase file
 	code := run([]string{
 		"--manifest", "test-manifest.json",
 		"--keystore", "test-keystore.json",
+		"--passphrase-file", "test-passphrase.txt",
 		"--dry-run",
 	})
-	// Expected to fail due to missing files, but should parse args correctly
-	if code != 1 {
-		t.Logf("expected exit code 1 (missing files), got %d", code)
+	// Should succeed in dry-run mode
+	if code != 0 {
+		t.Errorf("expected exit code 0 for successful dry-run, got %d", code)
 	}
 }
 

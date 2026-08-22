@@ -3,9 +3,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"time"
+
+	"github.com/ethereum/go-ethereum/common"
 )
 
 func main() {
@@ -14,13 +18,14 @@ func main() {
 
 func run(args []string) int {
 	var (
-		manifestPath string
-		keystorePath string
-		journalPath  string
-		rpcURL       string
-		chainID      uint64
-		gasPrice     uint64
-		dryRun       bool
+		manifestPath     string
+		keystorePath     string
+		journalPath      string
+		rpcURL           string
+		chainID          uint64
+		gasPrice         uint64
+		dryRun           bool
+		passphraseFile   string
 	)
 
 	flags := flag.NewFlagSet("igit-suite-operator", flag.ContinueOnError)
@@ -31,6 +36,7 @@ func run(args []string) int {
 	flags.Uint64Var(&chainID, "chain-id", 1439, "EVM chain ID (1439 for testnet)")
 	flags.Uint64Var(&gasPrice, "gas-price", 160000000, "gas price in wei (minimum 160000000)")
 	flags.BoolVar(&dryRun, "dry-run", false, "verify setup without broadcasting")
+	flags.StringVar(&passphraseFile, "passphrase-file", "", "file containing keystore passphrase (TESTING ONLY, insecure)")
 
 	if err := flags.Parse(args); err != nil {
 		return 2
@@ -56,7 +62,7 @@ func run(args []string) int {
 
 	// Load private key from keystore
 	fmt.Println("\n🔓 Loading keystore...")
-	privateKey, err := LoadPrivateKey(keystorePath)
+	privateKey, err := LoadPrivateKey(keystorePath, passphraseFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading keystore: %v\n", err)
 		return 1
@@ -83,31 +89,45 @@ func run(args []string) int {
 	}
 	fmt.Printf("✅ Manifest loaded: %d batches\n", len(manifest.Batches))
 
-	// Recover from journal
-	fmt.Println("\n🔄 Recovering from journal...")
-	lastEntry := journal.LastEntry()
-	if lastEntry != nil {
-		fmt.Printf("📌 Last entry: Batch %d, Status: %s\n", lastEntry.BatchIndex, lastEntry.Status)
-
-		// Check if we need to query receipt for uncertain status
-		if lastEntry.Status == StatusBroadcast || lastEntry.Status == StatusUncertain {
-			fmt.Printf("⚠️  Last transaction uncertain, checking status...\n")
-			fmt.Printf("   Tx Hash: %s\n", lastEntry.TxHash)
-			// TODO: Query receipt and update journal
-			fmt.Println("   [Receipt query not yet implemented]")
-		}
-	} else {
-		fmt.Println("📌 No previous entries, starting fresh")
-	}
-
 	if dryRun {
+		fmt.Println("\n🔄 Recovering from journal...")
+		lastEntry := journal.LastEntry()
+		if lastEntry != nil {
+			fmt.Printf("📌 Last entry: Batch %d, Status: %s\n", lastEntry.BatchIndex, lastEntry.Status)
+
+			// Check if we need to query receipt for uncertain status
+			if lastEntry.Status == StatusBroadcast || lastEntry.Status == StatusUncertain {
+				fmt.Printf("⚠️  Last transaction uncertain, checking status...\n")
+				fmt.Printf("   Tx Hash: %s\n", lastEntry.TxHash)
+				fmt.Println("   [Would query receipt in non-dry-run mode]")
+			}
+		} else {
+			fmt.Println("📌 No previous entries, starting fresh")
+		}
+
 		fmt.Println("\n✅ Dry run completed successfully!")
 		return 0
 	}
 
-	// TODO: Implement batch execution loop
-	fmt.Println("\n⚠️  Batch execution not yet implemented")
-	fmt.Println("   Next step: Implement ExecuteBatches() function")
+	// Execute batches
+	fmt.Println("\n🚀 Starting batch execution...")
 
+	coordinatorAddr := common.HexToAddress(manifest.Coordinator)
+	execConfig := ExecutionConfig{
+		RPC:              rpcURL,
+		ChainID:          chainID,
+		GasPrice:         gasPrice,
+		ReceiptTimeout:   5 * time.Minute,
+		DryRun:           dryRun,
+		CoordinatorAddr:  coordinatorAddr,
+	}
+
+	ctx := context.Background()
+	if err := ExecuteBatches(ctx, manifest, journal, privateKey, execConfig); err != nil {
+		fmt.Fprintf(os.Stderr, "Execution error: %v\n", err)
+		return 1
+	}
+
+	fmt.Println("\n🎉 Deployment completed successfully!")
 	return 0
 }
