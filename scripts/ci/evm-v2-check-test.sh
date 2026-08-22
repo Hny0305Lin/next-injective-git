@@ -57,6 +57,10 @@ run_required_file_failure() {
   local relative path output
 
   mkdir -p "$fixture/scripts" "$fixture/contracts/evm-v2"
+  # Marker file so the gate's ROOT fallback chain stops at the fixture instead
+  # of escaping to the enclosing git repository via `git rev-parse`. The gate's
+  # final fallback only honors CLAUDE.md, so that is the marker to plant.
+  printf 'fixture\n' > "$fixture/CLAUDE.md"
   cp -- "$GATE" "$fixture/scripts/evm-v2-check.sh"
   for relative in "${required_files[@]}"; do
     path="$fixture/contracts/evm-v2/$relative"

@@ -8,7 +8,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$root = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
 try {
   $evidenceItem = Get-Item -LiteralPath $EvidenceDirectory -Force -ErrorAction Stop
 } catch {
