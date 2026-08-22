@@ -1,8 +1,24 @@
 #!/usr/bin/env bash
-# End-to-end test against Injective testnet + local Kubo.
-# Requires: igit + git-remote-inj installed, ipfs daemon running,
+# LEGACY CosmWasm V1 end-to-end test against Injective testnet + local Kubo.
+# This script mutates a real testnet repository and intentionally uses the V1
+# Cosmos signer. Run it through legacy-v1-e2e.sh (or set the explicit opt-in
+# below); it is not an EVM V2 acceptance gate.
+# Requires: igit + git-remote-igit installed, ipfs daemon running,
 #           igit config with contract_address/key_name, funded key.
 set -uo pipefail
+
+if [[ "${IGIT_ALLOW_LEGACY_V1:-}" != "1" ]]; then
+  echo "refusing to run the legacy V1 testnet E2E without IGIT_ALLOW_LEGACY_V1=1" >&2
+  echo "use scripts/legacy-v1-e2e.sh for an explicit opt-in" >&2
+  exit 2
+fi
+
+for command_name in igit injectived git; do
+  if ! command -v "$command_name" >/dev/null 2>&1; then
+    echo "required command not found: $command_name" >&2
+    exit 2
+  fi
+done
 
 WORK=$(mktemp -d /tmp/igit-e2e.XXXX)
 REPO="e2e-$(date +%s)"

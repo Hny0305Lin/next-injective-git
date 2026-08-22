@@ -40,7 +40,7 @@ export default function CommitView({
   if (!meta) return <div className="spinner" aria-live="polite">loading commit…</div>;
 
   const msg = meta.message.split("\n")[0];
-  const dateStr = meta.timestamp ? new Date(meta.timestamp).toLocaleString() : "";
+  const dateStr = meta.timestamp ? new Date(meta.timestamp * 1000).toLocaleString() : "";
 
   return (
     <div>

@@ -1,13 +1,22 @@
-# igit 去中心化基建架构（as-built）
+# iGit IPFS 数据面基建（as-built）
 
-> 状态：已部署并验证（2026-08）。本文记录**当前实际跑着的**基建——HK 热层网关、美国全量 Kubo、Fil.one CAR 归档、受限 CID 同步、域名/TLS、SSH 加固与 swarm 直连。
-> 选型/调研过程见 [pinning-infrastructure.md](./pinning-infrastructure.md)；本文是「建成后」的权威参考。
+> [!IMPORTANT]
+> 本文的“已部署并验证（2026-08）”只指 HK/US Kubo、网关、CAR 归档、CID
+> 同步、TLS 和 SSH 等 **IPFS 数据面**。文中的 `repo-registry`、CosmWasm
+> `update_ref` 和交易轮询描述属于 V1 历史控制面，不代表 EVM Suite 已部署、
+> 已迁移或已切流。EVM V2 的公开 `SuiteDirectory` 仍须等待完整 cutover 证据。
 
-## 1. 拓扑总览
+本文是当前 IPFS 适配器的建成记录，不是永久产品架构。Kubo/IPFS 不再被定义
+为项目核心；Amazon S3 和 Cloudflare R2 是计划中的可插拔 pack 存储方向，尚未
+实现。当前不可变 Suite 只接受 `ipfs://`，因此该方向需要后续协议和迁移，见
+[ADR 0002](adr/0002-pluggable-pack-storage.md)。选型过程见
+[pinning-infrastructure.md](./pinning-infrastructure.md)。
+
+## 1. 数据面与 V1 历史控制面
 
 ```
-   ┌─────────────────── 写入路径 ───────────────────┐
-   igit push ─▶ Injective 合约 repo-registry
+   ┌────────────── V1 历史写入/归档路径 ──────────────┐
+   V1 igit push ─▶ CosmWasm V1 repo-registry
                   update_ref(pack_uris = ipfs://<cid>)
                           │  (每 2 分钟轮询)
                  ┌────────▼─────────┐
@@ -29,6 +38,11 @@
 
 - **持久化副本**：推送者本地 Kubo、美国全量 Kubo、Fil.one CAR 归档。香港仅负责热缓存。
 - **大陆可达**：走自家 HK CN2 域名(HTTPS 直达，已实测)，不依赖任何被墙的公共网关。
+- **控制面边界**：上图的 V1 交易轮询只用于解释历史归档来源。当前 EVM V2
+  目标路径由 `SuiteDirectory` 定位 `RepositoryCore`；在真实 cutover 前，任何
+  indexer/reaper 都不得把旧 V1 地址或测试地址当作 EVM 生产配置。
+- **平台边界**：运维人员历史上把部分 SSH 凭据放在 WSL 中，不表示普通 Windows
+  客户端依赖 WSL2。EVM V2 的产品验收要求 Windows 和 Linux 分别使用原生环境。
 
 ## 2. 组件明细
 
@@ -52,7 +66,10 @@
 
 ### 2.4 美国全量 Kubo + Fil.one CAR 归档
 - 美国节点 `162.35.187.224`，Debian 13，Kubo v0.42.0，`/var/lib/ipfs` StorageMax 850GB；PeerID `12D3KooWBGyxqNM3q6nHvacFfqnwoXP2uXxP36uSPab2p16ywfFS`。
-- `igit-archive-indexer.timer` 每 5 分钟分页扫描所有历史 `update_ref`，将 CID Pin 到美国节点，再导出 CAR 到 Fil.one bucket `us101010`（`https://us-east-1.s3.fil.one`）。
+- `igit-archive-indexer.timer` 每 5 分钟分页扫描 CosmWasm V1 的历史
+  `update_ref`，将 CID Pin 到美国节点，再导出 CAR 到 Fil.one bucket
+  `us101010`（`https://us-east-1.s3.fil.one`）。这是 V1 归档流程，不是 EVM
+  Suite indexer。
 - 对象键为 `cars/v1/<CID前两位>/<CID>.car`；上传后通过 `HeadObject` 校验 `x-amz-meta-sha256`，成功才写入 `/var/lib/igit-archive/archived.tsv`。
 - `igit-durable-cid-sync.timer` 用受限 SSH 用户把已验证 CID 清单同步到香港；该账号仅能调用格式校验后的接收命令，不能取得 shell。
 - `igit-archive-monitor.timer` 每小时检查 Kubo、归档/同步定时器、美国 Pin 与 Fil.one CAR 对象数量、以及 1TB 用量阈值；异常通过 Resend 发邮件。
@@ -65,17 +82,19 @@
 - 清理仅作用于 `/var/lib/igit/durable-cids.list` 中已确认美国 Pin 和 Fil.one CAR 成功的 CID；未确认 CID 会跳过。
 
 ### 2.7 SSH 加固 与 swarm/4001
-- **仅密钥登录**：`scripts/gateway-ssh-harden.sh` 写 `/etc/ssh/sshd_config.d/99-igit-hardening.conf`（`PasswordAuthentication no`、`PermitRootLogin prohibit-password`）。登录密钥 `~/.ssh/igit_hk`（WSL 侧，唯一入口；应急走 VPS 控制台）。
+- **仅密钥登录**：`scripts/gateway-ssh-harden.sh` 写 `/etc/ssh/sshd_config.d/99-igit-hardening.conf`（`PasswordAuthentication no`、`PermitRootLogin prohibit-password`）。历史运维登录密钥位于 `~/.ssh/igit_hk`（WSL 侧，唯一入口；应急走 VPS 控制台）；这是服务器运维事实，不是 Windows 客户端运行要求。
 - **4001（TCP+UDP/QUIC）已开放**：服务器无 ufw/iptables/nft 规则、云侧不限端口。大陆 `ipfs swarm connect` 到 HK 实测成功（TCP+QUIC），为下文 CLI 加速打好基础。
 
 ### 2.8 US 受控复制数据面（staged）
 - `igit-replicationd` 已部署到 `162.35.187.224`，systemd 服务监听 loopback
   `127.0.0.1:8088`；nginx 仅发布两个受控 HTTPS POST 路由。
 - 2026-08-03 已完成真实授权、Pin、SHA-256 校验和同 JTI 重放验收；证据见
-  [acceptance-evidence.md](acceptance-evidence.md)。
+  当时的历史记录。该数据面验收不等于
+  [EVM cutover evidence](acceptance-evidence.md)。
 - Prometheus textfile monitor 已启用。
-- TTL reaper timer **保持禁用**，直到主网 `repo-registry` 合约地址和正式身份
-  签发服务配置完成；不能使用 testnet 地址替代生产配置。
+- TTL reaper timer **保持禁用**。旧条件依赖 V1 `repo-registry`；EVM cutover
+  后必须改为绑定证据批准的 `SuiteDirectory`、`RepositoryCore` ref 状态和正式
+  身份签发服务。不能使用旧 V1 地址、fixture 或 testnet 地址替代生产配置。
 
 ## 3. 脚本清单（均已入库、无密钥，root 在服务器执行）
 
@@ -133,7 +152,18 @@ HK 直连地址（默认已内置）：
 /ip4/45.202.249.80/tcp/4001/p2p/12D3KooWRfRoRqEyC4Qsb4ow2yfGsSAAymTFSxj6vr2SYQnxk55W
 ```
 
-## 7. 运维速查
+## 7. 产品方向：可插拔 Pack 存储
+
+- 当前实现只支持 `ipfs://`，Push 使用本地 Kubo 和受控复制，Clone/Fetch 使用
+  HTTPS IPFS 网关。
+- 目标是把 pack 上传、持久化和读取放在存储适配器后面；选择 Amazon S3 或
+  Cloudflare R2 的用户不需要安装 Kubo。
+- S3/R2 适配器必须验证稳定内容摘要，先确认对象持久化再提交链上 ref，并且
+  不能把 access key、secret、临时 token 或预签名 URL 写到链上或 Git remote。
+- 由于当前 Suite 不可升级且只接受 `ipfs://`，该方向需要 successor Suite、
+  明确的 URI/摘要格式、历史 pack 映射和 Linux/Windows E2E；目前只是 roadmap。
+
+## 8. 运维速查
 
 ```bash
 # SSH（仅密钥）

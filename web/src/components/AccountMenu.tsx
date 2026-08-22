@@ -31,6 +31,7 @@ export default function AccountMenu() {
         {" · "}
         {connected.address.slice(0, 7)}…{connected.address.slice(-4)}
       </button>
+      {!connected.writable && <div className="muted small" role="status">Switch to Injective EVM testnet to write</div>}
       {open && (
         <div className="account-menu" role="menu">
           <div className="account-menu-row">

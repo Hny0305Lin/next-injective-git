@@ -2,9 +2,33 @@
 package i18n
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
+
+// ErrorCode identifies behavior independently from the localized message
+// presented to the user.
+type ErrorCode string
+
+// CodedError keeps a stable machine-readable code alongside a localized error.
+type CodedError struct {
+	code ErrorCode
+	err  error
+}
+
+func (e *CodedError) Error() string { return e.err.Error() }
+
+func (e *CodedError) Unwrap() error { return e.err }
+
+// Code returns the stable behavior identifier for this error.
+func (e *CodedError) Code() ErrorCode { return e.code }
+
+// Is lets errors.Is traverse nested and joined error trees by stable code.
+func (e *CodedError) Is(target error) bool {
+	coded, ok := target.(*CodedError)
+	return ok && e.code == coded.code
+}
 
 // Text returns the Chinese translation when the user's locale is one of the
 // four supported Chinese regions, and English otherwise.
@@ -18,6 +42,16 @@ func Text(english, chinese string) string {
 // Errorf formats a localized error message.
 func Errorf(english, chinese string, args ...any) error {
 	return fmt.Errorf(Text(english, chinese), args...)
+}
+
+// ErrorfCode formats a localized error and attaches a stable behavior code.
+func ErrorfCode(code ErrorCode, english, chinese string, args ...any) error {
+	return &CodedError{code: code, err: fmt.Errorf(Text(english, chinese), args...)}
+}
+
+// HasCode reports whether err or a wrapped error carries code.
+func HasCode(err error, code ErrorCode) bool {
+	return errors.Is(err, &CodedError{code: code})
 }
 
 // IsChineseLocale reports whether locale is one of the explicitly supported

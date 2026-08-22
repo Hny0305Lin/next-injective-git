@@ -1,0 +1,20 @@
+{
+  "chainId": 1439,
+  "directory": "0x0000000000000000000000000000000000000000",
+  "coordinator": "0x0000000000000000000000000000000000000000",
+  "snapshotRoot": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "batches": [
+    {
+      "index": 0,
+      "callData": "0x00000000",
+      "gasLimit": 100000,
+      "comment": "Test batch 0 - placeholder"
+    },
+    {
+      "index": 1,
+      "callData": "0x00000001",
+      "gasLimit": 150000,
+      "comment": "Test batch 1 - placeholder"
+    }
+  ]
+}

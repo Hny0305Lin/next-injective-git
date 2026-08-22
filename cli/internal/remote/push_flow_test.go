@@ -12,14 +12,43 @@ import (
 )
 
 type fakeChain struct {
-	updateErr error
-	updates   int
-	deletes   int
+	updateErr   error
+	resolveErr  error
+	resolved    *chain.ResolvedRepo
+	resolveCall int
+	updates     int
+	deletes     int
 }
 
+func (f *fakeChain) ResolveRepo(owner, repo string) (*chain.ResolvedRepo, error) {
+	f.resolveCall++
+	if f.resolveErr != nil {
+		return nil, f.resolveErr
+	}
+	if f.resolved != nil {
+		return f.resolved, nil
+	}
+	return &chain.ResolvedRepo{
+		Backend:     chain.BackendEVM,
+		Requested:   chain.RepoLocator{Owner: owner, Name: repo},
+		Canonical:   chain.RepoLocator{Owner: owner, Name: repo},
+		IsCanonical: true,
+		Info:        chain.RepoInfo{Owner: owner, Name: repo, DefaultBranch: "main"},
+	}, nil
+}
 func (f *fakeChain) ListRefs(string, string) ([]chain.RefInfo, error)            { return nil, nil }
+func (f *fakeChain) ListRepos(string) ([]chain.RepoInfo, error)                  { return nil, nil }
 func (f *fakeChain) RepoInfo(string, string) (*chain.RepoInfo, error)            { return nil, nil }
 func (f *fakeChain) ResolveRef(string, string, string) (string, []string, error) { return "", nil, nil }
+func (f *fakeChain) ListCollaborators(string, string) ([]chain.CollaboratorInfo, error) {
+	return nil, nil
+}
+func (f *fakeChain) CreateRepo(string, string, string) error              { return nil }
+func (f *fakeChain) ResolveUsername(string) (string, error)               { return "", nil }
+func (f *fakeChain) SetCollaborator(string, string, string, string) error { return nil }
+func (f *fakeChain) UpdateRepoInfo(string, *string, *string) error {
+	panic("remote helper must not update repository metadata")
+}
 func (f *fakeChain) DeleteRef(string, string, string) error {
 	f.deletes++
 	return nil
@@ -149,5 +178,99 @@ func TestDeletePreflightDoesNotRequireKubo(t *testing.T) {
 	}
 	if c.deletes != 1 || i.add != 0 {
 		t.Fatalf("deletes=%d add=%d", c.deletes, i.add)
+	}
+}
+
+func TestMovedRepositoryStopsBeforePreflightPackIPFSAndWrite(t *testing.T) {
+	canonicalOwner := "inj1canonical"
+	c := &fakeChain{resolved: &chain.ResolvedRepo{
+		Backend:     chain.BackendEVM,
+		Requested:   chain.RepoLocator{Owner: "inj1owner", Name: "repo"},
+		Canonical:   chain.RepoLocator{Owner: canonicalOwner, Name: "repo"},
+		IsCanonical: false,
+		Info:        chain.RepoInfo{Owner: canonicalOwner, Name: "repo", DefaultBranch: "main"},
+	}}
+	i, r := &fakeIPFS{}, &fakeAuthorizer{}
+	var out bytes.Buffer
+	h := NewHelper(
+		RepoURL{Owner: "inj1owner", Repo: "repo"},
+		c,
+		i,
+		r,
+		[]string{"/dns4/us.example/tcp/4001/p2p/peer"},
+		fakeGit{},
+		strings.NewReader(""),
+		&out,
+		io.Discard,
+	)
+	preflightCalled := false
+	h.SetPushPreflight(func(bool) error {
+		preflightCalled = true
+		return nil
+	})
+
+	if err := h.cmdPushBatch("push refs/heads/main:refs/heads/main"); err != nil {
+		t.Fatal(err)
+	}
+	if preflightCalled || i.add != 0 || i.swarm != 0 || r.authorized != 0 || c.updates != 0 {
+		t.Fatalf(
+			"preflight=%v add=%d swarm=%d authorized=%d updates=%d",
+			preflightCalled,
+			i.add,
+			i.swarm,
+			r.authorized,
+			c.updates,
+		)
+	}
+	if c.resolveCall != 1 {
+		t.Fatalf("resolve calls = %d, want 1", c.resolveCall)
+	}
+	wantURL := "igit://" + canonicalOwner + "/repo"
+	if got := out.String(); !strings.Contains(got, "error refs/heads/main repository moved to "+wantURL) {
+		t.Fatalf("protocol output = %q", got)
+	}
+}
+
+func TestListForPushRejectsAliasButNormalListRemainsReadable(t *testing.T) {
+	resolved := &chain.ResolvedRepo{
+		Backend:     chain.BackendEVM,
+		Requested:   chain.RepoLocator{Owner: "inj1old", Name: "repo"},
+		Canonical:   chain.RepoLocator{Owner: "inj1new", Name: "repo"},
+		IsCanonical: false,
+		Info:        chain.RepoInfo{Owner: "inj1new", Name: "repo", DefaultBranch: "main"},
+	}
+
+	readChain := &fakeChain{resolved: resolved}
+	readHelper := NewHelper(
+		RepoURL{Owner: "inj1old", Repo: "repo"},
+		readChain,
+		&fakeIPFS{},
+		&fakeAuthorizer{},
+		nil,
+		fakeGit{},
+		strings.NewReader(""),
+		io.Discard,
+		io.Discard,
+	)
+	if err := readHelper.cmdList(false); err != nil {
+		t.Fatalf("normal alias list failed: %v", err)
+	}
+
+	pushChain := &fakeChain{resolved: resolved}
+	pushHelper := NewHelper(
+		RepoURL{Owner: "inj1old", Repo: "repo"},
+		pushChain,
+		&fakeIPFS{},
+		&fakeAuthorizer{},
+		nil,
+		fakeGit{},
+		strings.NewReader(""),
+		io.Discard,
+		io.Discard,
+	)
+	err := pushHelper.cmdList(true)
+	var moved *chain.RepoMovedError
+	if !errors.As(err, &moved) || moved.CanonicalURL() != "igit://inj1new/repo" {
+		t.Fatalf("list for-push error = %T %v", err, err)
 	}
 }

@@ -25,9 +25,21 @@ type setupOptions struct {
 	wsl       string
 }
 
+type setupServices struct {
+	prepareKubo func(context.Context, config.Config, bootstrap.Options) (config.Config, bootstrap.Result, error)
+	runDoctor   func(context.Context, config.Config, environment.Mode) environment.Report
+}
+
+var defaultSetupServices = setupServices{
+	prepareKubo: bootstrap.PrepareKubo,
+	runDoctor:   environment.Run,
+}
+
 func cmdSetup(cfg config.Config, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: igit setup <push|status|upgrade> [options]")
+		// The default setup command is the user-facing one-step bootstrap. Keep
+		// the explicit subcommands available for diagnostics and legacy upgrades.
+		args = []string{"push"}
 	}
 	switch args[0] {
 	case "status":
@@ -39,24 +51,17 @@ func cmdSetup(cfg config.Config, args []string) error {
 			return forwardSetupToWSL(wsl, append([]string{"status"}, remaining...))
 		}
 		return cmdDoctor(cfg, append([]string{"--push"}, remaining...))
-	case "push", "upgrade":
+	case "push":
 		opts, forwarded, err := parseSetupOptions(args[1:])
 		if err != nil {
 			return err
 		}
-		if args[0] == "upgrade" {
-			opts.force = true
-			forwarded = append(forwarded, "--force")
-		}
 		if opts.wsl != "" {
 			return forwardSetupToWSL(opts.wsl, append([]string{"push"}, forwarded...))
 		}
-		if runtime.GOOS == "windows" {
-			return fmt.Errorf("Windows push requires WSL2; run `igit setup push --wsl Ubuntu-24.04` or `powershell -File scripts/bootstrap-push.ps1`")
-		}
 		return setupPush(cfg, opts)
 	default:
-		return fmt.Errorf("unknown setup subcommand %q (expected push, status, or upgrade)", args[0])
+		return fmt.Errorf("unknown setup subcommand %q (expected push or status)", args[0])
 	}
 }
 
@@ -131,50 +136,78 @@ func parseStatusArgs(args []string) (string, []string, error) {
 }
 
 func setupPush(cfg config.Config, opts setupOptions) error {
-	if !opts.yes {
-		fmt.Println("igit will install pinned push dependencies under ~/.igit/deps.")
-		fmt.Println("Existing working injectived and Kubo installations will be preserved.")
-		fmt.Print("Continue? [y/N] ")
-		answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
-		answer = strings.ToLower(strings.TrimSpace(answer))
-		if answer != "y" && answer != "yes" {
-			return fmt.Errorf("setup cancelled")
-		}
-	}
+	return setupPushWithServices(cfg, opts, defaultSetupServices)
+}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
-	defer cancel()
-	updated, result, err := bootstrap.Prepare(ctx, cfg, bootstrap.Options{
-		Force: opts.force, SkipKubo: opts.skipKubo, Progress: os.Stdout,
-	})
-	if err != nil {
+func setupPushWithServices(cfg config.Config, opts setupOptions, services setupServices) error {
+	cfg = config.ApplyNetworkProfile(cfg)
+	// A reviewed SuiteDirectory is the sole authority to enable ordinary
+	// writes. Check it before installing tools or creating a key.
+	if err := cfg.ValidateContract(); err != nil {
+		return fmt.Errorf("EVM suite deployment profile is incomplete: %w", err)
+	}
+	if err := confirmSetup(opts); err != nil {
 		return err
 	}
-	if err := config.Save(updated); err != nil {
-		return err
-	}
-	cfg = updated
-
 	if opts.createKey != "" {
 		keyCfg := cfg
 		keyCfg.KeyName = opts.createKey
-		if _, err := chain.New(keyCfg).OwnerAddress(); err == nil {
+		signer := chain.NewEVMKeystoreSigner(keyCfg)
+		if _, err := signer.OwnerAddress(); err == nil {
 			cfg.KeyName = opts.createKey
 			if err := config.Save(cfg); err != nil {
 				return err
 			}
-			fmt.Printf("Using existing key %q\n", opts.createKey)
+		} else if err := cmdKey(cfg, []string{"new", opts.createKey}); err != nil {
+			return fmt.Errorf("create key %q: %w", opts.createKey, err)
 		} else {
-			if err := cmdKey(cfg, []string{"new", opts.createKey}); err != nil {
-				return fmt.Errorf("create key %q: %w", opts.createKey, err)
-			}
-			cfg, err = config.Load()
-			if err != nil {
-				return err
+			var loadErr error
+			cfg, loadErr = config.Load()
+			if loadErr != nil {
+				return loadErr
 			}
 		}
 	}
+	result := bootstrap.Result{}
+	if !opts.skipKubo {
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
+		updated, prepared, err := services.prepareKubo(ctx, cfg, bootstrap.Options{
+			Force: opts.force, Progress: os.Stdout,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		cfg = updated
+		result = prepared
+	}
+	if err := config.Save(cfg); err != nil {
+		return err
+	}
+	return finishSetup(cfg, opts, result, services.runDoctor)
+}
 
+func confirmSetup(opts setupOptions) error {
+	if opts.yes || opts.skipKubo {
+		return nil
+	}
+	fmt.Println("igit will install pinned push dependencies under ~/.igit/deps.")
+	fmt.Println("Existing working Kubo installations will be preserved; EVM suite setup does not install injectived.")
+	fmt.Print("Continue? [y/N] ")
+	answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	answer = strings.ToLower(strings.TrimSpace(answer))
+	if answer != "y" && answer != "yes" {
+		return fmt.Errorf("setup cancelled")
+	}
+	return nil
+}
+
+func finishSetup(
+	cfg config.Config,
+	opts setupOptions,
+	result bootstrap.Result,
+	runDoctor func(context.Context, config.Config, environment.Mode) environment.Report,
+) error {
 	fmt.Println("\nSetup summary:")
 	for _, item := range result.Installed {
 		fmt.Println("  installed", item)
@@ -187,7 +220,7 @@ func setupPush(cfg config.Config, opts setupOptions) error {
 	}
 
 	doctorCtx, doctorCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	report := environment.Run(doctorCtx, cfg, environment.ModePush)
+	report := runDoctor(doctorCtx, cfg, environment.ModePush)
 	doctorCancel()
 	fmt.Println()
 	printDoctorReport(report)

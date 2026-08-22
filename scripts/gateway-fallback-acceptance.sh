@@ -15,5 +15,12 @@ command -v "$GO_BIN" >/dev/null 2>&1 || {
 }
 
 cd "$ROOT/cli"
+test_name=TestGatewayFallbackAcceptance
+listed="$("$GO_BIN" test ./internal/ipfs -list "^${test_name}$")"
+matches="$(printf '%s\n' "$listed" | awk -v name="$test_name" '$0 == name { count++ } END { print count + 0 }')"
+if [[ "$matches" -ne 1 ]]; then
+  echo "gateway fallback acceptance: expected exactly one $test_name test, found $matches" >&2
+  exit 1
+fi
 "$GO_BIN" test ./internal/ipfs -run '^TestGatewayFallbackAcceptance$' -count=1 -v
 echo "gateway fallback acceptance: HK outage and CID-miss fallback passed"

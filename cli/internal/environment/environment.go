@@ -4,17 +4,16 @@ package environment
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"math/big"
 	"net/http"
-	"net/url"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/chain"
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/config"
 )
 
@@ -70,33 +69,33 @@ func Run(ctx context.Context, cfg config.Config, mode Mode) Report {
 	r := Report{Mode: mode}
 	r.Checks = append(r.Checks, commandCheck(ctx, "git", "git", []string{"--version"}, "install Git and ensure it is in PATH"))
 	r.Checks = append(r.Checks, pathCheck("git-remote-igit", "git-remote-igit", "install git-remote-igit next to igit and add it to PATH"))
-	r.Checks = append(r.Checks, configCheck("contract", cfg.ContractAddress, "run `igit config set contract_address "+config.DefaultContractAddress+"`"))
-	r.Checks = append(r.Checks, endpointCheck(ctx, "LCD", strings.TrimRight(cfg.LCDEndpoint, "/")+"/cosmos/base/tendermint/v1beta1/node_info", http.MethodGet, nil, "check lcd_endpoint and your network connection"))
+	r.Checks = append(r.Checks, configCheck("SuiteDirectory", cfg.EffectiveEVMSuiteDirectoryAddress(), "complete the evidence-approved EVM suite profile"))
+	r.Checks = append(r.Checks, backendCheck(cfg))
+	r.Checks = append(r.Checks, Check{Name: "LCD", Status: StatusSkip, Detail: "ordinary runtime is EVM-only"})
 	r.Checks = append(r.Checks, gatewayCheck(ctx, cfg))
 
 	if mode == ModeClone {
 		return r
 	}
-
-	bin := injectivedBin(cfg)
-	injective := commandCheck(ctx, "injectived", bin, []string{"version"}, "run `igit setup push` to install the pinned Injective CLI")
-	r.Checks = append(r.Checks, injective)
 	r.Checks = append(r.Checks, configCheck("key_name", cfg.KeyName, "run `igit key new dev` or configure an existing key"))
 
+	signer, err := chain.NewSignerBackend(cfg)
 	address := ""
-	if injective.Status == StatusOK && strings.TrimSpace(cfg.KeyName) != "" {
-		var keyCheck Check
-		address, keyCheck = keyAddressCheck(ctx, cfg, bin)
-		r.Checks = append(r.Checks, keyCheck)
+	if err != nil {
+		r.Checks = append(r.Checks, Check{Name: "signing key", Status: StatusFail, Detail: err.Error(), Fix: "run `igit key new dev`"})
+	} else if strings.TrimSpace(cfg.KeyName) == "" {
+		r.Checks = append(r.Checks, Check{Name: "signing key", Status: StatusSkip, Detail: "no key configured"})
+	} else if address, err = signer.OwnerAddress(); err != nil {
+		r.Checks = append(r.Checks, Check{Name: "signing key", Status: StatusFail, Detail: err.Error(), Fix: "run `igit key new " + cfg.KeyName + "`"})
 	} else {
-		r.Checks = append(r.Checks, Check{Name: "signing key", Status: StatusSkip, Detail: "injectived or key_name is unavailable"})
+		r.Checks = append(r.Checks, Check{Name: "signing key", Status: StatusOK, Detail: cfg.KeyName + " " + address})
 	}
 	if address != "" {
 		r.Checks = append(r.Checks, balanceCheck(ctx, cfg, address))
 	} else {
 		r.Checks = append(r.Checks, Check{Name: "key balance", Status: StatusSkip, Detail: "signing address is unavailable"})
 	}
-	r.Checks = append(r.Checks, endpointCheck(ctx, "Injective RPC", strings.TrimRight(cfg.Node, "/")+"/status", http.MethodGet, nil, "check node and your network connection"))
+	r.Checks = append(r.Checks, evmRPCCheck(ctx, cfg))
 	r.Checks = append(r.Checks, commandCheck(ctx, "Kubo CLI", ipfsBin(cfg), []string{"version", "--number"}, "run `igit setup push` to install the pinned Kubo CLI"))
 	r.Checks = append(r.Checks, endpointCheck(ctx, "local Kubo API", strings.TrimRight(cfg.IPFSAPI, "/")+"/api/v0/version", http.MethodPost, nil, "start Kubo with `igit setup push` or `ipfs daemon`"))
 	r.Checks = append(r.Checks, uploadAuthorizationCheck(ctx, cfg))
@@ -112,16 +111,21 @@ func PushPreflight(ctx context.Context, cfg config.Config, needsKubo bool) error
 			failures = append(failures, check)
 		}
 	}
-	add(configCheck("contract", cfg.ContractAddress, "run `igit setup push`"))
+	add(configCheck("SuiteDirectory", cfg.EffectiveEVMSuiteDirectoryAddress(), "complete the evidence-approved EVM suite profile"))
+	backend := backendCheck(cfg)
+	add(backend)
 	add(configCheck("key_name", cfg.KeyName, "run `igit key new dev` or configure an existing key"))
-	bin := injectivedBin(cfg)
-	injective := commandCheck(ctx, "injectived", bin, []string{"version"}, "run `igit setup push`")
-	add(injective)
-	if injective.Status == StatusOK && cfg.KeyName != "" {
-		_, check := keyAddressCheck(ctx, cfg, bin)
-		add(check)
+	if cfg.KeyName != "" {
+		signer, err := chain.NewSignerBackend(cfg)
+		if err != nil {
+			add(Check{Name: "signing key", Status: StatusFail, Detail: err.Error(), Fix: "run `igit key new dev`"})
+		} else if address, err := signer.OwnerAddress(); err != nil {
+			add(Check{Name: "signing key", Status: StatusFail, Detail: err.Error(), Fix: "run `igit key new " + cfg.KeyName + "`"})
+		} else {
+			add(Check{Name: "signing key", Status: StatusOK, Detail: address})
+		}
 	}
-	add(endpointCheck(ctx, "Injective RPC", strings.TrimRight(cfg.Node, "/")+"/status", http.MethodGet, nil, "check node and your network connection"))
+	add(evmRPCCheck(ctx, cfg))
 	if needsKubo {
 		add(endpointCheck(ctx, "local Kubo API", strings.TrimRight(cfg.IPFSAPI, "/")+"/api/v0/version", http.MethodPost, nil, "run `igit setup push` or start `ipfs daemon`"))
 		if strings.TrimSpace(cfg.Upload.Endpoint) == "" {
@@ -183,6 +187,14 @@ func configCheck(name, value, fix string) Check {
 	return Check{Name: name, Status: StatusOK, Detail: value}
 }
 
+// backendCheck validates the fixed EVM suite profile shape.
+func backendCheck(cfg config.Config) Check {
+	if err := cfg.ValidateContract(); err != nil {
+		return Check{Name: "chain backend", Status: StatusFail, Detail: err.Error(), Fix: "complete the evidence-approved EVM suite profile"}
+	}
+	return Check{Name: "chain backend", Status: StatusOK, Detail: "evm v3 immutable suite"}
+}
+
 func endpointCheck(ctx context.Context, name, endpoint, method string, body []byte, fix string) Check {
 	if strings.TrimSpace(endpoint) == "" || strings.HasPrefix(endpoint, "/") {
 		return Check{Name: name, Status: StatusFail, Detail: "not configured", Fix: fix}
@@ -204,6 +216,22 @@ func endpointCheck(ctx context.Context, name, endpoint, method string, body []by
 	return Check{Name: name, Status: StatusOK, Detail: endpoint}
 }
 
+func evmRPCCheck(ctx context.Context, cfg config.Config) Check {
+	endpoint := cfg.EffectiveEVMRPC()
+	if strings.TrimSpace(endpoint) == "" {
+		return Check{Name: "EVM RPC", Status: StatusFail, Detail: "not configured", Fix: "complete the named EVM network profile"}
+	}
+	rpc := chain.NewEVMRPC(endpoint)
+	chainID, err := rpc.ChainID(ctx)
+	if err != nil {
+		return Check{Name: "EVM RPC", Status: StatusFail, Detail: err.Error(), Fix: "check the named EVM network profile"}
+	}
+	if expected := cfg.EffectiveEVMChainID(); expected != 0 && chainID != expected {
+		return Check{Name: "EVM RPC", Status: StatusFail, Detail: fmt.Sprintf("chain ID mismatch: RPC reported %d, profile requires %d", chainID, expected), Fix: "select the matching network profile"}
+	}
+	return Check{Name: "EVM RPC", Status: StatusOK, Detail: fmt.Sprintf("%s (chain ID %d)", endpoint, chainID)}
+}
+
 func gatewayCheck(ctx context.Context, cfg config.Config) Check {
 	var failures []string
 	for _, gateway := range cfg.EffectiveGateways() {
@@ -219,42 +247,13 @@ func gatewayCheck(ctx context.Context, cfg config.Config) Check {
 	return Check{Name: "read gateway", Status: StatusFail, Detail: strings.Join(failures, "; "), Fix: "check gateway configuration and network access"}
 }
 
-func keyAddressCheck(ctx context.Context, cfg config.Config, bin string) (string, Check) {
-	cmd := exec.CommandContext(ctx, bin, "keys", "show", cfg.KeyName, "--keyring-backend", cfg.KeyringBackend, "--address")
-	out, err := cmd.CombinedOutput()
-	address := strings.TrimSpace(string(out))
-	if err != nil || !strings.HasPrefix(address, "inj1") {
-		detail := firstLine(string(out))
-		if detail == "" {
-			detail = errString(err)
-		}
-		return "", Check{Name: "signing key", Status: StatusFail, Detail: detail, Fix: "run `igit key new " + cfg.KeyName + "` or select an existing key"}
-	}
-	return address, Check{Name: "signing key", Status: StatusOK, Detail: cfg.KeyName + " " + address}
-}
-
 func balanceCheck(ctx context.Context, cfg config.Config, address string) Check {
-	endpoint := strings.TrimRight(cfg.LCDEndpoint, "/") + "/cosmos/bank/v1beta1/balances/" + url.PathEscape(address) + "/by_denom?denom=inj"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	rpc := chain.NewEVMRPC(cfg.EffectiveEVMRPC())
+	amount, err := rpc.Balance(ctx, address, "latest")
 	if err != nil {
-		return Check{Name: "key balance", Status: StatusWarn, Detail: err.Error()}
+		return Check{Name: "key balance", Status: StatusWarn, Detail: err.Error(), Fix: "check the EVM balance manually before push"}
 	}
-	resp, err := (&http.Client{Timeout: 4 * time.Second}).Do(req)
-	if err != nil {
-		return Check{Name: "key balance", Status: StatusWarn, Detail: err.Error(), Fix: "check the balance manually before push"}
-	}
-	defer resp.Body.Close()
-	var result struct {
-		Balance struct {
-			Denom  string `json:"denom"`
-			Amount string `json:"amount"`
-		} `json:"balance"`
-	}
-	if resp.StatusCode != http.StatusOK || json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result) != nil {
-		return Check{Name: "key balance", Status: StatusWarn, Detail: fmt.Sprintf("could not query %s (HTTP %d)", address, resp.StatusCode), Fix: "check the balance manually before push"}
-	}
-	amount, ok := new(big.Int).SetString(result.Balance.Amount, 10)
-	if !ok || amount.Sign() <= 0 {
+	if amount.Sign() <= 0 {
 		return Check{Name: "key balance", Status: StatusWarn, Detail: "0 INJ; transactions need testnet gas", Fix: "fund " + address + " from the Injective testnet faucet"}
 	}
 	return Check{Name: "key balance", Status: StatusOK, Detail: formatINJ(amount) + " INJ"}
@@ -272,13 +271,6 @@ func uploadAuthorizationCheck(ctx context.Context, cfg config.Config) Check {
 	return check
 }
 
-func injectivedBin(cfg config.Config) string {
-	if strings.TrimSpace(cfg.InjectivedBin) == "" {
-		return "injectived"
-	}
-	return cfg.InjectivedBin
-}
-
 func ipfsBin(cfg config.Config) string {
 	if strings.TrimSpace(cfg.IPFSBin) == "" {
 		return "ipfs"
@@ -292,13 +284,6 @@ func firstLine(value string) string {
 		value = before
 	}
 	return strings.TrimSpace(value)
-}
-
-func errString(err error) string {
-	if err == nil {
-		return "command returned no address"
-	}
-	return err.Error()
 }
 
 func formatINJ(amount *big.Int) string {

@@ -25,24 +25,12 @@
         "sha256": "677d86730d9200fa10150b11942bbb4c293f5055dafc999dd392f08cbf196d48",
         "archive": "tar.gz",
         "files": { "kubo/ipfs": "ipfs" }
-      }
-    }
-  },
-  "injectived": {
-    "version": "1.17.2",
-    "artifacts": {
-      "linux-amd64": {
-        "urls": [
-          "https://registry.npmjs.org/injective-core-linux-x64/-/injective-core-linux-x64-1.17.2.tgz",
-          "https://registry.npmmirror.com/injective-core-linux-x64/-/injective-core-linux-x64-1.17.2.tgz"
-        ],
-        "sha256": "36d33db09f641024a6087b640b6f51d823175fb027844993645e03066bb1c19d",
-        "archive": "tar.gz+tar.zst",
-        "payload": "package/bin/injectived.tar.zst",
-        "files": {
-          "injectived-linux-x64": "injectived",
-          "libwasmvm.x86_64.so": "libwasmvm.x86_64.so"
-        }
+      },
+      "windows-amd64": {
+        "urls": ["https://gateway.pinata.cloud/ipfs/QmWmvYCTA74ise9EYx5PRMBCdwo4SMjERgWtTjBBEqWBHn/kubo/v0.42.0/kubo_v0.42.0_windows-amd64.zip", "https://igit-hk.haohanyh.ovh/ipfs/QmWmvYCTA74ise9EYx5PRMBCdwo4SMjERgWtTjBBEqWBHn/kubo/v0.42.0/kubo_v0.42.0_windows-amd64.zip", "https://igit-us.haohanyh.ovh/ipfs/QmWmvYCTA74ise9EYx5PRMBCdwo4SMjERgWtTjBBEqWBHn/kubo/v0.42.0/kubo_v0.42.0_windows-amd64.zip", "https://dist.ipfs.tech/kubo/v0.42.0/kubo_v0.42.0_windows-amd64.zip", "https://github.com/ipfs/kubo/releases/download/v0.42.0/kubo_v0.42.0_windows-amd64.zip"],
+        "sha256": "f24e4d24445c8abf7bd26bd034cb9f14dac77e30452731a617d2e8e2f2ceb150",
+        "archive": "zip",
+        "files": { "kubo/ipfs.exe": "ipfs.exe" }
       }
     }
   }

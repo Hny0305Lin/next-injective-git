@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Award } from "lucide-react";
+import { Award, GitBranch } from "lucide-react";
+import { ContractTypeBadge } from "../components/ContractTypeBadge";
 import {
   addressUsername,
   badgesByRecipient,
@@ -115,14 +116,18 @@ export default function Owner() {
             )}
             {filtered.map((r) => (
               <div className="repo-list-item" key={r.name}>
-                <h3>
-                  <Link to={`/${owner}/${r.name}`}>{r.name}</Link>
-                  <span className={`badge ${r.moderation_status}`}>{r.moderation_status}</span>
-                  {r.forked_from && <span className="badge">fork</span>}
-                </h3>
-                <div className="meta muted">
-                  {r.description || <i>no description</i>} · default <code>{r.default_branch}</code> ·
-                  updated {timeAgo(r.updated_at)}
+                <div className="repo-list-icon"><GitBranch size={15} /></div>
+                <div className="repo-list-content">
+                  <h3>
+                    <Link to={`/${owner}/${r.name}`}>{r.name}</Link>
+                    <ContractTypeBadge kind="evm-v2" />
+                    <span className={`badge ${r.moderation_status}`}>{r.moderation_status}</span>
+                    {r.forked_from && <span className="badge">fork</span>}
+                  </h3>
+                  <div className="meta muted">
+                    {r.description || <i>no description</i>} · default <code>{r.default_branch}</code> ·
+                    updated {timeAgo(r.updated_at)}
+                  </div>
                 </div>
               </div>
             ))}
@@ -136,15 +141,18 @@ export default function Owner() {
             )}
             {badges.map((b) => (
               <div className="repo-list-item" key={b.id}>
-                <h3>
-                  <span style={{ fontWeight: 700 }}>#{b.id}</span>
-                  <span className="badge">badge</span>
-                </h3>
-                <div className="meta muted">
-                  from <Link to={`/${b.repo_owner}/${b.repo_name}`}>{b.repo_owner.slice(0, 12)}…/{b.repo_name}</Link> · {timeAgo(b.awarded_at)}
-                </div>
-                <div style={{ marginTop: 4, fontSize: "0.84rem", fontStyle: "italic", color: "var(--fg-muted)" }}>
-                  &ldquo;{b.reason}&rdquo;
+                <div className="repo-list-icon"><Award size={15} /></div>
+                <div className="repo-list-content">
+                  <h3>
+                    <span style={{ fontWeight: 700 }}>#{b.id}</span>
+                    <span className="badge">badge</span>
+                  </h3>
+                  <div className="meta muted">
+                    from <Link to={`/${b.repo_owner}/${b.repo_name}`}>{b.repo_owner.slice(0, 12)}…/{b.repo_name}</Link> · {timeAgo(b.awarded_at)}
+                  </div>
+                  <div style={{ marginTop: 4, fontSize: "0.84rem", fontStyle: "italic", color: "var(--fg-muted)" }}>
+                    &ldquo;{b.reason}&rdquo;
+                  </div>
                 </div>
               </div>
             ))}

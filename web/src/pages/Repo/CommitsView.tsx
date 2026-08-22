@@ -62,7 +62,7 @@ export default function CommitsView({
           {commits.map((c) => {
             const msg = c.message.split("\n")[0];
             const truncated = msg.length > 72 ? msg.slice(0, 72) + "…" : msg;
-            const dateStr = c.timestamp ? new Date(c.timestamp).toLocaleString() : "";
+            const dateStr = c.timestamp ? new Date(c.timestamp * 1000).toLocaleString() : "";
             return (
               <Link className="row" key={c.oid} to={`${base}/commit/${c.oid}`}>
                 <span className="icon"><GitCommit size={14} /></span>

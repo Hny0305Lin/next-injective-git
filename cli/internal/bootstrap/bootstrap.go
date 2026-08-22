@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -23,7 +24,6 @@ import (
 	"time"
 
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/config"
-	"github.com/klauspost/compress/zstd"
 )
 
 //go:embed deps.json
@@ -40,7 +40,6 @@ type Artifact struct {
 	URLs    []string          `json:"urls"`
 	SHA256  string            `json:"sha256"`
 	Archive string            `json:"archive"`
-	Payload string            `json:"payload,omitempty"`
 	Files   map[string]string `json:"files"`
 }
 
@@ -49,14 +48,31 @@ type Options struct {
 	SkipKubo   bool
 	Progress   io.Writer
 	HTTPClient *http.Client
+	timeouts   *downloadTimeouts
+}
+
+type downloadTimeouts struct {
+	connect        time.Duration
+	tlsHandshake   time.Duration
+	responseHeader time.Duration
+	idle           time.Duration
+	total          time.Duration
+}
+
+var defaultDownloadTimeouts = downloadTimeouts{
+	connect:        10 * time.Second,
+	tlsHandshake:   10 * time.Second,
+	responseHeader: 20 * time.Second,
+	idle:           45 * time.Second,
+	total:          5 * time.Minute,
 }
 
 type Result struct {
-	InjectivedBin string
-	IPFSBin       string
-	Installed     []string
-	Reused        []string
-	KuboStarted   bool
+	IPFSBin     string
+	Installed   []string
+	Reused      []string
+	KuboStarted bool
+	KuboPID     int
 }
 
 func LoadManifest() (Manifest, error) {
@@ -71,53 +87,67 @@ func LoadManifest() (Manifest, error) {
 }
 
 func ValidateManifest(manifest Manifest) error {
-	for _, name := range []string{"kubo", "injectived"} {
-		dep, ok := manifest[name]
-		if !ok || strings.TrimSpace(dep.Version) == "" {
-			return fmt.Errorf("dependency manifest is missing %s version", name)
+	if len(manifest) != 1 {
+		return fmt.Errorf("dependency manifest must contain only Kubo")
+	}
+	return validateDependency("kubo", manifest["kubo"])
+}
+
+func loadDependency(name string) (Dependency, error) {
+	var manifest Manifest
+	if err := json.Unmarshal(manifestJSON, &manifest); err != nil {
+		return Dependency{}, fmt.Errorf("parse embedded dependency manifest: %w", err)
+	}
+	dep := manifest[name]
+	if err := validateDependency(name, dep); err != nil {
+		return Dependency{}, err
+	}
+	return dep, nil
+}
+
+func validateDependency(name string, dep Dependency) error {
+	if strings.TrimSpace(dep.Version) == "" {
+		return fmt.Errorf("dependency manifest is missing %s version", name)
+	}
+	if len(dep.Artifacts) == 0 {
+		return fmt.Errorf("dependency manifest is missing %s artifacts", name)
+	}
+	for platform, artifact := range dep.Artifacts {
+		if len(artifact.URLs) == 0 {
+			return fmt.Errorf("%s %s artifact has no download URLs", name, platform)
 		}
-		if len(dep.Artifacts) == 0 {
-			return fmt.Errorf("dependency manifest is missing %s artifacts", name)
+		for _, artifactURL := range artifact.URLs {
+			if !strings.HasPrefix(artifactURL, "https://") {
+				return fmt.Errorf("%s %s artifact URL must use HTTPS", name, platform)
+			}
 		}
-		for platform, artifact := range dep.Artifacts {
-			if len(artifact.URLs) == 0 {
-				return fmt.Errorf("%s %s artifact has no download URLs", name, platform)
-			}
-			for _, artifactURL := range artifact.URLs {
-				if !strings.HasPrefix(artifactURL, "https://") {
-					return fmt.Errorf("%s %s artifact URL must use HTTPS", name, platform)
-				}
-			}
-			if decoded, err := hex.DecodeString(artifact.SHA256); err != nil || len(decoded) != sha256.Size {
-				return fmt.Errorf("%s %s artifact has invalid SHA-256", name, platform)
-			}
-			if artifact.Archive != "zip" && artifact.Archive != "tar.gz" && artifact.Archive != "tar.gz+tar.zst" {
-				return fmt.Errorf("%s %s artifact has unsupported archive %q", name, platform, artifact.Archive)
-			}
-			if artifact.Archive == "tar.gz+tar.zst" && strings.TrimSpace(artifact.Payload) == "" {
-				return fmt.Errorf("%s %s nested artifact has no payload", name, platform)
-			}
-			if len(artifact.Files) == 0 {
-				return fmt.Errorf("%s %s artifact has no files", name, platform)
-			}
+		if decoded, err := hex.DecodeString(artifact.SHA256); err != nil || len(decoded) != sha256.Size {
+			return fmt.Errorf("%s %s artifact has invalid SHA-256", name, platform)
+		}
+		if artifact.Archive != "zip" && artifact.Archive != "tar.gz" {
+			return fmt.Errorf("%s %s artifact has unsupported archive %q", name, platform, artifact.Archive)
+		}
+		if len(artifact.Files) == 0 {
+			return fmt.Errorf("%s %s artifact has no files", name, platform)
 		}
 	}
 	return nil
 }
 
-// Prepare installs missing dependencies, preserves working user-managed tools,
-// and returns a config updated with absolute executable paths.
-func Prepare(ctx context.Context, cfg config.Config, opts Options) (config.Config, Result, error) {
-	manifest, err := LoadManifest()
+// PrepareKubo installs or reuses Kubo and starts its daemon. Ordinary setup
+// has no Cosmos signing or injectived dependency.
+func PrepareKubo(ctx context.Context, cfg config.Config, opts Options) (config.Config, Result, error) {
+	if opts.SkipKubo {
+		return cfg, Result{}, nil
+	}
+	dep, err := loadDependency("kubo")
 	if err != nil {
 		return cfg, Result{}, err
 	}
 	if opts.Progress == nil {
 		opts.Progress = io.Discard
 	}
-	if opts.HTTPClient == nil {
-		opts.HTTPClient = &http.Client{Timeout: 30 * time.Minute}
-	}
+	opts = withDownloadDefaults(opts)
 	root, err := config.Dir()
 	if err != nil {
 		return cfg, Result{}, err
@@ -127,39 +157,31 @@ func Prepare(ctx context.Context, cfg config.Config, opts Options) (config.Confi
 	}
 
 	result := Result{}
-	injectived, installed, err := ensureDependency(ctx, root, "injectived", cfg.InjectivedBin, []string{"version"}, manifest["injectived"], opts)
-	if err != nil {
+	if err := prepareKubo(ctx, root, &cfg, &result, dep, opts); err != nil {
 		return cfg, result, err
 	}
-	cfg.InjectivedBin = injectived
-	result.InjectivedBin = injectived
-	if installed {
-		result.Installed = append(result.Installed, "injectived "+manifest["injectived"].Version)
-	} else {
-		result.Reused = append(result.Reused, "injectived")
-	}
-
-	if !opts.SkipKubo {
-		ipfs, installed, err := ensureDependency(ctx, root, "kubo", cfg.IPFSBin, []string{"version", "--number"}, manifest["kubo"], opts)
-		if err != nil {
-			return cfg, result, err
-		}
-		cfg.IPFSBin = ipfs
-		result.IPFSBin = ipfs
-		if installed {
-			result.Installed = append(result.Installed, "Kubo "+manifest["kubo"].Version)
-		} else {
-			result.Reused = append(result.Reused, "Kubo")
-		}
-		if err := StartKubo(ctx, cfg, opts.Progress); err != nil {
-			return cfg, result, err
-		}
-		result.KuboStarted = true
-	}
-	if cfg.ContractAddress == "" {
-		cfg.ContractAddress = config.DefaultContractAddress
-	}
 	return cfg, result, nil
+}
+
+func prepareKubo(ctx context.Context, root string, cfg *config.Config, result *Result, dep Dependency, opts Options) error {
+	ipfs, installed, err := ensureDependency(ctx, root, "kubo", cfg.IPFSBin, []string{"version", "--number"}, dep, opts)
+	if err != nil {
+		return err
+	}
+	cfg.IPFSBin = ipfs
+	result.IPFSBin = ipfs
+	if installed {
+		result.Installed = append(result.Installed, "Kubo "+dep.Version)
+	} else {
+		result.Reused = append(result.Reused, "Kubo")
+	}
+	pid, err := startKubo(ctx, *cfg, opts.Progress)
+	result.KuboPID = pid
+	if err != nil {
+		return err
+	}
+	result.KuboStarted = true
+	return nil
 }
 
 func ensureDependency(ctx context.Context, root, name, configured string, versionArgs []string, dep Dependency, opts Options) (string, bool, error) {
@@ -180,13 +202,24 @@ func ensureDependency(ctx context.Context, root, name, configured string, versio
 	if name == "kubo" {
 		binaryName = "ipfs"
 	}
-	rawBinary := filepath.Join(installDir, binaryName)
+	rawBinaryName := binaryName
+	if runtime.GOOS == "windows" {
+		rawBinaryName += ".exe"
+	}
+	rawBinary := filepath.Join(installDir, rawBinaryName)
 	wrapper := filepath.Join(root, "bin", binaryName)
 	if runtime.GOOS == "windows" {
 		wrapper += ".cmd"
 	}
+	managedBinary := wrapper
+	if runtime.GOOS == "windows" {
+		// Store and execute the real .exe. Launching the .cmd wrapper would leave
+		// an extra detached cmd.exe parent around the daemon and complicate clean
+		// shutdown/upgrades; the wrapper remains available for interactive PATH use.
+		managedBinary = rawBinary
+	}
 	if !opts.Force {
-		if binary, ok := workingBinary(ctx, wrapper, versionArgs); ok {
+		if binary, ok := workingBinary(ctx, managedBinary, versionArgs); ok {
 			fmt.Fprintf(opts.Progress, "Using igit-managed %s %s\n", name, dep.Version)
 			return binary, false, nil
 		}
@@ -212,10 +245,10 @@ func ensureDependency(ctx context.Context, root, name, configured string, versio
 	if err := activateManagedInstall(root, staging, installDir); err != nil {
 		return "", false, fmt.Errorf("activate %s %s: %w", name, dep.Version, err)
 	}
-	if err := writeWrapper(wrapper, rawBinary, installDir, name == "injectived"); err != nil {
+	if err := writeWrapper(wrapper, rawBinary); err != nil {
 		return "", false, err
 	}
-	if binary, ok := workingBinary(ctx, wrapper, versionArgs); ok {
+	if binary, ok := workingBinary(ctx, managedBinary, versionArgs); ok {
 		fmt.Fprintf(opts.Progress, "Installed %s %s: %s\n", name, dep.Version, binary)
 		return binary, true, nil
 	}
@@ -244,6 +277,7 @@ func workingBinary(ctx context.Context, configured string, args []string) (strin
 }
 
 func downloadArtifact(ctx context.Context, root, name, version string, artifact Artifact, opts Options) (string, error) {
+	opts = withDownloadDefaults(opts)
 	downloadDir := filepath.Join(root, "downloads")
 	if err := os.MkdirAll(downloadDir, 0o700); err != nil {
 		return "", err
@@ -274,7 +308,7 @@ func downloadURL(ctx context.Context, downloadDir, name, version, artifactURL, e
 		}
 	}()
 
-	downloadCtx, cancel := context.WithCancel(ctx)
+	downloadCtx, cancel := context.WithTimeout(ctx, opts.timeouts.total)
 	defer cancel()
 	fmt.Fprintf(opts.Progress, "Downloading %s %s from %s\n", name, version, artifactURL)
 	req, err := http.NewRequestWithContext(downloadCtx, http.MethodGet, artifactURL, nil)
@@ -291,9 +325,9 @@ func downloadURL(ctx context.Context, downloadDir, name, version, artifactURL, e
 		return "", fmt.Errorf("download %s: HTTP %d", name, resp.StatusCode)
 	}
 	hash := sha256.New()
-	timer := time.AfterFunc(45*time.Second, cancel)
+	timer := time.AfterFunc(opts.timeouts.idle, cancel)
 	reader := &activityReader{
-		reader: resp.Body, timer: timer, timeout: 45 * time.Second,
+		reader: resp.Body, timer: timer, timeout: opts.timeouts.idle,
 		progress: opts.Progress, name: name, total: resp.ContentLength, nextReport: 8 << 20,
 	}
 	if _, err := io.Copy(io.MultiWriter(tmp, hash), reader); err != nil {
@@ -311,6 +345,33 @@ func downloadURL(ctx context.Context, downloadDir, name, version, artifactURL, e
 	fmt.Fprintf(opts.Progress, "Verified %s %s (%s)\n", name, version, got)
 	ok = true
 	return path, nil
+}
+
+func withDownloadDefaults(opts Options) Options {
+	if opts.timeouts == nil {
+		timeouts := defaultDownloadTimeouts
+		opts.timeouts = &timeouts
+	}
+	if opts.HTTPClient == nil {
+		opts.HTTPClient = newDownloadHTTPClient(*opts.timeouts)
+	}
+	return opts
+}
+
+func newDownloadHTTPClient(timeouts downloadTimeouts) *http.Client {
+	dialer := &net.Dialer{Timeout: timeouts.connect, KeepAlive: 30 * time.Second}
+	return &http.Client{Transport: &http.Transport{
+		Proxy:       http.ProxyFromEnvironment,
+		DialContext: dialer.DialContext,
+		// Some IPFS gateways reset long HTTP/2 streams while serving the same
+		// pinned archive correctly over HTTP/1.1.
+		ForceAttemptHTTP2:     false,
+		MaxIdleConns:          16,
+		IdleConnTimeout:       30 * time.Second,
+		TLSHandshakeTimeout:   timeouts.tlsHandshake,
+		ResponseHeaderTimeout: timeouts.responseHeader,
+		ExpectContinueTimeout: time.Second,
+	}}
 }
 
 type activityReader struct {
@@ -347,8 +408,6 @@ func extractArtifact(archivePath, destination string, artifact Artifact) error {
 		return extractZip(archivePath, destination, artifact.Files)
 	case "tar.gz":
 		return extractTarGz(archivePath, destination, artifact.Files)
-	case "tar.gz+tar.zst":
-		return extractNestedTarZst(archivePath, destination, artifact.Payload, artifact.Files)
 	default:
 		return fmt.Errorf("unsupported archive format %q", artifact.Archive)
 	}
@@ -394,40 +453,6 @@ func extractTarGz(path, destination string, wanted map[string]string) error {
 	return extractTarReader(tar.NewReader(gz), destination, wanted)
 }
 
-func extractNestedTarZst(path, destination, payload string, wanted map[string]string) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	gz, err := gzip.NewReader(f)
-	if err != nil {
-		return err
-	}
-	defer gz.Close()
-	outer := tar.NewReader(gz)
-	for {
-		header, err := outer.Next()
-		if err == io.EOF {
-			return fmt.Errorf("archive is missing nested payload %s", payload)
-		}
-		if err != nil {
-			return err
-		}
-		name := filepath.ToSlash(strings.TrimPrefix(header.Name, "./"))
-		if name != filepath.ToSlash(payload) || header.Typeflag != tar.TypeReg {
-			continue
-		}
-		decoder, err := zstd.NewReader(outer, zstd.WithDecoderConcurrency(1))
-		if err != nil {
-			return err
-		}
-		err = extractTarReader(tar.NewReader(decoder), destination, wanted)
-		decoder.Close()
-		return err
-	}
-}
-
 func extractTarReader(tr *tar.Reader, destination string, wanted map[string]string) error {
 	found := make(map[string]bool)
 	for {
@@ -462,7 +487,7 @@ func writeExtracted(destination, relative string, src io.Reader) error {
 	}
 	mode := os.FileMode(0o644)
 	base := filepath.Base(target)
-	if base == "ipfs" || base == "injectived" {
+	if base == "ipfs" {
 		mode = 0o755
 	}
 	out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
@@ -491,7 +516,7 @@ func ensureExtracted(wanted map[string]string, found map[string]bool) error {
 	return fmt.Errorf("archive is missing required files: %s", strings.Join(missing, ", "))
 }
 
-func writeWrapper(path, binary, libraryDir string, withLibraryPath bool) error {
+func writeWrapper(path, binary string) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
@@ -502,10 +527,6 @@ func writeWrapper(path, binary, libraryDir string, withLibraryPath bool) error {
 	} else {
 		var script strings.Builder
 		script.WriteString("#!/bin/sh\n")
-		if withLibraryPath {
-			fmt.Fprintf(&script, "export LD_LIBRARY_PATH=%q${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}\n", libraryDir)
-			fmt.Fprintf(&script, "export DYLD_FALLBACK_LIBRARY_PATH=%q${DYLD_FALLBACK_LIBRARY_PATH:+:$DYLD_FALLBACK_LIBRARY_PATH}\n", libraryDir)
-		}
 		fmt.Fprintf(&script, "exec %q \"$@\"\n", binary)
 		content = []byte(script.String())
 	}
@@ -569,6 +590,11 @@ func activateManagedInstall(root, staging, target string) error {
 }
 
 func StartKubo(ctx context.Context, cfg config.Config, progress io.Writer) error {
+	_, err := startKubo(ctx, cfg, progress)
+	return err
+}
+
+func startKubo(ctx context.Context, cfg config.Config, progress io.Writer) (int, error) {
 	bin := strings.TrimSpace(cfg.IPFSBin)
 	if bin == "" {
 		bin = "ipfs"
@@ -579,11 +605,11 @@ func StartKubo(ctx context.Context, cfg config.Config, progress io.Writer) error
 		} else {
 			fmt.Fprintln(progress, "Kubo daemon is already reachable")
 		}
-		return nil
+		return 0, nil
 	}
 	initialized, err := kuboRepoInitialized()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if !initialized {
 		fmt.Fprintln(progress, "Initializing the local Kubo repository")
@@ -591,21 +617,21 @@ func StartKubo(ctx context.Context, cfg config.Config, progress io.Writer) error
 		err = exec.CommandContext(initCtx, bin, "init", "--profile=server").Run()
 		initCancel()
 		if err != nil {
-			return fmt.Errorf("initialize Kubo: %w", err)
+			return 0, fmt.Errorf("initialize Kubo: %w", err)
 		}
 	}
 	if installed, _ := ensureKuboUserService(ctx, bin, true, progress); installed {
 		fmt.Fprintln(progress, "Starting Kubo through the user systemd service")
-		return waitForKubo(ctx, cfg.IPFSAPI, "the user systemd service")
+		return 0, waitForKubo(ctx, cfg.IPFSAPI, "the user systemd service")
 	}
 	root, err := config.Dir()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	logPath := filepath.Join(root, "kubo.log")
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	cmd := exec.Command(bin, "daemon", "--enable-gc")
 	cmd.Stdout = logFile
@@ -613,12 +639,13 @@ func StartKubo(ctx context.Context, cfg config.Config, progress io.Writer) error
 	configureDetached(cmd)
 	if err := cmd.Start(); err != nil {
 		logFile.Close()
-		return fmt.Errorf("start Kubo daemon: %w", err)
+		return 0, fmt.Errorf("start Kubo daemon: %w", err)
 	}
+	pid := cmd.Process.Pid
 	_ = cmd.Process.Release()
 	_ = logFile.Close()
 	fmt.Fprintf(progress, "Starting Kubo daemon (log: %s)\n", logPath)
-	return waitForKubo(ctx, cfg.IPFSAPI, logPath)
+	return pid, waitForKubo(ctx, cfg.IPFSAPI, logPath)
 }
 
 func kuboRepoInitialized() (bool, error) {

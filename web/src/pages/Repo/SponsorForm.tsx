@@ -1,22 +1,24 @@
 import { useCallback, useState } from "react";
 import { useWallet } from "../../lib/WalletContext";
-import { WalletModal } from "../../components/WalletModal";
 import {
   formatError,
+  sponsorWithEconomicModule,
   type AppConfig,
 } from "../../lib/chain";
-import { getEvmProvider, sponsorWithKeplr } from "../../lib/wallet";
+import type { Hex } from "viem";
 
 export default function SponsorForm({
   cfg,
   addr,
   repo,
+  repoId,
 }: {
   cfg: AppConfig;
   addr: string;
   repo: string;
+  repoId: Hex | null;
 }) {
-  const { connected, walletModalOpen, openWalletModal, closeWalletModal, refreshBalance } = useWallet();
+  const { connected, provider, openWalletModal, refreshBalance } = useWallet();
   const [amount, setAmount] = useState("0.1");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -33,15 +35,10 @@ export default function SponsorForm({
       setErr("");
       setTxhash("");
       try {
-        let hash: string;
-        if (connected.kind === "cosmos") {
-          hash = await sponsorWithKeplr(connected.cosmos, cfg, addr, repo, amount, message.trim());
-        } else {
-          const provider = getEvmProvider(connected.id);
-          if (!provider) throw new Error(`${connected.label} not available`);
-          const mm = await import("../../lib/metamask");
-          hash = await mm.sponsorWithEvm(provider, cfg, addr, repo, amount, message.trim());
-        }
+        if (!connected.writable) throw new Error("Switch the wallet to Injective EVM testnet before writing.");
+        if (!repoId) throw new Error("EVM repository has no stable repository ID");
+        if (!provider) throw new Error(`${connected.label} not available`);
+        const hash = await sponsorWithEconomicModule(provider, cfg, repoId, amount, message);
         setTxhash(hash);
         setMessage("");
         await refreshBalance();
@@ -52,7 +49,7 @@ export default function SponsorForm({
         setBusy(false);
       }
     },
-    [connected, cfg, addr, repo, amount, message],
+    [connected, provider, cfg, addr, repo, repoId, amount, message, refreshBalance],
   );
 
   return (
@@ -86,9 +83,10 @@ export default function SponsorForm({
             maxLength={256}
             aria-label="sponsor message"
           />
-          <button type="submit" disabled={busy}>
+          <button type="submit" disabled={busy || !connected.writable}>
             {busy ? "signing…" : `Sponsor via ${connected.label}`}
           </button>
+          {!connected.writable && <span className="muted">Switch to Injective EVM testnet to write.</span>}
         </form>
       )}
 
@@ -105,7 +103,6 @@ export default function SponsorForm({
           to see it on the wall.
         </div>
       )}
-      {walletModalOpen && <WalletModal onClose={closeWalletModal} />}
     </div>
   );
 }

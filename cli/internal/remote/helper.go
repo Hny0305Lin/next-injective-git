@@ -20,7 +20,7 @@ import (
 // Helper runs the remote-helper conversation over in/out.
 type Helper struct {
 	url         RepoURL
-	chain       chainClient
+	chain       chain.RepoRegistryBackend
 	ipfs        ipfsClient
 	replication replication.Authorizer
 	uploadPeers []string
@@ -33,20 +33,13 @@ type Helper struct {
 
 	// remoteRefs caches the on-chain refs fetched during `list`.
 	remoteRefs map[string]chain.RefInfo
+	resolved   *chain.ResolvedRepo
 }
 
 // SetPushPreflight installs a callback that runs once per push batch before
 // any ref is resolved or packed.
 func (h *Helper) SetPushPreflight(preflight func(needsKubo bool) error) {
 	h.preflight = preflight
-}
-
-type chainClient interface {
-	ListRefs(owner, repo string) ([]chain.RefInfo, error)
-	RepoInfo(owner, repo string) (*chain.RepoInfo, error)
-	ResolveRef(owner, repo, refName string) (string, []string, error)
-	DeleteRef(owner, repo, refName string) error
-	UpdateRef(owner, repo, refName, commitSHA string, packURIs []string, expectedSHA string, force bool) error
 }
 
 type ipfsClient interface {
@@ -64,7 +57,7 @@ type gitRepo interface {
 }
 
 // NewHelper wires up the helper dependencies.
-func NewHelper(url RepoURL, cc chainClient, ic ipfsClient, rc replication.Authorizer, uploadPeers []string, git gitRepo, in io.Reader, out, log io.Writer) *Helper {
+func NewHelper(url RepoURL, cc chain.RepoRegistryBackend, ic ipfsClient, rc replication.Authorizer, uploadPeers []string, git gitRepo, in io.Reader, out, log io.Writer) *Helper {
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	return &Helper{
@@ -99,8 +92,12 @@ func (h *Helper) Run() error {
 		case strings.HasPrefix(line, "option "):
 			// accept-and-ignore keeps git happy (verbosity, progress, ...)
 			h.printf("ok\n")
-		case line == "list" || line == "list for-push":
-			if err := h.cmdList(); err != nil {
+		case line == "list":
+			if err := h.cmdList(false); err != nil {
+				return err
+			}
+		case line == "list for-push":
+			if err := h.cmdList(true); err != nil {
 				return err
 			}
 		case strings.HasPrefix(line, "fetch "):
@@ -122,7 +119,16 @@ func (h *Helper) Run() error {
 }
 
 // cmdList prints "<sha> <refname>" per on-chain ref plus a HEAD symref.
-func (h *Helper) cmdList() error {
+func (h *Helper) cmdList(forPush bool) error {
+	resolved, err := h.resolveRepo()
+	if err != nil {
+		return i18n.Errorf("resolve repository from chain: %w", "从链上解析仓库失败：%w", err)
+	}
+	if forPush {
+		if err := movedError(resolved); err != nil {
+			return err
+		}
+	}
 	refs, err := h.chain.ListRefs(h.url.Owner, h.url.Repo)
 	if err != nil {
 		return i18n.Errorf("list refs from chain: %w", "从链上获取 refs 失败：%w", err)
@@ -133,14 +139,40 @@ func (h *Helper) cmdList() error {
 		h.printf("%s %s\n", r.CommitSha, r.RefName)
 	}
 	// advertise HEAD so clone checks out the default branch
-	if info, err := h.chain.RepoInfo(h.url.Owner, h.url.Repo); err == nil {
-		headTarget := "refs/heads/" + info.DefaultBranch
+	if resolved.Info.DefaultBranch != "" {
+		headTarget := "refs/heads/" + resolved.Info.DefaultBranch
 		if _, ok := h.remoteRefs[headTarget]; ok {
 			h.printf("@%s HEAD\n", headTarget)
 		}
 	}
 	h.printf("\n")
 	return nil
+}
+
+func (h *Helper) resolveRepo() (*chain.ResolvedRepo, error) {
+	if h.resolved != nil {
+		return h.resolved, nil
+	}
+	resolved, err := h.chain.ResolveRepo(h.url.Owner, h.url.Repo)
+	if err != nil {
+		return nil, err
+	}
+	h.resolved = resolved
+	return resolved, nil
+}
+
+func movedError(resolved *chain.ResolvedRepo) error {
+	if resolved == nil {
+		return nil
+	}
+	if resolved.IsCanonical {
+		return nil
+	}
+	return &chain.RepoMovedError{
+		RepoID:       resolved.RepoID,
+		CurrentOwner: resolved.Canonical.Owner,
+		Name:         resolved.Canonical.Name,
+	}
 }
 
 // cmdFetchBatch consumes "fetch <sha> <ref>" lines (first already read)
@@ -229,6 +261,17 @@ func (h *Helper) cmdPushBatch(first string) error {
 		if strings.HasPrefix(line, "push ") {
 			specs = append(specs, parsePushSpec(line))
 		}
+	}
+	resolved, resolveErr := h.resolveRepo()
+	if resolveErr == nil {
+		resolveErr = movedError(resolved)
+	}
+	if resolveErr != nil {
+		for _, spec := range specs {
+			h.printf("error %s %s\n", spec.dst, sanitizeErr(resolveErr))
+		}
+		h.printf("\n")
+		return nil
 	}
 	if h.preflight != nil {
 		needsKubo := false
@@ -344,8 +387,12 @@ func (h *Helper) pushOne(spec pushSpec) error {
 			return i18n.Errorf("US replication client is not configured", "未配置 US replication 客户端")
 		}
 		sum := sha256.Sum256(pack)
+		owner, repo := h.url.Owner, h.url.Repo
+		if h.resolved != nil {
+			owner, repo = h.resolved.Canonical.Owner, h.resolved.Canonical.Name
+		}
 		replicationRequest := replication.Request{
-			CID: cid, Owner: h.url.Owner, Repo: h.url.Repo, Ref: spec.dst,
+			CID: cid, Owner: owner, Repo: repo, Ref: spec.dst,
 			PackSHA256: fmt.Sprintf("%x", sum), Size: int64(len(pack)),
 			ExpiresAt: time.Now().Add(30 * time.Minute).Unix(),
 		}

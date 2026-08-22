@@ -16,7 +16,7 @@ const RefTable = memo(function RefTable({ refs, base, kind }: { refs: RefInfo[];
       </div>
       {refs.map((r) => {
         const label = shortRef(r.ref_name);
-        const dateStr = r.updated_at ? new Date(r.updated_at).toLocaleString() : "";
+        const dateStr = r.updated_at ? new Date(r.updated_at * 1000).toLocaleString() : "";
         return (
           <div className="row" key={r.ref_name}>
             <span className="icon">

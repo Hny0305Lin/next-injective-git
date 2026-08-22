@@ -1,0 +1,533 @@
+package chain
+
+import (
+	"context"
+	"crypto/ecdsa"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"math/big"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/config"
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/fileprotection"
+	"github.com/ethereum/go-ethereum/accounts/keystore"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	ethcrypto "github.com/ethereum/go-ethereum/crypto"
+	"golang.org/x/term"
+)
+
+const evmKeyIndexFile = "index.json"
+
+// EVMKeystoreSigner stores encrypted Ethereum keystore JSON on the local
+// machine. The index contains only key names and file paths; private key
+// material remains inside the scrypt-encrypted keystore file.
+type EVMKeystoreSigner struct {
+	cfg config.Config
+}
+
+// NewEVMKeystoreSigner creates the default local keystore signer.
+func NewEVMKeystoreSigner(cfg config.Config) *EVMKeystoreSigner {
+	return &EVMKeystoreSigner{cfg: cfg}
+}
+
+var _ EVMSigner = (*EVMKeystoreSigner)(nil)
+
+func (s *EVMKeystoreSigner) keyDir() (string, error) {
+	var dir string
+	if value := strings.TrimSpace(s.cfg.EVMKeystoreDir); value != "" {
+		dir = filepath.Clean(value)
+	} else {
+		var err error
+		dir, err = config.Dir()
+		if err != nil {
+			return "", err
+		}
+	}
+	// Resolve the directory at the boundary. An indexed path may be relative,
+	// while CLI commands can be invoked from any working directory.
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(s.cfg.EVMKeystoreDir) == "" {
+		dir = filepath.Join(dir, "keystore")
+	}
+	return filepath.Clean(dir), nil
+}
+
+func (s *EVMKeystoreSigner) indexPath() (string, error) {
+	dir, err := s.keyDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, evmKeyIndexFile), nil
+}
+
+func readEVMKeyIndex(path string) (map[string]string, error) {
+	if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
+		return map[string]string{}, nil
+	} else if err != nil {
+		return nil, err
+	}
+	if err := fileprotection.ProtectFile(path); err != nil {
+		return nil, fmt.Errorf("protect EVM keystore index before read: %w", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var index map[string]string
+	if err := json.Unmarshal(data, &index); err != nil {
+		return nil, fmt.Errorf("parse EVM keystore index: %w", err)
+	}
+	if index == nil {
+		index = map[string]string{}
+	}
+	return index, nil
+}
+
+func writeEVMKeyIndex(path string, index map[string]string) error {
+	data, err := json.MarshalIndent(index, "", "  ")
+	if err != nil {
+		return err
+	}
+	return fileprotection.WriteFile(path, data)
+}
+
+func validEVMKeyName(name string) bool {
+	if strings.TrimSpace(name) == "" || name == "." || name == ".." {
+		return false
+	}
+	return !strings.ContainsAny(name, `/\\:`)
+}
+
+// keyPassword reads a password without echoing it. IGIT_EVM_KEY_PASSWORD is
+// accepted only for CI/offline automation; it is never written to config or
+// logs. Interactive users are prompted through the terminal.
+func keyPassword(prompt string, input io.Reader, output io.Writer) ([]byte, error) {
+	if value := os.Getenv("IGIT_EVM_KEY_PASSWORD"); value != "" {
+		return []byte(value), nil
+	}
+	file, ok := input.(*os.File)
+	if !ok || !term.IsTerminal(int(file.Fd())) {
+		return nil, fmt.Errorf("EVM keystore password is required; set IGIT_EVM_KEY_PASSWORD only for non-interactive automation")
+	}
+	if _, err := fmt.Fprint(output, prompt); err != nil {
+		return nil, err
+	}
+	password, err := term.ReadPassword(int(file.Fd()))
+	_, _ = fmt.Fprintln(output)
+	if err != nil {
+		return nil, fmt.Errorf("read EVM keystore password: %w", err)
+	}
+	if len(password) == 0 {
+		return nil, fmt.Errorf("EVM keystore password cannot be empty")
+	}
+	return password, nil
+}
+
+// openPasswordTerminal returns streams dedicated to the user's controlling
+// terminal. Git remote helpers receive stdin/stdout as the Git protocol, so
+// using those process streams for a keystore prompt would corrupt the helper
+// conversation or fail when Git supplies pipes. The platform-specific device
+// names keep the prompt out of the protocol on both native Windows and POSIX.
+var openPasswordTerminal = openSystemPasswordTerminal
+
+func openSystemPasswordTerminal() (io.Reader, io.Writer, io.Closer, error) {
+	if runtime.GOOS == "windows" {
+		input, err := os.OpenFile("CONIN$", os.O_RDWR, 0)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("open Windows console input: %w", err)
+		}
+		output, err := os.OpenFile("CONOUT$", os.O_WRONLY, 0)
+		if err != nil {
+			_ = input.Close()
+			return nil, nil, nil, fmt.Errorf("open Windows console output: %w", err)
+		}
+		return input, output, closePasswordTerminals{input: input, output: output}, nil
+	}
+	terminal, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("open controlling terminal: %w", err)
+	}
+	return terminal, terminal, terminal, nil
+}
+
+type closePasswordTerminals struct {
+	input  io.Closer
+	output io.Closer
+}
+
+func (terminals closePasswordTerminals) Close() error {
+	inputErr := terminals.input.Close()
+	outputErr := terminals.output.Close()
+	if inputErr != nil {
+		return inputErr
+	}
+	return outputErr
+}
+
+func readEVMKeystorePassword(prompt string) ([]byte, error) {
+	if value := os.Getenv("IGIT_EVM_KEY_PASSWORD"); value != "" {
+		return []byte(value), nil
+	}
+	input, output, closer, err := openPasswordTerminal()
+	if err != nil {
+		return nil, fmt.Errorf("EVM keystore password is required; %w", err)
+	}
+	defer closer.Close()
+	return keyPassword(prompt, input, output)
+}
+
+func readEVMPrivateKey() ([]byte, error) {
+	input, output, closer, err := openPasswordTerminal()
+	if err != nil {
+		return nil, fmt.Errorf("open terminal for private key import: %w", err)
+	}
+	defer closer.Close()
+	file, ok := input.(*os.File)
+	if !ok || !term.IsTerminal(int(file.Fd())) {
+		return nil, fmt.Errorf("private key import requires an interactive terminal")
+	}
+	if _, err := fmt.Fprint(output, "EVM private key (64 hex characters): "); err != nil {
+		return nil, err
+	}
+	secret, err := term.ReadPassword(int(file.Fd()))
+	_, _ = fmt.Fprintln(output)
+	if err != nil {
+		return nil, fmt.Errorf("read EVM private key: %w", err)
+	}
+	return secret, nil
+}
+
+func clearSecret(value []byte) {
+	for index := range value {
+		value[index] = 0
+	}
+}
+
+func (s *EVMKeystoreSigner) CreateKey(name string) error {
+	if !validEVMKeyName(name) {
+		return fmt.Errorf("invalid EVM key name %q", name)
+	}
+	dir, err := s.keyDir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create EVM keystore directory: %w", err)
+	}
+	if err := fileprotection.ProtectDirectory(dir); err != nil {
+		return fmt.Errorf("protect EVM keystore directory: %w", err)
+	}
+	indexPath, err := s.indexPath()
+	if err != nil {
+		return err
+	}
+	index, err := readEVMKeyIndex(indexPath)
+	if err != nil {
+		return err
+	}
+	if _, exists := index[name]; exists {
+		return fmt.Errorf("EVM key %q already exists", name)
+	}
+	password, err := readEVMKeystorePassword("New EVM keystore password: ")
+	if err != nil {
+		return err
+	}
+	if os.Getenv("IGIT_EVM_KEY_PASSWORD") == "" {
+		confirm, confirmErr := readEVMKeystorePassword("Confirm EVM keystore password: ")
+		if confirmErr != nil {
+			return confirmErr
+		}
+		if string(password) != string(confirm) {
+			return fmt.Errorf("EVM keystore passwords do not match")
+		}
+	}
+	ks := keystore.NewKeyStore(dir, keystore.StandardScryptN, keystore.StandardScryptP)
+	account, err := ks.NewAccount(string(password))
+	if err != nil {
+		return fmt.Errorf("create encrypted EVM key: %w", err)
+	}
+	if err := fileprotection.ProtectFile(account.URL.Path); err != nil {
+		_ = os.Remove(account.URL.Path)
+		return fmt.Errorf("protect encrypted EVM key: %w", err)
+	}
+	index[name] = account.URL.Path
+	if err := writeEVMKeyIndex(indexPath, index); err != nil {
+		return fmt.Errorf("write EVM keystore index: %w", err)
+	}
+	return nil
+}
+
+// ImportKey reads a raw secp256k1 private key without terminal echo and stores
+// it only as a standard-scrypt encrypted geth keystore file. Plaintext key
+// material is never accepted through command arguments or configuration.
+func (s *EVMKeystoreSigner) ImportKey(name string) error {
+	secret, err := readEVMPrivateKey()
+	if err != nil {
+		return err
+	}
+	defer clearSecret(secret)
+	return s.importKey(name, secret)
+}
+
+func (s *EVMKeystoreSigner) importKey(name string, secret []byte) error {
+	if !validEVMKeyName(name) {
+		return fmt.Errorf("invalid EVM key name %q", name)
+	}
+	raw := strings.TrimSpace(string(secret))
+	raw = strings.TrimPrefix(strings.TrimPrefix(raw, "0x"), "0X")
+	if len(raw) != 64 {
+		return fmt.Errorf("EVM private key must contain exactly 64 hexadecimal characters")
+	}
+	privateKey, err := ethcrypto.HexToECDSA(raw)
+	if err != nil {
+		return fmt.Errorf("invalid EVM private key: %w", err)
+	}
+	defer privateKey.D.SetInt64(0)
+
+	dir, err := s.keyDir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create EVM keystore directory: %w", err)
+	}
+	if err := fileprotection.ProtectDirectory(dir); err != nil {
+		return fmt.Errorf("protect EVM keystore directory: %w", err)
+	}
+	indexPath, err := s.indexPath()
+	if err != nil {
+		return err
+	}
+	index, err := readEVMKeyIndex(indexPath)
+	if err != nil {
+		return err
+	}
+	if _, exists := index[name]; exists {
+		return fmt.Errorf("EVM key %q already exists", name)
+	}
+	password, err := readEVMKeystorePassword("New EVM keystore password: ")
+	if err != nil {
+		return err
+	}
+	defer clearSecret(password)
+	if os.Getenv("IGIT_EVM_KEY_PASSWORD") == "" {
+		confirm, confirmErr := readEVMKeystorePassword("Confirm EVM keystore password: ")
+		if confirmErr != nil {
+			return confirmErr
+		}
+		matches := string(password) == string(confirm)
+		clearSecret(confirm)
+		if !matches {
+			return fmt.Errorf("EVM keystore passwords do not match")
+		}
+	}
+	ks := keystore.NewKeyStore(dir, keystore.StandardScryptN, keystore.StandardScryptP)
+	account, err := ks.ImportECDSA(privateKey, string(password))
+	if err != nil {
+		return fmt.Errorf("import encrypted EVM key: %w", err)
+	}
+	if err := fileprotection.ProtectFile(account.URL.Path); err != nil {
+		_ = os.Remove(account.URL.Path)
+		return fmt.Errorf("protect encrypted EVM key: %w", err)
+	}
+	index[name] = account.URL.Path
+	if err := writeEVMKeyIndex(indexPath, index); err != nil {
+		return fmt.Errorf("write EVM keystore index: %w", err)
+	}
+	return nil
+}
+
+func (s *EVMKeystoreSigner) keyPath() (string, error) {
+	if !validEVMKeyName(s.cfg.KeyName) {
+		return "", fmt.Errorf("invalid or missing EVM key_name %q", s.cfg.KeyName)
+	}
+	dir, err := s.keyDir()
+	if err != nil {
+		return "", err
+	}
+	if err := fileprotection.ProtectDirectory(dir); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("protect EVM keystore directory before read: %w", err)
+	}
+	indexPath := filepath.Join(dir, evmKeyIndexFile)
+	index, err := readEVMKeyIndex(indexPath)
+	if err != nil {
+		return "", err
+	}
+	path, ok := index[s.cfg.KeyName]
+	if !ok || strings.TrimSpace(path) == "" {
+		return "", fmt.Errorf("EVM key %q was not found; run `igit key new %s`", s.cfg.KeyName, s.cfg.KeyName)
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(dir, path)
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	dirAbs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", err
+	}
+	keyDirectory := filepath.Dir(abs)
+	sameDirectory := keyDirectory == dirAbs
+	if runtime.GOOS == "windows" {
+		sameDirectory = strings.EqualFold(keyDirectory, dirAbs)
+	}
+	if !sameDirectory {
+		return "", fmt.Errorf("EVM keystore index points outside or below the keystore directory; key files must be directly inside")
+	}
+	if err := fileprotection.ProtectFile(abs); err != nil {
+		return "", fmt.Errorf("protect encrypted EVM key before read: %w", err)
+	}
+	return abs, nil
+}
+
+// indexedEVMAddress validates the public address recorded by geth in the
+// keystore JSON against the address encoded in its filename. Both values are
+// non-secret metadata; private key material is never decoded here.
+func indexedEVMAddress(path string) (string, error) {
+	base := filepath.Base(path)
+	parts := strings.Split(base, "--")
+	if len(parts) < 3 {
+		return "", fmt.Errorf("invalid EVM keystore filename")
+	}
+	filenameAddress := strings.ToLower(parts[len(parts)-1])
+	if len(filenameAddress) != 40 {
+		return "", fmt.Errorf("invalid EVM keystore address filename")
+	}
+	if _, err := decodeHexBytes("0x" + filenameAddress); err != nil {
+		return "", fmt.Errorf("invalid EVM keystore address filename: %w", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read EVM keystore metadata: %w", err)
+	}
+	var metadata struct {
+		Address string `json:"address"`
+	}
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return "", fmt.Errorf("parse EVM keystore metadata: %w", err)
+	}
+	stored := strings.TrimPrefix(strings.TrimPrefix(strings.ToLower(strings.TrimSpace(metadata.Address)), "0x"), "0X")
+	if len(stored) != 40 {
+		return "", fmt.Errorf("invalid EVM keystore address metadata")
+	}
+	if _, err := decodeHexBytes("0x" + stored); err != nil {
+		return "", fmt.Errorf("invalid EVM keystore address metadata: %w", err)
+	}
+	if stored != filenameAddress {
+		return "", fmt.Errorf("EVM keystore filename and metadata addresses do not match")
+	}
+	return filenameAddress, nil
+}
+
+func (s *EVMKeystoreSigner) OwnerAddress() (string, error) {
+	path, err := s.keyPath()
+	if err != nil {
+		return "", err
+	}
+	hexAddress, err := indexedEVMAddress(path)
+	if err != nil {
+		return "", err
+	}
+	return userAddressFromEVM("0x" + hexAddress)
+}
+
+func (s *EVMKeystoreSigner) SignTransaction(ctx context.Context, tx EVMTransaction) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	default:
+	}
+	path, err := s.keyPath()
+	if err != nil {
+		return "", err
+	}
+	expectedAddress, err := indexedEVMAddress(path)
+	if err != nil {
+		return "", err
+	}
+	password, err := readEVMKeystorePassword("EVM keystore password: ")
+	if err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read EVM keystore: %w", err)
+	}
+	key, err := keystore.DecryptKey(data, string(password))
+	if err != nil {
+		return "", fmt.Errorf("decrypt EVM keystore: %w", err)
+	}
+	if key.PrivateKey == nil {
+		return "", fmt.Errorf("EVM keystore has no private key")
+	}
+	derivedAddress := strings.TrimPrefix(strings.ToLower(evmKeyAddress(key.PrivateKey).Hex()), "0x")
+	if derivedAddress != expectedAddress {
+		return "", fmt.Errorf("EVM keystore private key does not match its address metadata")
+	}
+	var to *common.Address
+	if strings.TrimSpace(tx.To) != "" {
+		toValue, err := normalizeEVMAddress(tx.To)
+		if err != nil {
+			return "", fmt.Errorf("invalid EVM transaction destination: %w", err)
+		}
+		address := common.HexToAddress(strings.TrimPrefix(toValue, "0x"))
+		to = &address
+	}
+	dataBytes, err := decodeHexBytes(tx.Data)
+	if err != nil {
+		return "", err
+	}
+	gasPrice, err := parseHexUint(tx.GasPrice)
+	if err != nil {
+		return "", fmt.Errorf("invalid EVM gas price: %w", err)
+	}
+	value := new(big.Int)
+	if strings.TrimSpace(tx.Value) != "" {
+		valueText := strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(tx.Value), "0x"), "0X")
+		if valueText == "" {
+			valueText = "0"
+		}
+		parsed, ok := new(big.Int).SetString(valueText, 16)
+		if !ok {
+			return "", fmt.Errorf("invalid EVM transaction value")
+		}
+		value = parsed
+	}
+	unsigned := types.NewTx(&types.LegacyTx{
+		Nonce:    tx.Nonce,
+		To:       to,
+		Value:    value,
+		Gas:      tx.GasLimit,
+		GasPrice: new(big.Int).SetUint64(gasPrice),
+		Data:     dataBytes,
+	})
+	signed, err := types.SignTx(unsigned, types.LatestSignerForChainID(new(big.Int).SetUint64(tx.ChainID)), key.PrivateKey)
+	if err != nil {
+		return "", fmt.Errorf("sign EVM transaction: %w", err)
+	}
+	raw, err := signed.MarshalBinary()
+	if err != nil {
+		return "", fmt.Errorf("encode signed EVM transaction: %w", err)
+	}
+	return "0x" + fmt.Sprintf("%x", raw), nil
+}
+
+// Keep the concrete key type referenced so future hardware-backed signers can
+// share the same address validation without exposing private material.
+func evmKeyAddress(key *ecdsa.PrivateKey) common.Address {
+	return ethcrypto.PubkeyToAddress(key.PublicKey)
+}

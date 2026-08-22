@@ -1,67 +1,185 @@
 name: ci
 
 on:
-  # Buildable source trees and repository acceptance fixtures gate CI. Changes
-  # limited to web/ or docs/ do not start this workflow.
+  # Buildable source trees, migration docs, Web assets, and repository
+  # acceptance fixtures gate CI. Every tree that can trigger a run is listed
+  # here; which jobs actually execute is then narrowed per changed tree by the
+  # `changes` job below, so a Web-only push does not pay for Go/Foundry gates,
+  # a CLI-only push does not rebuild or redeploy the Web tree, and a docs-only
+  # push pays only for the lightweight script and documentation gates.
   push:
-    branches: [main, master]
+    branches: [main, master, dev]
     paths:
+      - "README.md"
+      - "CLAUDE.md"
       - "cli/**"
-      - "contracts/**"
+      - "contracts/evm-v2/**"
+      - "docs/**"
       - "scripts/**"
+      - "web/**"
+      - "vercel.json"
+      - ".gitattributes"
       - ".github/workflows/ci.yml"
+      - ".github/workflows/release.yml"
   pull_request:
     paths:
+      - "README.md"
+      - "CLAUDE.md"
       - "cli/**"
-      - "contracts/**"
+      - "contracts/evm-v2/**"
+      - "docs/**"
       - "scripts/**"
+      - "web/**"
+      - "vercel.json"
+      - ".gitattributes"
       - ".github/workflows/ci.yml"
+      - ".github/workflows/release.yml"
+  # Vercel's Git integration is disabled for the deployment branches (see
+  # web/vercel.json), so this pipeline is the only publisher. A manual trigger
+  # is therefore required to re-publish or roll back without inventing a
+  # commit. It runs every gate, since a dispatch has no diff base.
+  workflow_dispatch:
 
 jobs:
-  contract:
-    name: contract (rust 1.81)
+  # Routes each push or PR to the gates that its changed paths actually need.
+  # Hand-rolled rather than a third-party filter action: this pipeline pins
+  # every external action by SHA, and a git diff needs no new supply chain.
+  # Fails open to running everything, so a detection miss can never silently
+  # drop a required gate.
+  changes:
+    name: changed source trees
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: contracts/repo-registry
+    outputs:
+      native: ${{ steps.filter.outputs.native }}
+      web: ${{ steps.filter.outputs.web }}
+      lightweight: ${{ steps.filter.outputs.lightweight }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: classify changed paths
+        id: filter
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+
+          emit() {
+            echo "native=$1" >>"$GITHUB_OUTPUT"
+            echo "web=$2" >>"$GITHUB_OUTPUT"
+            echo "lightweight=$3" >>"$GITHUB_OUTPUT"
+            echo "native=$1 web=$2 lightweight=$3"
+          }
+
+          base=""
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            git fetch --no-tags --depth=1 origin "$BASE_REF" || true
+            base="$(git merge-base HEAD FETCH_HEAD 2>/dev/null || true)"
+          elif [[ -n "${BEFORE_SHA:-}" && "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]]; then
+            git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null && base="$BEFORE_SHA"
+          fi
+
+          if [[ -z "$base" ]]; then
+            echo "no usable base revision; running every gate"
+            emit true true true
+            exit 0
+          fi
+
+          changed="$(git diff --name-only "$base" HEAD)"
+          echo "changed files:"
+          echo "$changed"
+
+          native=false
+          web=false
+          lightweight=false
+          while IFS= read -r path; do
+            [[ -n "$path" ]] || continue
+            case "$path" in
+              # Workflow and shared script changes can alter either pipeline,
+              # so they deliberately arm both gates.
+              .github/workflows/*|scripts/*)
+                native=true
+                web=true
+                lightweight=true
+                ;;
+              web/*|vercel.json)
+                web=true
+                ;;
+              cli/*|contracts/evm-v2/*)
+                native=true
+                ;;
+              # Documentation and EOL rules are consumed only by the script
+              # gates in `lightweight` (suite-readiness greps docs for banned
+              # V1 paths); nothing in the Go, Windows, or Foundry trees reads
+              # them, so they no longer arm the full native matrix.
+              docs/*|README.md|CLAUDE.md|.gitattributes)
+                lightweight=true
+                ;;
+              *)
+                native=true
+                web=true
+                lightweight=true
+                ;;
+            esac
+          done <<<"$changed"
+
+          emit "$native" "$web" "$lightweight"
+
+  # Documentation and pure-script gates. Docs changes are consumed only here
+  # (suite-readiness greps them for banned V1 paths), and the script fixtures
+  # below need nothing but bash and Node, so docs-only pushes stop at this job
+  # instead of arming the Go, Windows, and Foundry matrices.
+  lightweight:
+    name: lightweight (docs + scripts)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.lightweight == 'true'
     steps:
       - uses: actions/checkout@v5
 
-      # 1.81.0 is mandatory: Injective's CosmWasm VM rejects wasm built by
-      # 1.82+ (reference-types) / 1.87+ (bulk-memory). Cargo.lock pins the
-      # matching dependency versions - do NOT run a bare `cargo update`.
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v5
         with:
-          toolchain: 1.81.0
-          targets: wasm32-unknown-unknown
+          node-version: "22"
 
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: contracts/repo-registry
+      # Release-tag parsing is repository tooling rather than Web code, so it
+      # is gated here rather than in the Web job. Pure node: builtins.
+      - name: strict SemVer release-tag regression vectors
+        run: node --test scripts/semver-check.test.mjs
 
-      - name: unit + integration tests
-        run: cargo test --locked
+      - name: validate bootstrap shell script
+        run: bash -n scripts/bootstrap-push.sh
 
-      - name: build wasm artifact
-        run: cargo build --release --target wasm32-unknown-unknown --lib --locked
-
-      - name: verify Rust toolchain and wasm artifact
+      - name: validate bootstrap PowerShell script
+        shell: pwsh
         run: |
-          set -euo pipefail
-          rustc --version | grep -Eq '^rustc 1\.81\.'
-          f=target/wasm32-unknown-unknown/release/repo_registry.wasm
-          test -s "$f"
-          magic="$(od -An -tx1 -N4 "$f" | tr -d '[:space:]')"
-          test "$magic" = "0061736d"
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path scripts/bootstrap-push.ps1),
+            [ref]$tokens,
+            [ref]$errors
+          ) > $null
+          if ($errors.Count) {
+            $errors | Format-List | Out-String | Write-Error
+          }
 
-      - uses: actions/upload-artifact@v6
-        with:
-          name: repo_registry.wasm
-          path: contracts/repo-registry/target/wasm32-unknown-unknown/release/repo_registry.wasm
+      - name: immutable Suite source readiness gate
+        run: bash scripts/suite-readiness.sh --source-only
+
+      - name: replication reaper regression fixture
+        run: bash scripts/replication-reaper-test.sh
+
+      - name: replication config cutover guard fixture
+        run: bash scripts/replication-config-check-test.sh
 
   cli:
     name: cli (go 1.22)
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
     defaults:
       run:
         working-directory: cli
@@ -73,11 +191,41 @@ jobs:
           go-version: "1.22"
           cache-dependency-path: cli/go.sum
 
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: contracts/evm-v2/package-lock.json
+
+      - name: immutable Suite Linux artifact gate
+        working-directory: .
+        run: |
+          npm ci --prefix contracts/evm-v2
+          npm run check --prefix contracts/evm-v2
+          go -C cli run ./cmd/igit-deploy-suite --artifacts ../contracts/evm-v2/artifacts --check
+
       - name: vet
         run: go vet ./...
 
       - name: test
-        run: go test ./...
+        run: go test -count=1 ./...
+
+      - name: immutable Suite profile source guard
+        run: go run ./cmd/igit-release-profile-check
+
+      - name: pinned native Kubo download and daemon smoke
+        env:
+          IGIT_RUN_NATIVE_KUBO_INTEGRATION: "1"
+        run: |
+          set -euo pipefail
+          test_name=TestNativeKuboLifecycleIntegration
+          listed="$(go test -list "^${test_name}$" ./internal/bootstrap)"
+          matches="$(printf '%s\n' "$listed" | awk -v name="$test_name" '$0 == name { count++ } END { print count + 0 }')"
+          if [ "$matches" -ne 1 ]; then
+            echo "expected exactly one $test_name test, found $matches" >&2
+            exit 1
+          fi
+          go test -run '^TestNativeKuboLifecycleIntegration$' -count=1 -timeout 15m -v ./internal/bootstrap
 
       # Cross-compile the igit toolchain (igit + git-remote-igit) for every
       # supported platform; pure-Go zero-dependency module, so CGO stays off.
@@ -100,54 +248,434 @@ jobs:
           path: cli/dist/
           if-no-files-found: error
 
-  acceptance-fixtures:
-    name: acceptance fixtures (bash + go)
-    runs-on: ubuntu-latest
+  cli-windows:
+    name: cli native Windows (go 1.22)
+    runs-on: windows-latest
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
+    defaults:
+      run:
+        working-directory: cli
     steps:
       - uses: actions/checkout@v5
 
-      - name: validate bootstrap shell script
-        run: bash -n scripts/bootstrap-push.sh
+      - name: rematerialize Suite artifacts with Windows autocrlf
+        shell: pwsh
+        working-directory: .
+        run: |
+          git config core.autocrlf true
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git checkout-index --force --all
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $suiteFiles = @(
+            git ls-files contracts/evm-v2 cli/internal/chain/abi |
+              Where-Object {
+                $_ -match '\.sol$' -or
+                $_ -match '^contracts/evm-v2/(abi|artifacts)/[^/]+\.json$' -or
+                $_ -match '^cli/internal/chain/abi/[^/]+\.json$'
+              }
+          )
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($suiteFiles.Count -eq 0) {
+            throw "no Suite LF-bound files were found"
+          }
+          foreach ($path in $suiteFiles) {
+            $attribute = git check-attr eol -- $path
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            if ($attribute -notmatch ': eol: lf$') {
+              throw "$path is not pinned to LF: $attribute"
+            }
+            $content = [System.IO.File]::ReadAllText((Join-Path $env:GITHUB_WORKSPACE $path))
+            if ($content.Contains("`r`n")) {
+              throw "$path was checked out with CRLF"
+            }
+          }
 
-      - name: validate bootstrap PowerShell script
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.22"
+          cache-dependency-path: cli/go.sum
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: contracts/evm-v2/package-lock.json
+
+      - name: immutable Suite Windows artifact gate
+        shell: pwsh
+        working-directory: .
+        run: |
+          npm ci --prefix contracts/evm-v2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run check --prefix contracts/evm-v2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go -C cli run ./cmd/igit-deploy-suite --artifacts ../contracts/evm-v2/artifacts --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: clean Windows checkout Suite gate
+        shell: pwsh
+        working-directory: .
+        run: .\scripts\windows-suite-clean-check.ps1
+
+      # This executes the Windows-specific Kubo wrapper/executable path rather
+      # than relying only on a Linux cross-compile.
+      - name: native setup, bootstrap, and backend tests
+        shell: pwsh
+        run: go test -count=1 ./...
+
+      - name: pinned native Kubo download and daemon smoke
+        shell: pwsh
+        env:
+          IGIT_RUN_NATIVE_KUBO_INTEGRATION: "1"
+        run: |
+          $testName = "TestNativeKuboLifecycleIntegration"
+          $listed = @(go test -list "^$testName`$" ./internal/bootstrap)
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $matches = @($listed | Where-Object { $_ -eq $testName })
+          if ($matches.Count -ne 1) {
+            throw "expected exactly one $testName test, found $($matches.Count)"
+          }
+          go test -run '^TestNativeKuboLifecycleIntegration$' -count=1 -timeout 15m -v ./internal/bootstrap
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: native vet
+        shell: pwsh
+        run: go vet ./...
+
+      - name: native PowerShell cutover evidence regression
+        shell: pwsh
+        working-directory: .
+        run: |
+          Set-StrictMode -Version Latest
+          & .\scripts\migration-cutover-readiness-test.ps1
+
+      - name: build native commands
         shell: pwsh
         run: |
-          $tokens = $null
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path scripts/bootstrap-push.ps1),
-            [ref]$tokens,
-            [ref]$errors
-          ) > $null
-          if ($errors.Count) {
-            $errors | Format-List | Out-String | Write-Error
+          New-Item -ItemType Directory -Force dist | Out-Null
+          go build -trimpath -o dist/igit.exe ./cmd/igit
+          go build -trimpath -o dist/git-remote-igit.exe ./cmd/git-remote-igit
+
+  web:
+    name: web (node)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: install dependencies
+        run: npm ci
+
+      - name: published Web profile release guard
+        run: npm run check:release-profile
+
+      - name: API tests
+        run: npm run test:api
+
+      - name: typecheck
+        run: npm run typecheck
+
+      - name: production build
+        run: npm run build
+
+  web-deploy:
+    name: web Vercel production deploy
+    runs-on: ubuntu-latest
+    needs: web
+    # A landed push or an explicit manual dispatch publishes. Pull requests
+    # stop at the `web` gate above; Vercel's own Git integration still serves
+    # PR previews.
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    # Serializes publishes so two pushes cannot race the production alias.
+    concurrency:
+      group: vercel-production
+      cancel-in-progress: false
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      # Not --scope. An explicit scope forces the CLI through /v2/user and
+      # /v2/teams before the command runs, and a project-scoped vcp_ token
+      # is denied user-level endpoints by design, so every command would
+      # die with "User not found". Without an explicit scope the CLI reads
+      # orgId from the link file, which needs no user lookup. The team
+      # context is still pinned by that link file.
+      APP_PRINCIPAL_ENABLED: "1"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: install pinned Vercel CLI
+        run: npm install --global --no-save vercel@59.1.4
+
+      # Fail closed: a missing credential must break the deploy rather than
+      # silently leave production on an older bundle, which is exactly the
+      # failure mode that kept the block-range fix off www.igit.xyz.
+      - name: require deployment credentials
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -n "${VERCEL_TOKEN:-}" ]] || missing+=(VERCEL_TOKEN)
+          [[ -n "${VERCEL_ORG_ID:-}" ]] || missing+=(VERCEL_ORG_ID)
+          [[ -n "${VERCEL_PROJECT_ID:-}" ]] || missing+=(VERCEL_PROJECT_ID)
+          if (( ${#missing[@]} )); then
+            echo "FAIL: missing repository secrets: ${missing[*]}" >&2
+            exit 1
+          fi
+
+          # A secret pasted with a trailing newline fails identically to a wrong
+          # one, and every token-using command in this job has failed while every
+          # command that touches no API has passed. Normalize before use and say
+          # whether trimming was needed, since that alone would explain it.
+          for name in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
+            raw="${!name}"
+            clean="$(printf '%s' "$raw" | tr -d '[:space:]')"
+
+            # Surrounding quotes survive whitespace stripping and fail auth
+            # exactly like an invalid value, as does a copied Bearer prefix.
+            # Both are ordinary paste mistakes, so they are corrected here and
+            # reported, rather than being left to look like a bad credential.
+            case "$clean" in
+              \"*\") clean="${clean#\"}"; clean="${clean%\"}"
+                     echo "note: $name had surrounding double quotes; removed" ;;
+              \'*\') clean="${clean#\'}"; clean="${clean%\'}"
+                     echo "note: $name had surrounding single quotes; removed" ;;
+            esac
+            case "$clean" in
+              Bearer*) clean="${clean#Bearer}"
+                       echo "note: $name had a Bearer prefix; removed" ;;
+            esac
+
+            if [[ "$raw" != "$clean" ]]; then
+              echo "note: $name normalized, ${#raw} -> ${#clean} chars"
+            else
+              echo "note: $name clean, ${#clean} chars"
+            fi
+            echo "::add-mask::$clean"
+            echo "V_${name#VERCEL_}=$clean" >>"$GITHUB_ENV"
+          done
+
+      # Authenticates against the exact resource this job publishes to. A
+      # project-scoped vcp_ token (60 chars, the current format; the old
+      # 24-char one is legacy) is denied user-level endpoints by design, so
+      # `vercel whoami` fails with "User not found" even for a perfectly
+      # valid token. `GET /v9/projects/{id}` is project-level and succeeds
+      # for full-account, team, and project scopes alike, which makes it the
+      # only probe that distinguishes a bad token or project ID from a scope
+      # restriction. No continue-on-error: an unauthenticated publish must
+      # fail here, loudly, rather than deep inside the deploy step.
+      - name: token authenticates
+        run: |
+          set -uo pipefail
+
+          status="$(curl --silent \
+            --output /tmp/project.json --write-out '%{http_code}' \
+            --header "Authorization: Bearer $V_TOKEN" \
+            "https://api.vercel.com/v9/projects/$V_PROJECT_ID")"
+
+          if [[ "$status" == "200" ]]; then
+            echo "token authenticated; project is reachable"
+            exit 0
+          fi
+
+          echo "" >&2
+          echo "FAIL: token check returned HTTP $status." >&2
+          cat /tmp/project.json >&2 || true
+          echo "" >&2
+          case "$status" in
+            401|403)
+              echo "The token was rejected or lacks access to this project." >&2
+              echo "Create a token at https://vercel.com/account/tokens whose" >&2
+              echo "scope covers this project (Full Account, Team, or Project)," >&2
+              echo "then update VERCEL_TOKEN." >&2
+              ;;
+            404)
+              echo "The token authenticated but VERCEL_PROJECT_ID does not" >&2
+              echo "match a project this token can see. Check that ID." >&2
+              ;;
+          esac
+          exit 1
+
+      - name: pull production project settings
+        # Written directly from the two identifiers rather than discovered, since
+        # discovery is what was failing. vercel build --yes fills in the settings
+        # block afterwards.
+        run: |
+          set -uo pipefail
+          mkdir -p .vercel
+
+          # The settings block is written out in full rather than fetched. With
+          # only projectId and orgId present, vercel build needs --yes and then
+          # performs its own full pull, which includes the environment step this
+          # token cannot complete. Supplying settings locally removes that
+          # dependency entirely.
+          #
+          # rootDirectory is the load-bearing field: the project builds from web/,
+          # which is also why web/vercel.json rather than a root one is read.
+          # Values mirror the live project as returned by vercel pull.
+          python3 - <<'PY'
+          import json, os
+          link = {
+              "projectId": os.environ["VERCEL_PROJECT_ID"],
+              "orgId": os.environ["VERCEL_ORG_ID"],
+              "settings": {
+                  "framework": "vite",
+                  "devCommand": None,
+                  "installCommand": None,
+                  "buildCommand": None,
+                  "outputDirectory": None,
+                  "rootDirectory": "web",
+                  "directoryListing": False,
+                  "nodeVersion": "22.x",
+              },
           }
+          with open(".vercel/project.json", "w", encoding="utf-8") as fh:
+              json.dump(link, fh, indent=2)
+              fh.write("\n")
+          print("wrote link file with settings")
+          PY
+          cat .vercel/project.json
+
+      # Continue-on-error: a project-scoped token may be denied env reads.
+      # The only build-time variable is VITE_WALLETCONNECT_PROJECT_ID, and
+      # the bundle production currently serves was itself built without
+      # it, so proceeding without it is not a regression. The step below
+      # reports whether it made it in.
+      - name: pull production environment
+        continue-on-error: true
+        run: |
+          vercel env pull .vercel/.env.production.local \
+            --environment=production --yes \
+            --token="$V_TOKEN"
+
+      - name: report build-time env availability
+        run: |
+          set -uo pipefail
+          if [[ -s .vercel/.env.production.local ]] &&
+             grep -q 'VITE_WALLETCONNECT_PROJECT_ID' .vercel/.env.production.local; then
+            echo "VITE_WALLETCONNECT_PROJECT_ID present; WalletConnect will be enabled"
+          else
+            echo "NOTE: VITE_WALLETCONNECT_PROJECT_ID unavailable to this token."
+            echo "The bundle will build without it, matching what production"
+            echo "already serves. To enable WalletConnect, add the value as a"
+            echo "repository secret and pass it to the build step directly."
+          fi
+
+      - name: build production bundle
+        # Deliberately without --yes and without --scope. --yes makes build
+        # perform its own full pull, and --scope triggers the user lookup a
+        # project-scoped token cannot pass. The locally written link file
+        # carries the org and project IDs, so nothing needs to be fetched.
+        run: |
+          vercel build --prod \
+            --token="$V_TOKEN"
+
+      - name: deploy prebuilt bundle to production
+        id: publish
+        run: |
+          vercel deploy --prebuilt --prod \
+            --token="$V_TOKEN"
+
+      # These two run only after a failed production publish, and exist to make
+      # the cause readable from step conclusions alone, since step logs need an
+      # authenticated fetch. A preview deployment uses the same write path but
+      # never touches the production alias.
+      #
+      # Read the pair together:
+      #   both succeed  -> the token can write previews but not production, so
+      #                    it lacks production-alias permission
+      #   deploy fails  -> the token cannot write at all despite reading fine,
+      #                    so it is effectively read-only
+      # Runs only after a direct production deploy fails. No continue-on-error
+      # anywhere below: that flag makes the jobs API report a failed step as
+      # successful, which previously hid which path actually worked.
+      #
+      # Promotion reaches production through a different permission than a
+      # targeted production deploy, so a token that cannot do the latter may
+      # still be able to do the former.
+      - name: build preview bundle
+        if: failure() && steps.publish.outcome == 'failure'
+        run: |
+          rm -rf .vercel/output
+          vercel build --token="$V_TOKEN"
+
+      - name: deploy preview bundle
+        id: preview
+        if: failure() && steps.publish.outcome == 'failure'
+        run: |
+          set -uo pipefail
+          url="$(vercel deploy --prebuilt --token="$V_TOKEN")"
+          test -n "$url"
+          echo "url=$url" >>"$GITHUB_OUTPUT"
+          echo "preview deployed: $url"
+
+      - name: promote preview to production
+        if: failure() && steps.publish.outcome == 'failure'
+        run: |
+          vercel promote "${{ steps.preview.outputs.url }}" \
+            --token="$V_TOKEN"
+
+  evm-suite:
+    name: immutable EVM Suite (Foundry)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: contracts/evm-v2/package-lock.json
+
+      - name: install locked Solidity compiler
+        run: npm ci --prefix contracts/evm-v2
+
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09
+        with:
+          version: v1.7.1
+
+      - name: immutable Suite gate fail-closed regression
+        run: bash scripts/evm-v2-check-test.sh
+
+      - name: immutable Suite build and tests
+        run: bash scripts/evm-v2-check.sh --required
+
+  acceptance-fixtures:
+    name: acceptance fixtures (go)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
+    steps:
+      - uses: actions/checkout@v5
 
       - uses: actions/setup-go@v6
         with:
           go-version: "1.22"
           cache: false
 
-      - name: feegrant policy gate regression tests
-        run: bash scripts/feegrant-policy-gate-test.sh
+      - name: immutable Suite source readiness gate
+        run: bash scripts/suite-readiness.sh --source-only
 
-      - name: feegrant issuer wrapper regression tests
-        run: bash scripts/feegrant-issue-test.sh
-
-      - name: feegrant push recording regression tests
-        run: bash scripts/feegrant-record-push-test.sh
+      - name: migration and chain race gate
+        run: bash scripts/race-check.sh --required
 
       - name: gateway fallback acceptance fixture
         run: bash scripts/gateway-fallback-acceptance.sh
-
-      - name: replication reaper regression fixture
-        run: bash scripts/replication-reaper-test.sh
-
-      - name: replication config cutover guard fixture
-        run: bash scripts/replication-config-check-test.sh
-
-      - name: contract upgrade scheduling fixture
-        run: bash scripts/schedule-upgrade-test.sh
-
-      - name: mainnet governance preflight fixture
-        run: bash scripts/mainnet-governance-check-test.sh

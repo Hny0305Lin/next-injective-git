@@ -1,84 +1,91 @@
-# Next Injective Git 架构设计
+# Immutable EVM Suite Architecture
 
-> 项目：**Next Injective Git**（CLI：`igit` / `git-remote-inj`，合约：`repo-registry`）。开放问题见 [open-questions.md](open-questions.md)。
+The public product path is EVM V2. A network profile contains endpoints,
+chain ID, and one `SuiteDirectory` address. CLI, the ordinary Web repository
+path, and `git-remote-igit` resolve all current contracts from that Directory
+and fail closed unless it is version 3, active, code-hash verified, and
+internally bound. The Web also exposes a separate, explicit CosmWasm V1
+archive viewer for historical read-only inspection; that viewer is not an
+alternate SuiteDirectory and does not participate in ordinary Git operations.
 
-## 1. 目标
+This is the EVM V2 product generation because CosmWasm V1 required a WSL2-hosted
+Push toolchain on Windows while Linux ran natively. The EVM path removes WSL2
+and `injectived` from ordinary Windows and Linux prerequisites. See
+[ADR 0001](adr/0001-evm-v2-runtime-and-migration-scope.md).
 
-让开发者用原生 Git 工作流（`push` / `clone` / `fetch`）把代码存储到去中心化基础设施上：
-
-- **数据面**：Git packfile 存 IPFS（内容寻址、可验证）
-- **控制面**：Injective 链上 CosmWasm 合约记录仓库元数据、refs 与权限
-- **信任模型**：ref → commit SHA 的绑定由链上共识保证；packfile 内容由 CID 与 Git 自身的 SHA 链保证完整性
-
-## 2. 数据流
-
-### push
-
-```
-git push inj main
-  └─ git 调起 git-remote-inj (remote helper 协议)
-       1. list for-push        → 合约 list_refs 查询远端 tips
-       2. push refs/heads/main:refs/heads/main
-          a. git pack-objects --revs --thin --stdout
-             （want = 本地 tip；exclude = 所有远端 tips，即增量 pack；
-              force push / 新 ref 无新对象时改打全量自包含 pack）
-          b. POST Kubo /api/v0/add?pin=true   → ipfs://<cid>
-          c. injectived tx wasm execute {update_ref: {commit_sha, pack_uris,
-             expected_sha, force}}            → 链上确认
-       3. 回报 ok/error 给 git
-```
-
-### clone / fetch
-
-```
-git clone inj://<owner>/<repo>
-  └─ git-remote-inj
-       1. list                 → 合约 list_refs + repo_info（HEAD symref）
-       2. fetch <sha> <ref>    → 取该 ref 的 pack_uris
-          a. Kubo /api/v0/cat（失败则公共网关 GET /ipfs/<cid>）
-          b. git index-pack --stdin --fix-thin  逐个注入对象库
-       3. git 自行完成 checkout
+```mermaid
+flowchart LR
+  Git[Git] --> Helper[git-remote-igit]
+  CLI[igit] --> Client[Suite client]
+  Web[Web + viem] --> Client
+  Helper --> Client
+  Client --> Directory[SuiteDirectory]
+  Directory --> Core[RepositoryCore]
+  Directory --> Recovery[RecoveryModule]
+  Directory --> Moderation[ModerationModule]
+  Directory --> Economic[EconomicModule]
+  Directory --> Username[UsernameModule]
+  Directory --> Badge[BadgeModule]
+  Directory --> Release[ReleaseModule]
+  Helper --> Storage[Current IPFS adapter]
+  Web --> Storage
+  Storage -. planned successor .-> ObjectStorage[Amazon S3 / Cloudflare R2]
 ```
 
-## 3. 合约状态设计（contracts/repo-registry）
+`RepositoryCore` owns stable repo IDs, canonical and historical locators,
+metadata, refs, collaborators, transfer, and fork lineage. `RecoveryModule`
+owns guardian proposals and is the only recovery capability accepted by Core.
+`ModerationModule` owns reports, appeals, trails, and mandatory policy hooks.
+`EconomicModule` accepts new sponsorship only in native INJ while retaining
+queryable migrated totals by historical denomination. The remaining modules
+own usernames, non-transferable badges, and immutable release hashes.
 
-| 存储 | Key | Value |
-|---|---|---|
-| `CONFIG` | - | `Config { admin, moderation_committee? }` |
-| `REPOS` | `(owner, repo_name)` | `Repo { owner, name, description, default_branch, created_at, updated_at, moderation_status }` |
-| `REFS` | `(owner, repo_name, ref_name)` | `RefEntry { commit_sha, pack_uris[], updated_at, updated_by }` |
-| `COLLABORATORS` | `(owner, repo_name, addr)` | `Role::Maintainer \| Role::Reader` |
+No Suite contract is upgradeable. There are no proxies, diamonds, or
+`delegatecall`. Directory configuration is one-shot and activation freezes it.
 
-关键决策：
+## Transactions
 
-- **`pack_uris` 是有序追加列表**（通用 URI，当前为 `ipfs://<cid>`，为 Arweave/Filecoin 留演进空间）：普通 push 追加新 URI（增量历史），按顺序 `index-pack` 全部包即可重建完整历史。force push 替换整个列表，helper 侧对应改打**全量自包含 pack**（否则旧历史对象丢失、新 clone 无法重建）。
-- **乐观并发（`expected_sha`）**：客户端声明它所认为的远端 tip；不匹配则拒绝，防止两个 maintainer 并发 push 互相覆盖。这是"链上 fast-forward 检查"的轻量替代——合约无法遍历 Git DAG 验证祖先关系，由客户端 Git 自身完成 FF 校验，链上只做防竞争。
-- **权限收敛在合约**：只有 owner/maintainer 的 `update_ref` 交易能通过，签名即身份，无需额外账号体系。
-- **内容治理占位（open-questions §5.3）**：`moderation_status`（Active/Delisted/Frozen）由内容委员会（未设时回退到 admin）通过 `set_moderation_status` 变更，屏蔽理由文档 hash 随交易事件上链；Frozen 状态下 `update_ref`/`delete_ref` 全部拒绝。
-- **可升级（open-questions §7）**：合约带 `migrate` 入口（cw2 版本门控），并要求 admin 先公告精确 Wasm SHA-256；`upgrade_security` proposal 经过 14 天时间锁后，`migrate` 才接受相同哈希。testnet 可用单签 admin，主网应把 admin 配置为技术多签。
+Go writes pass through one `EVMTransactor`: chain validation, pending nonce,
+gas estimate, legacy type-0 signing, minimum `160000000 wei` gas price,
+broadcast, and bounded two-minute receipt polling. A broadcast whose final
+receipt is unknown returns a typed error containing the transaction hash and
+invalidates local nonce state. Web uses viem with the same explicit gas/type
+rules and checks receipt success. Injective EVM supports EIP-1559, but this
+project does not switch either sender to type 2 until a funded signed canary is
+mined and its receipt is retained.
 
-## 4. CLI 设计（cli/）
+## Bootstrap
 
-| 模块 | 职责 |
-|---|---|
-| `cmd/git-remote-inj` | remote helper 入口（git 自动调用） |
-| `cmd/igit` | 管理命令：init / repos / refs / key / config |
-| `internal/remote` | helper 协议状态机（capabilities/list/fetch/push） |
-| `internal/gitio` | 委托本地 `git` 做 pack-objects / index-pack |
-| `internal/ipfs` | Kubo HTTP RPC（add/cat）+ 网关回退 |
-| `internal/chain` | LCD smart query + injectived 交易签名广播 |
-| `internal/config` | `~/.igit/config.json` |
+`BootstrapCoordinator` binds the complete snapshot root and imports Core,
+Recovery, Moderation, Economic, Username, Badge, and Release in fixed order.
+Each batch has bounded count and bytes, sequence, payload hash, and rolling
+commitment. Each module finalizes once after expected count/root verification.
+Only then can the coordinator atomically activate the Directory.
 
-依赖策略（MVP）：**零第三方 Go 依赖**。packfile 生成/注入委托本地 `git`（保证与所有仓库布局字节级兼容），签名委托 `injectived` keyring（私钥不经过 igit 进程）。后续可替换为 go-git + injective sdk-go 实现纯库内嵌。
+## V1 Boundary
 
-## 5. 增量与大仓库策略
+Historical chain access exists under `archive/cosmwasm-v1`, the read-only
+`igit archive` command, and the explicit Web route `/archive/cosmwasm-v1`.
+The Web route uses a GET-only smart-query adapter and a per-session snapshot
+height. It never signs or broadcasts CosmWasm messages, and it is not an
+ordinary Web fallback when EVM Suite verification fails. EVM V2 remains the
+sole `SuiteDirectory` trust root and the only write-capable product path.
+Snapshot evidence is fixed-height, block-hash bound, inventory complete, and
+verified before it can become a Suite bootstrap plan.
 
-- 每次 push 只打包 `本地 tip − 所有远端 tips` 的增量对象，pack 体积 ≈ 本次变更
-- clone 需下载该 ref 的全部历史 CID；CID 列表过长时的合并压缩（repack 成单一 pack 再 force 更新）留待里程碑 4 之后
-- 浅克隆（`--depth`）暂不支持：helper 收到 git 的 depth 请求时按全量处理
+## Data Plane Direction
 
-## 6. 安全模型与已知限制
+Git pack storage is a replaceable data plane, not the control-plane trust root.
+The current Suite, CLI, and Web paths support only `ipfs://`, so Kubo/IPFS
+remains the implemented adapter for this release. Amazon S3 and Cloudflare R2
+are planned adapters, not aliases for the current gateway.
 
-- 链上不验证 commit_sha 与 packfile 内容的一致性（成本过高）；恶意 maintainer 可写入不含对应对象的 CID，客户端 `index-pack` 会失败并报错——破坏可用性但不破坏完整性
-- IPFS 数据持久性依赖 pin（见 open-questions）
-- 仓库全公开；私有仓库需客户端加密（见 open-questions）
+Because Suite contracts are immutable and currently validate only `ipfs://`, a
+storage-neutral URI contract requires a reviewed successor Suite and explicit
+migration. Object-store credentials and expiring signed URLs must never be
+written on-chain. Integrity must remain independently verifiable from stable
+object metadata or content digests. See
+[ADR 0002](adr/0002-pluggable-pack-storage.md).
+
+See [migration](evm-v2-migration.md), [release](release.md), and the active
+[delivery roadmap](delivery-roadmap.md).

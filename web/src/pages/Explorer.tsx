@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { ArrowUpRight, Info } from "lucide-react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useWallet } from "../lib/WalletContext";
-import { WalletModal } from "../components/WalletModal";
 import {
   contractActivity,
   contractConfig,
@@ -12,10 +12,7 @@ import {
   type ContractTx,
   type TxDetail,
 } from "../lib/chain";
-
-const short = (s: string, n = 8) => (s.length > n * 2 ? `${s.slice(0, n)}…${s.slice(-4)}` : s);
-
-import { memo } from "react";
+import { truncateAddress } from "../lib/utils";
 
 // Colour per contract action for quick scanning.
 const ActionBadge = memo(function ActionBadge({ action }: { action: string }) {
@@ -25,7 +22,7 @@ const ActionBadge = memo(function ActionBadge({ action }: { action: string }) {
 // A compact, contract-scoped block explorer: recent activity + tx lookup.
 export default function Explorer() {
   const cfg = useMemo(() => loadConfig(), []);
-  const { address, walletModalOpen, openWalletModal, closeWalletModal } = useWallet();
+  const { address, openWalletModal } = useWallet();
   const [scope, setScope] = useState<"mine" | "all">("mine");
   const [cc, setCc] = useState<ContractConfig | null>(null);
   const [rows, setRows] = useState<ContractTx[]>([]);
@@ -76,20 +73,20 @@ export default function Explorer() {
   return (
     <div className="explorer">
       <div className="explorer-head">
-        <h1 style={{ fontSize: "1.15rem", margin: 0 }}>Block Explorer</h1>
-        <Link className="muted" to="/ipfs">IPFS explorer →</Link>
+        <h1>Block Explorer</h1>
+        <Link className="muted icon-link" to="/ipfs">IPFS explorer <ArrowUpRight size={14} /></Link>
       </div>
       <p className="muted">
-        Activity on the repo-registry contract <code className="mono">{short(cfg.contract, 10)}</code> ·
-        chain <code className="mono">injective-888</code>
+        Activity across SuiteDirectory <code className="mono">{truncateAddress(cfg.suiteDirectory, 10)}</code> ·
+        EVM chain <code className="mono">{cfg.evmChainId}</code>
       </p>
 
       {cc && (
         <div className="card explorer-config">
           <span>platform fee <b>{(cc.platform_fee_bps / 100).toFixed(2)}%</b></span>
-          <span>username deposit <b>{formatInj(cc.username_deposit.amount, cc.username_deposit.denom)} INJ</b></span>
-          <span>treasury <code className="mono">{short(cc.treasury, 8)}</code></span>
-          <span>admin <code className="mono">{short(cc.admin, 8)}</code></span>
+          <span>suite version <b>{cc.suite_version}</b></span>
+          <span>treasury <code className="mono">{truncateAddress(cc.treasury, 8)}</code></span>
+          <span>admin <code className="mono">{truncateAddress(cc.admin, 8)}</code></span>
         </div>
       )}
 
@@ -120,7 +117,7 @@ export default function Explorer() {
         </div>
       </div>
       <p className="muted small privacy-note">
-        ℹ️ On-chain data is public — “Mine” only filters this view to your address; it does not hide anything from others.
+        <Info size={14} /> On-chain data is public. “Mine” only filters this view to your address; it does not hide anything from others.
       </p>
       {err && <div className="error">{err}</div>}
       {needConnect ? (
@@ -147,11 +144,11 @@ export default function Explorer() {
                   {r.code !== 0 && <span className="fail-tag">failed</span>}
                 </td>
                 <td className="mono small">{summarize(r)}</td>
-                <td className="mono small">{short(r.sender, 6)}</td>
+                <td className="mono small">{truncateAddress(r.sender, 6)}</td>
                 <td className="small">{r.height}</td>
                 <td>
                   <button className="linkish mono small" onClick={() => { setHash(r.txhash); lookup(r.txhash); }}>
-                    {short(r.txhash, 6)}
+                    {truncateAddress(r.txhash, 6)}
                   </button>
                 </td>
               </tr>
@@ -159,25 +156,24 @@ export default function Explorer() {
           </tbody>
         </table>
       )}
-      {walletModalOpen && <WalletModal onClose={closeWalletModal} />}
     </div>
   );
 }
 
-// Pick the most meaningful wasm attributes per action for the feed summary.
+// Pick the most meaningful EVM event attributes per action for the feed summary.
 function summarize(r: ContractTx): string {
-  const w = r.wasm;
+  const attributes = r.attributes;
   switch (r.action) {
     case "sponsor":
-      return `${w.owner ?? ""}/${w.repo ?? ""} ${w.funds ? formatFundsShort(w.funds) : ""}`.trim();
+      return `${attributes.owner ?? ""}/${attributes.repo ?? ""} ${attributes.funds ? formatFundsShort(attributes.funds) : ""}`.trim();
     case "update_ref":
-      return `${w.repo ?? ""} ${w.ref ?? ""} ${w.sha ? w.sha.slice(0, 8) : ""}`.trim();
+      return `${attributes.repo ?? ""} ${attributes.ref ?? ""} ${attributes.sha ? attributes.sha.slice(0, 8) : ""}`.trim();
     case "create_repo":
-      return w.name ?? w.repo ?? "";
+      return attributes.name ?? attributes.repo ?? "";
     case "award_badge":
-      return `#${w.badge_id ?? ""} → ${w.recipient ? w.recipient.slice(0, 12) : ""}`;
+      return `#${attributes.badge_id ?? ""} → ${attributes.recipient ? attributes.recipient.slice(0, 12) : ""}`;
     default:
-      return Object.entries(w).filter(([k]) => k !== "action").slice(0, 2).map(([k, v]) => `${k}=${v}`).join(" ");
+      return Object.entries(attributes).filter(([k]) => k !== "action").slice(0, 2).map(([k, v]) => `${k}=${v}`).join(" ");
   }
 }
 function formatFundsShort(funds: string): string {
@@ -186,7 +182,6 @@ function formatFundsShort(funds: string): string {
 }
 
 function TxCard({ d }: { d: TxDetail }) {
-  const isWeb3 = d.extensionOptions.some((e) => e.includes("ExtensionOptionsWeb3Tx"));
   return (
     <div className="card tx-card">
       <div className="tx-card-top">
@@ -199,7 +194,6 @@ function TxCard({ d }: { d: TxDetail }) {
       <div className="tx-badges">
         <span className="kv">signMode <b>{d.signMode || "?"}</b></span>
         <span className="kv">pubkey <b className="mono">{d.pubkeyType.split(".").pop() || "?"}</b></span>
-        {isWeb3 && <span className="web3-tag">EIP-712 web3 tx 🦊</span>}
       </div>
       {d.messages.map((m, i) => (
         <div key={i} className="tx-msg">

@@ -1,308 +1,171 @@
-# Next Injective Git（`igit`）
+# Next Injective Git (`igit`)
 
-[![芯异构（浩瀚银河福州）/next-injective-git](https://gitee.com/haohanyh_0591/next-injective-git/widgets/widget_card.svg?colors=4183c4,ffffff,ffffff,48adf0,ed136a,080808)](https://gitee.com/haohanyh_0591/next-injective-git)
+Next Injective Git currently stores Git packfiles through an IPFS/Kubo data
+plane and stores repository identity, refs, permissions, recovery, moderation,
+sponsorship, usernames, badges, and release checksums in a non-upgradeable
+Injective EVM Suite.
 
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](#license)
-[![Go](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go&logoColor=white)](cli/go.mod)
-[![Rust](https://img.shields.io/badge/Rust-1.81.0-000000?logo=rust&logoColor=white)](contracts/repo-registry/Cargo.toml)
-[![Injective](https://img.shields.io/badge/Injective-testnet-4D3DFF)](https://testnet.explorer.injective.network/contract/inj1mg6x7ht3zyyszed9aq67q6kd0y5rtq7wf756jh)
+The ordinary CLI, Git remote helper, and Web app have one chain trust root: a
+`SuiteDirectory` address. Clients verify the EVM chain ID, suite version,
+`Active` state, module runtime code hashes, and module-to-directory bindings
+before use. There is no proxy, diamond, `delegatecall`, legacy write fallback,
+or mixed backend mode.
 
+> The checked-in public profiles intentionally contain no SuiteDirectory yet.
+> Commands that need the chain fail closed until reviewed deployment, migration,
+> fixed-block verification, and cutover evidence have passed. No deployment or
+> public testnet availability is claimed by this repository state.
 
-**Next Injective Git** 是去中心化代码协作平台：Git 对象存 IPFS，仓库元数据与 refs 记录在 Injective 链上的 CosmWasm 合约中。项目提供 CLI **`igit`**、Git remote helper **`git-remote-igit`** 和浏览器端 Web UI，可通过原生 Git 工作流或钱包完成链上协作。
+**Current Status:** P0 baseline complete (2026-08-19), P1 testnet deployment 
+preparation in progress. See [Project Status](docs/project-status.md) for a 
+quick overview or [Delivery Roadmap](docs/delivery-roadmap.md) for detailed 
+sequencing. Architecture decisions and acceptance evidence remain authoritative 
+in their dedicated documents.
 
+## Why EVM V2
+
+The V1 control plane used CosmWasm. Its Push workflow ran natively on Linux,
+while the supported Windows path required WSL2 to host the Linux CLI,
+`injectived`, and Kubo. This successor is called **EVM V2** because moving the
+control plane to Injective EVM is the mechanism used to remove that
+Windows-only compatibility environment. The target path uses native Windows or
+native Linux tooling; ordinary EVM V2 users do not install WSL2 or
+`injectived`.
+
+This remains an acceptance target, not a completed deployment claim. A clean
+Windows machine must complete `init`, `push`, `clone`, `fetch`, `pull`, and ref
+deletion without WSL2, and clean Linux must do the same without `injectived`.
+See [the runtime and migration ADR](docs/adr/0001-evm-v2-runtime-and-migration-scope.md).
+
+Kubo/IPFS is the current storage adapter, not the long-term product core. The
+roadmap calls for pluggable pack storage, including Amazon S3 and Cloudflare R2,
+so an object-storage profile can operate without a local Kubo daemon. That
+support is not implemented in this repository state: the current Suite and
+clients accept only `ipfs://` pack URIs. See
+[the storage ADR](docs/adr/0002-pluggable-pack-storage.md).
+
+## Components
+
+| Path | Purpose |
+|---|---|
+| `contracts/evm-v2/` | Immutable Solidity Suite, checked ABIs/artifacts, and Foundry tests |
+| `cli/` | `igit`, `git-remote-igit`, deployment and offline migration tools |
+| `web/` | React/Vite browser UI using viem for Suite reads and legacy EVM transactions |
+| `scripts/` | Source, release, migration evidence, IPFS replication, and operations gates |
+| `archive/cosmwasm-v1/` | Isolated read-only V1 source, protocol material, and evidence tools |
+
+The Suite consists of `SuiteDirectory`, `BootstrapCoordinator`,
+`RepositoryCore`, `RecoveryModule`, `ModerationModule`, `EconomicModule`,
+`UsernameModule`, `BadgeModule`, and `ReleaseModule`. See
+[architecture](docs/architecture.md) for their boundaries.
+
+## User Setup
+
+The currently implemented IPFS profile requires Git and native Kubo for push.
+It does not require WSL2 or `injectived`. Clone and fetch use configured HTTPS
+IPFS gateways and do not require a local Kubo daemon. Planned S3/R2 profiles
+will require separate implementation and acceptance before they can replace
+this setup.
+
+```sh
+cd cli
+go build -o igit ./cmd/igit
+go build -o git-remote-igit ./cmd/git-remote-igit
+
+./igit setup push
+./igit key import dev
+./igit config set key_name dev
+./igit config set evm_suite_directory_address 0x...
+./igit suite verify
 ```
+
+`igit key import` reads the private key without terminal echo and writes an
+scrypt-encrypted local keystore. Never use the previously published testnet
+private key. A Directory address may be configured only from approved cutover
+evidence.
+
+After a profile has been activated and verified:
+
+```sh
 igit init my-repo "hello chain"
 igit push inj main
 igit clone igit://alice/my-repo
 ```
 
-> **当前状态：Injective testnet（`injective-888`）**
-> 已部署合约：[`inj1mg6x7ht3zyyszed9aq67q6kd0y5rtq7wf756jh`](https://testnet.explorer.injective.network/contract/inj1mg6x7ht3zyyszed9aq67q6kd0y5rtq7wf756jh)。Clone / Fetch 已公开可用；Push 需要本地 Kubo 和 `injectived`，短期上传身份令牌由 `igit.xyz` 自动签发和刷新。
+The remote helper supports normal Git push, clone, fetch, pull, and ref delete.
+Historical locators resolve through immutable aliases to the canonical repo ID.
 
-## 核心能力
+## Development
 
-- **Git 原生兼容**：支持 `push`、`clone`、`fetch`、`pull`，也可直接使用 `igit://owner/repo` remote。
-- **链上协作**：仓库与 refs、协作者权限、所有权转移、内容治理均由 `repo-registry` 合约管理。
-- **社区功能**：支持用户名、Fork、项目赞助、收入分配与不可转让的贡献 Badge。
-- **Web 浏览**：直接从 Injective 和 IPFS 读取仓库、源码、提交、Diff、交易和 CID，无中心化应用后端。
-- **多层持久化**：US Kubo 保存全量 Pin，HK 提供大陆可达的热层网关，Fil.one 保存经过 SHA-256 校验的 CAR 归档。
+```sh
+# Go
+(cd cli && go vet ./... && go test ./...)
 
-## 架构一览
+# Web
+(cd web && npm ci && npm run test:api && npm run typecheck && npm run build)
 
-```mermaid
-flowchart LR
-  subgraph Client["客户端"]
-    G["本地 Git\npush / clone / fetch"]
-    H["git-remote-igit\nremote helper"]
-    K["本地 Kubo\nloopback :5001\npush 临时块"]
-    W["Web UI\n仓库 / 源码 / 交易浏览"]
-  end
+# Solidity, fixed solc 0.8.24
+npm ci --prefix contracts/evm-v2
+bash scripts/evm-v2-check.sh --required
 
-  subgraph Chain["Injective 控制面"]
-    LCD["LCD smart query"]
-    TX["Injective RPC\n客户端签名并广播交易"]
-    C["repo-registry CosmWasm 合约\nrefs: commit SHA + pack_uris\n权限 / moderation"]
-  end
-
-  subgraph Data["IPFS 数据面"]
-    R["US 受控复制服务\n短期 CID 绑定授权"]
-    U["US Kubo\n全量 Pin"]
-    HK["HK 只读网关 + Kubo\n热层缓存"]
-    USG["US 只读网关"]
-    PUB["公共 IPFS 网关\n最后回退"]
-  end
-
-  subgraph Archive["持久化归档"]
-    I["US archive-indexer\n轮询链上 refs"]
-    F["Fil.one\nCAR + SHA-256"]
-  end
-
-  G -->|"Git 命令"| H
-  H -->|"push: pack-objects"| K
-  K -->|"Swarm / Bitswap\n提供临时块"| U
-  H -->|"scoped HTTPS\n授权 + replication 请求"| R
-  R -->|"loopback Kubo RPC\npin + 校验"| U
-  R -->|"Pin confirmed"| H
-  H -->|"injectived: update_ref"| TX
-  W -->|"钱包签名交易"| TX
-  TX --> C
-
-  H -->|"list_refs / resolve_ref"| LCD
-  W -->|"仓库 / refs / 活动查询"| LCD
-  LCD -->|"查询"| C
-  H -->|"GET /ipfs/CID\n按健康度选路"| HK
-  W -->|"GET /ipfs/CID"| HK
-  HK -->|"packfile"| H
-  H -.->|"HK 不可用时改走"| USG
-  USG -->|"packfile"| H
-  HK -.->|"miss / timeout"| PUB
-  USG -.->|"miss / timeout"| PUB
-  PUB -->|"packfile"| H
-  H -->|"index-pack / checkout"| G
-
-  I -->|"轮询 update_ref 交易"| C
-  I -->|"pin 全部历史 CID"| U
-  I -->|"CAR 导出 + 哈希校验"| F
-  U -->|"durable CID 同步\n热层策略"| HK
-
-  classDef client fill:#eef6ff,stroke:#3b82f6,color:#0f172a
-  classDef chain fill:#fff7ed,stroke:#f97316,color:#0f172a
-  classDef data fill:#ecfdf5,stroke:#10b981,color:#0f172a
-  classDef archive fill:#f5f3ff,stroke:#8b5cf6,color:#0f172a
-  class G,H,K,W client
-  class LCD,TX,C chain
-  class R,U,HK,USG,PUB data
-  class I,F archive
+# Full immutable-Suite source gate
+bash scripts/suite-readiness.sh --required
 ```
 
-- **Push 顺序**：本地生成增量 pack → 本地 Kubo 临时 `add` → US 复制服务 Pin 并校验 pack SHA-256 → 客户端签名 `update_ref` 写入链上；链上确认后才回收临时块。
-- **Clone / Fetch 顺序**：先从合约读取 `refs` 与 `pack_uris`，再通过 HK 网关读取；按健康检查回退 US 网关，最后才使用公共网关。本地没有 Kubo 也能读取。
-- **持久化职责**：US Kubo 保存全量 Pin，`archive-indexer` 将链上引用的 pack 导出到 Fil.one CAR；HK 只做热层缓存，不承担写入确认。
+Foundry is pinned by CI. All Injective EVM writes use estimated gas, explicit
+legacy transaction type, and a gas price of at least `160000000 wei`.
 
-## 目录结构
+## Deployment And Migration
 
-| 路径 | 说明 |
-|---|---|
-| `contracts/repo-registry/` | CosmWasm 合约（Rust）：仓库、refs、权限、Fork、赞助、Badge 与用户名 |
-| `cli/` | Go：`igit`、`git-remote-igit` 与 US 受控复制服务 |
-| `web/` | React + Vite Web UI：仓库浏览、钱包交易、Injective / IPFS Explorer |
-| `scripts/` | Testnet 部署、端到端测试、网关、复制、归档与监控脚本 |
-| `docs/` | 架构、基础设施、安全决策与开放问题 |
+Deployment is an explicit operator workflow and is restricted to rotated,
+encrypted testnet keys. It writes `deployment.json` with no-clobber semantics:
 
-## 快速开始
-
-### 依赖
-
-- Clone / Fetch 只需要 Git、`igit` 和 `git-remote-igit`
-- 从源码安装 CLI 时需要 Go 1.22+；发布版二进制不需要 Go
-- Node.js + npm（仅开发 Web UI）
-- Push 额外需要 [Kubo](https://docs.ipfs.tech/install/command-line/) 和 [injectived](https://docs.injective.network/)；`igit setup push` 会安装经过 SHA-256 校验的锁定版本
-- 编译合约需要 **Rust 1.81.0** 和 `wasm32-unknown-unknown` target；Injective VM 会拒绝新工具链生成的 reference-types / bulk-memory 指令
-- Windows 没有原生 `injectived`；Push 使用 WSL2 全家桶，不混用 Windows Git、WSL signer 和两套文件路径
-
-### 1. 安装 CLI
-
-Windows + WSL2（推荐）可从源码 checkout 一次完成 CLI、Kubo、`injectived` 和 testnet key 的安装：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap-push.ps1 -Yes -CreateKey dev
+```sh
+(cd cli && go run ./cmd/igit-deploy-suite --check \
+  --artifacts ../contracts/evm-v2/artifacts)
 ```
 
-首次注册 WSL 时脚本会创建普通 Linux 用户；默认名称来自 Windows 用户名，也可用 `-LinuxUser alice` 指定。
+The broadcast form additionally requires the reviewed source commit, snapshot
+root, exact confirmation, output path, and encrypted key. It deploys but does
+not import or activate.
 
-已有 WSL 发行版时，正式发布的 Windows `igit.exe` 也支持：
+`igit-suite-migrate build` creates a deterministic unsigned bootstrap plan and
+calldata manifest from a complete hash-bound snapshot. `igit-suite-migrate
+verify` verifies those files without RPC, keys, signing, or broadcast.
 
-```powershell
-.\igit-windows-amd64.exe setup push --wsl Ubuntu-24.04 --yes --create-key dev
+The default profile is changed only after this gate passes against real,
+reviewed evidence:
+
+```sh
+bash scripts/migration-cutover-readiness.sh EVIDENCE_DIR EXPECTED_COMMIT
 ```
 
-它会在 WSL2 中安装同版本 Linux CLI，并先用 release `checksums.txt` 校验 `igit` 和 remote helper。Linux 源码 checkout 可运行：
+The gate checks evidence hashes, approval binding, deployment receipts,
+compiler/source identity, nine runtime code hashes, final active Directory
+state, seven module bindings, fixed-block state comparison, clean-environment
+Git E2E, Web receipts, and security review. Fixture output is never deployment
+evidence. See [release and cutover](docs/release.md).
 
-```bash
-bash scripts/bootstrap-push.sh --yes --create-key dev
+## V1 Archive
+
+The old chain remains unchanged as an archival fact source. It has no ordinary
+CLI, remote-helper, CI, release, or write path. The Web exposes a separate
+`/archive/cosmwasm-v1` read-only viewer for historical repository previews;
+that route never signs or broadcasts CosmWasm messages and is not a fallback
+for EVM Suite verification. Read and verify explicit fixed-height evidence
+with:
+
+```sh
+igit archive query --lcd URL --contract inj1... --height N '{"config":{}}'
+igit archive inventory --tx-search txs.json --block-evidence block.json \
+  --chain-id injective-888 --contract inj1... --height N --output inventory.json
+igit archive verify --snapshot snapshot.json --inventory inventory.json \
+  --tx-search txs.json --block-evidence block.json
 ```
 
-只开发或使用 Clone / Fetch 时仍可轻量安装：
-
-```bash
-cd cli
-go install ./cmd/igit ./cmd/git-remote-igit
-igit version
-igit doctor --clone
-```
-
-`igit` 和 `git-remote-igit` 都必须在 `PATH` 中。若安装后找不到命令，请将 `go env GOPATH` 下的 `bin` 目录加入 `PATH`。
-
-已有 CLI 的 Linux 用户可直接准备 Push 环境：
-
-```bash
-igit setup push                 # 交互确认，不覆盖可工作的现有工具
-igit setup push --yes           # 非交互安装
-igit setup push --no-kubo       # Kubo 由用户自行管理
-igit setup upgrade --yes        # 强制刷新 igit 管理的锁定依赖
-igit setup status               # 等价于完整 Push doctor
-```
-
-依赖版本、下载地址和 SHA-256 固定在 `cli/internal/bootstrap/deps.json`；托管文件位于 `~/.igit/deps` 和 `~/.igit/bin`。完整行为与排错见 [Push 环境安装](docs/push-setup.md)。
-
-### 2. Clone 公开演示仓库
-
-```bash
-igit config set contract_address inj1mg6x7ht3zyyszed9aq67q6kd0y5rtq7wf756jh
-igit clone igit://hny0305lin/demo-showcase
-```
-
-该流程只通过 LCD 和只读 HTTPS 网关访问 Injective / IPFS，不需要链上密钥、本地 Kubo 或上传授权。
-
-### 3. 创建并 Push 仓库
-
-若 setup 时没有使用 `--create-key`，先创建 testnet key。然后到 [Injective testnet faucet](https://testnet.faucet.injective.network/) 领取测试 INJ 作为 gas：
-
-```bash
-igit key new dev
-igit key show                                  # 显示需要充值的 inj1... 地址
-```
-
-Push 使用受控复制服务。CLI 会从 `https://www.igit.xyz/api/upload-authorization` 自动取得十分钟有效的 Ed25519 身份令牌，并在过期前刷新；US 持久节点和 HK 热层节点的 Swarm 地址已经内置，无需手工复制 Token 或 Peer。
-
-```bash
-# setup 会初始化并在后台启动 Kubo；先确认所有硬性检查通过
-igit doctor --push
-
-# 创建链上仓库并推送现有本地仓库
-igit init hello "my first on-chain repo"
-REMOTE=$(igit clone-url hello)
-
-cd my-project
-igit remote add inj "$REMOTE"
-igit push inj main
-```
-
-> `igit push` / `igit clone` / `igit pull` 是对 `git` 的轻包装——你只用 `igit` 一个命令即可；
-> 原生 `git push` / `git clone igit://...` 同样有效（走 `git-remote-igit` 助手）。
-
-从 GitHub 一键迁移现有仓库（全部分支 + tag 镜像上链）：
-
-```bash
-igit import github.com/user/repo          # 镜像到 igit://<你的地址>/repo
-igit import github.com/user/repo my-name  # 自定义链上仓库名
-```
-
-### 常用链上协作命令
-
-```bash
-igit username register alice                    # 注册可读的 igit://alice/... 用户名
-igit repos --all                                # 审计时包含 frozen/delisted 仓库
-igit collab add hello inj1... maintainer         # 添加仓库维护者
-igit fork <owner> <repo> [new-name]              # Fork 到自己的命名空间
-igit sponsor <owner> <repo> 0.5 "great work"    # 赞助项目
-igit badge award hello <recipient> "fixed CI"   # 颁发贡献 Badge
-igit splits set hello <address>:2000             # 设置 20% 赞助收入分配
-```
-
-## 自行部署合约（维护者）
-
-必须使用 Rust 1.81.0 编译链上 Wasm；`Cargo.lock` 已固定兼容依赖，请保留 `--locked`。
-
-```bash
-rustup toolchain install 1.81.0
-rustup target add --toolchain 1.81.0 wasm32-unknown-unknown
-
-cd contracts/repo-registry
-cargo +1.81.0 test --locked
-cargo +1.81.0 build --release --target wasm32-unknown-unknown --lib --locked
-
-injectived tx wasm store target/wasm32-unknown-unknown/release/repo_registry.wasm \
-  --from mykey --chain-id injective-888 \
-  --node https://testnet.sentry.tm.injective.network:443 \
-  --gas auto --gas-adjustment 1.4 --gas-prices 500000000inj --yes
-
-# testnet 保留单签 admin 以便迁移；主网应改为多签 + 时间锁
-ADMIN=$(injectived keys show mykey -a)
-injectived tx wasm instantiate <CODE_ID> '{"admin":"'$ADMIN'"}' \
-  --label igit-repo-registry --admin "$ADMIN" --from mykey ... --yes
-```
-
-也可用 `scripts/testnet-deploy.sh <store交易hash>` 完成 instantiate 和 CLI 配置；`scripts/testnet-e2e.sh` 用于真实 testnet + IPFS 端到端回归。
-
-## 工作原理
-
-- **push**：`git-remote-igit` 生成增量 packfile → 本地 Kubo `add?pin=false` 临时加入并通过 Swarm 提供给 US → 受控复制服务确认 US Kubo 全量 Pin 且校验 pack SHA-256 → `injectived` 签名广播 `update_ref`。只有交易成功后才执行本地 IPFS GC；交易失败会保留临时块以便重试，US 未上链 Pin 按 TTL 回收。
-- **clone/fetch**：LCD 查询合约 `list_refs` / `resolve_ref` → 先探测 HK/US `/healthz` 并按延迟排序 → 仅通过 HTTPS `GET /ipfs/<cid>` 下载（失败再回退公共网关）→ `git index-pack` 注入本地对象库；本地没有 Kubo 也能完成。
-- **权限**：owner 可管理协作者（Maintainer 可推送、Reader 只读标记）、转移所有权；内容委员会（未设时为 admin）可设置 `moderation_status`，Frozen 状态下合约拒绝一切 ref 写入。
-
-详细写入状态机和安全边界见 [目标拓扑与迁移方案](docs/target-topology-migration.md)；未决设计见 [开放问题](docs/open-questions.md)。
-
-## 开发
-
-```bash
-# 合约
-cd contracts/repo-registry && cargo +1.81.0 test --locked
-
-# CLI
-(cd cli && go test ./... && go vet ./...)
-
-# Acceptance fixtures (from the repository root)
-bash scripts/feegrant-policy-gate-test.sh
-bash scripts/feegrant-issue-test.sh
-bash scripts/feegrant-record-push-test.sh
-bash scripts/gateway-fallback-acceptance.sh
-bash scripts/replication-reaper-test.sh
-bash scripts/replication-config-check-test.sh
-bash scripts/schedule-upgrade-test.sh
-bash scripts/mainnet-governance-check-test.sh
-
-# Web UI
-cd web && npm ci && npm run build
-# 本地开发：npm run dev
-```
-
-## IPFS 网关与临时上传
-
-CLI 默认健康探测香港 `https://igit-hk.haohanyh.ovh` 与美国 `https://igit-us.haohanyh.ovh`。读取不启动、不依赖本地 Kubo，按 `/healthz` 延迟排序后使用只读 HTTPS 网关，并继续回退公共 IPFS 网关。
-
-```bash
-igit gateway status                 # 查看两地健康和延迟
-igit gateway select                 # 查看当前自动选路顺序
-
-# Push 配置均有内置默认值；只有私有部署才需要覆盖。
-igit config list
-```
-
-`igit` 只访问本机 Kubo RPC；HK/US Kubo 管理 API 从不暴露给普通用户。Push 会自动取得短期 identity token，再换取与 CID、仓库、ref、pack SHA-256 和有效期绑定的一次性 ticket；该 ticket 不能提交链上交易。显式的 `upload.authorization`、`upload.us_peer` 与 `upload.hk_peer` 仍可用于私有或离线部署，并可用 `igit config unset <key>` 清除。没有本地 Kubo 时，Clone / Fetch 仍然可用。
-
-## Release artifacts
-
-The tag-based build and its current verification scope are documented in
-[docs/release.md](docs/release.md). Checksums are published to GitHub and can
-be registered immutably in `repo-registry` with
-`scripts/register-release.sh`; clients can verify a local artifact with
-`igit release verify <version> <platform> <file>`.
-
-Contract upgrades are announced with `igit upgrade schedule <wasm-sha256>`
-and can be inspected with `igit upgrade show`. The contract enforces a 14-day
-delay and requires the same hash in the later migration transaction.
+Archive maintenance instructions live only in
+[`archive/cosmwasm-v1`](archive/cosmwasm-v1/README.md).
 
 ## License
 
-Apache-2.0
+Apache-2.0. See [LICENSE](LICENSE).
