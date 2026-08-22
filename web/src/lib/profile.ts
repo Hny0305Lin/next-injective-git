@@ -29,7 +29,7 @@ export const NETWORK_PROFILES: Record<NetworkProfileId, NetworkProfile> = {
     evmRpc: "https://k8s.testnet.json-rpc.injective.network/",
     suiteDirectory: "",
     ipfsGateway: "https://igit-hk.haohanyh.ovh",
-    evmExplorer: "https://testnet-injective.cloud.blockscout.com",
+    evmExplorer: "https://testnet.blockscout.injective.network",
   },
 };
 

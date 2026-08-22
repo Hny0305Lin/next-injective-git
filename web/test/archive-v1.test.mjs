@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   COSMWASM_V1_ARCHIVE,
+  COSMWASM_V1_LCD_ENDPOINTS,
   cosmWasmV1RepoInfo,
   listCosmWasmV1Refs,
   listCosmWasmV1Repos,
@@ -173,5 +174,75 @@ test("V1 archive rejects oversized LCD responses before parsing", async () => {
     await assert.rejects(queryCosmWasmV1({ config: {} }), /response is too large/);
   } finally {
     globalThis.fetch = previousFetch;
+  }
+});
+
+const [PRIMARY, FALLBACK] = COSMWASM_V1_LCD_ENDPOINTS;
+
+test("V1 queries fail over to the community LCD when the sentry LCD drops requests", async () => {
+  const smartUrls = [];
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    const u = String(url);
+    if (u.startsWith(PRIMARY.lcd)) throw new TypeError("Failed to fetch");
+    if (u.endsWith("/blocks/latest")) {
+      return jsonResponse({ block: { header: { height: "12351" } } });
+    }
+    smartUrls.push(u);
+    assert.equal(init.method, "GET");
+    // The community endpoint rejects CORS preflights, so the fallback read
+    // must be a simple header-less GET rather than a pinned-height request.
+    assert.equal(init.headers["x-cosmos-block-height"], undefined);
+    return jsonResponse({ data: { failed_over: true } });
+  };
+  try {
+    assert.deepEqual(await queryCosmWasmV1({ config: {} }), { failed_over: true });
+    assert.equal(smartUrls.length, 1);
+    assert.match(smartUrls[0], new RegExp(`^${FALLBACK.lcd}/cosmwasm/wasm/v1/contract/${COSMWASM_V1_ARCHIVE.contract}/smart/`));
+    // The session sticks to whichever endpoint last answered, so the next
+    // query must not hammer the failing primary again.
+    smartUrls.length = 0;
+    assert.deepEqual(await queryCosmWasmV1({ config: {} }), { failed_over: true });
+    assert.equal(smartUrls.length, 1);
+    assert.match(smartUrls[0], new RegExp(`^${FALLBACK.lcd}/`));
+  } finally {
+    globalThis.fetch = previousFetch;
+    resetCosmWasmV1Snapshot();
+  }
+});
+
+test("V1 snapshot height falls back when every primary block query fails", async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    const u = String(url);
+    if (u.startsWith(PRIMARY.lcd)) return jsonResponse({ error: "upstream reset" }, 500);
+    if (u.endsWith("/blocks/latest")) return jsonResponse({ block: { header: { height: "12352" } } });
+    assert.equal(init.headers["x-cosmos-block-height"], undefined);
+    return jsonResponse({ data: { via: "fallback" } });
+  };
+  try {
+    assert.deepEqual(await queryCosmWasmV1({ config: {} }), { via: "fallback" });
+  } finally {
+    globalThis.fetch = previousFetch;
+    resetCosmWasmV1Snapshot();
+  }
+});
+
+test("V1 queries report every tried LCD when all endpoints are unreachable", async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new TypeError("Failed to fetch");
+  };
+  try {
+    await assert.rejects(queryCosmWasmV1({ config: {} }), (error) => {
+      assert.match(error.message, /network error/);
+      for (const endpoint of COSMWASM_V1_LCD_ENDPOINTS) {
+        assert.match(error.message, new RegExp(endpoint.label));
+      }
+      return true;
+    });
+  } finally {
+    globalThis.fetch = previousFetch;
+    resetCosmWasmV1Snapshot();
   }
 });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type { Hex } from "viem";
 import {
@@ -183,6 +183,7 @@ export default function Monitor() {
   const [snapshot, setSnapshot] = useState<MonitorSnapshot>(INITIAL_SNAPSHOT);
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<number | null>(null);
+  const refreshRunRef = useRef(0);
   const [wsConnectionState, setWsConnectionState] = useState<ConnectionState>("disconnected");
   const blockManagerRef = useState(() => new BlockSubscriptionManager(TENDERMINT_WS_ENDPOINT, cfg))[0];
 
@@ -196,6 +197,18 @@ export default function Monitor() {
     const checkedAt = Date.now();
     const configured = isSuiteDirectoryConfigured(cfg.suiteDirectory);
     setRefreshing(true);
+    // Sources land in the snapshot independently as they settle: one slow or
+    // hanging probe (a long activity walk, a stalled LCD) must not freeze the
+    // other cards on their first-paint "Checking" state. A newer refresh run
+    // invalidates every write from this one, so a slow straggler that outlives
+    // the refresh interval can never clobber fresher observations.
+    const run = ++refreshRunRef.current;
+    const apply = (
+      patch: Partial<MonitorSnapshot> | ((prev: MonitorSnapshot) => Partial<MonitorSnapshot>),
+    ) => {
+      if (refreshRunRef.current !== run) return;
+      setSnapshot((prev) => ({ ...prev, ...(typeof patch === "function" ? patch(prev) : patch) }));
+    };
 
     const suitePromise = configured ? verifySuite(cfg) : Promise.resolve(null);
     const latestPromise = latestEvmBlock(cfg);
@@ -203,72 +216,125 @@ export default function Monitor() {
     const v1Promise = prepareCosmWasmV1Snapshot();
     const ipfsPromises = PUBLIC_IPFS_GATEWAYS.map((gateway) => probeGatewayFromBrowser(gateway.endpoint));
 
-    const coreResultsPromise = Promise.allSettled([
-      suitePromise,
-      latestPromise,
-      activityPromise,
-      v1Promise,
-    ]);
-    const gatewayResultsPromise = Promise.allSettled(ipfsPromises);
-    const [coreResults, gatewayResults] = await Promise.all([coreResultsPromise, gatewayResultsPromise]);
-    const [suite, latest, activity, v1] = coreResults;
+    if (!configured) {
+      apply({
+        evm: {
+          state: "not-configured",
+          detail: "Add a verified EVM V2 SuiteDirectory in Settings",
+          checkedAt,
+        },
+      });
+    } else {
+      suitePromise.then(
+        () => apply({
+          evm: {
+            state: "healthy",
+            detail: `Verified on ${profile.label}`,
+            checkedAt,
+          },
+        }),
+        (reason) => {
+          const suiteError = formatError(reason);
+          apply({
+            evm: {
+              state: "unavailable",
+              detail: suiteError || "Suite verification failed",
+              checkedAt,
+              error: suiteError || undefined,
+            },
+          });
+        },
+      );
+    }
 
-    const suiteError = suite.status === "rejected" ? formatError(suite.reason) : "";
-    const latestError = latest.status === "rejected" ? formatError(latest.reason) : "";
-    const activityError = activity.status === "rejected" ? formatError(activity.reason) : configured ? "" : "SuiteDirectory is not configured";
-    const v1Error = v1.status === "rejected" ? formatError(v1.reason) : "";
-    const v1Height = v1.status === "fulfilled" ? v1.value : null;
-    const ipfs = Object.fromEntries(PUBLIC_IPFS_GATEWAYS.map((gateway, index) => {
-      const result = gatewayResults[index];
-      const probe = result.status === "fulfilled" ? result.value : null;
-      const error = result.status === "rejected" ? formatError(result.reason) : probe?.error || "";
-      const state: SourceState = !probe || probe.responseSamples === 0
-        ? "unavailable"
-        : probe.ok
-          ? "healthy"
-          : "degraded";
-      const detail = probe && probe.responseSamples > 0
-        ? `${probe.reachableSamples}/${probe.sampleCount} reachable · ${probe.latencyMs ?? "—"} ms median · browser probes`
-        : error || "Gateway probe failed";
-      return [gateway.id, {
-        state,
-        detail,
-        checkedAt,
-        error: error || undefined,
-        latencyMs: probe?.latencyMs ?? null,
-        statusCode: probe?.status ?? null,
-        probeSource: probe?.source ?? null,
-        sampleCount: probe?.sampleCount ?? BROWSER_GATEWAY_PROBE_SAMPLE_COUNT,
-        responseSamples: probe?.responseSamples ?? 0,
-        reachableSamples: probe?.reachableSamples ?? 0,
-      } satisfies IpfsGatewaySnapshot];
-    })) as Record<IpfsGatewayId, IpfsGatewaySnapshot>;
+    latestPromise.then(
+      (value) => apply({ latestBlock: value }),
+      () => apply({ latestBlock: null }),
+    );
 
-    setSnapshot({
-      evm: {
-        state: !configured ? "not-configured" : suite.status === "fulfilled" ? "healthy" : "unavailable",
-        detail: !configured
-          ? "Add a verified EVM V2 SuiteDirectory in Settings"
-          : suite.status === "fulfilled"
-            ? `Verified on ${profile.label}`
-            : suiteError || "Suite verification failed",
-        checkedAt,
-        error: suiteError || undefined,
+    activityPromise.then(
+      (value) => apply({ activity: value, activityError: configured ? "" : "SuiteDirectory is not configured" }),
+      (reason) => apply({ activity: [], activityError: formatError(reason) || (configured ? "" : "SuiteDirectory is not configured") }),
+    );
+
+    v1Promise.then(
+      (height) => apply({
+        v1: {
+          state: "healthy",
+          detail: `Read-only snapshot at block ${formatBlock(height)}`,
+          checkedAt,
+          snapshotHeight: height,
+        },
+      }),
+      (reason) => {
+        const v1Error = formatError(reason);
+        apply({
+          v1: {
+            state: "unavailable",
+            detail: v1Error || "Archive endpoint is unavailable",
+            checkedAt,
+            error: v1Error || undefined,
+            snapshotHeight: null,
+          },
+        });
       },
-      latestBlock: latest.status === "fulfilled" ? latest.value : null,
-      activity: activity.status === "fulfilled" ? activity.value : [],
-      activityError: activityError || latestError,
-      v1: {
-        state: v1.status === "fulfilled" ? "healthy" : "unavailable",
-        detail: v1.status === "fulfilled"
-          ? `Read-only snapshot at block ${formatBlock(v1Height)}`
-          : v1Error || "Archive endpoint is unavailable",
-        checkedAt,
-        error: v1Error || undefined,
-        snapshotHeight: v1Height,
-      },
-      ipfs,
+    );
+
+    ipfsPromises.forEach((promise, index) => {
+      const gateway = PUBLIC_IPFS_GATEWAYS[index];
+      void promise.then(
+        (probe) => {
+          const state: SourceState = probe.responseSamples === 0
+            ? "unavailable"
+            : probe.ok
+              ? "healthy"
+              : "degraded";
+          const detail = probe.responseSamples > 0
+            ? `${probe.reachableSamples}/${probe.sampleCount} reachable · ${probe.latencyMs ?? "—"} ms median · browser probes`
+            : probe.error || "Gateway probe failed";
+          apply((prev) => ({
+            ipfs: {
+              ...prev.ipfs,
+              [gateway.id]: {
+                state,
+                detail,
+                checkedAt,
+                error: probe.error || undefined,
+                latencyMs: probe.latencyMs ?? null,
+                statusCode: probe.status ?? null,
+                probeSource: probe.source ?? null,
+                sampleCount: probe.sampleCount ?? BROWSER_GATEWAY_PROBE_SAMPLE_COUNT,
+                responseSamples: probe.responseSamples ?? 0,
+                reachableSamples: probe.reachableSamples ?? 0,
+              } satisfies IpfsGatewaySnapshot,
+            },
+          }));
+        },
+        (reason) => {
+          const error = formatError(reason);
+          apply((prev) => ({
+            ipfs: {
+              ...prev.ipfs,
+              [gateway.id]: {
+                state: "unavailable" as SourceState,
+                detail: error || "Gateway probe failed",
+                checkedAt,
+                error: error || undefined,
+                latencyMs: null,
+                statusCode: null,
+                probeSource: null,
+                sampleCount: BROWSER_GATEWAY_PROBE_SAMPLE_COUNT,
+                responseSamples: 0,
+                reachableSamples: 0,
+              } satisfies IpfsGatewaySnapshot,
+            },
+          }));
+        },
+      );
     });
+
+    await Promise.allSettled([suitePromise, latestPromise, activityPromise, v1Promise, ...ipfsPromises]);
+    if (refreshRunRef.current !== run) return;
     setLastRefresh(checkedAt);
     setRefreshing(false);
   }, [cfg, profile.label]);

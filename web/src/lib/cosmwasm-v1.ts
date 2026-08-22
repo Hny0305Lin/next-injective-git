@@ -2,9 +2,44 @@ import { base64 } from "@scure/base";
 import { toInjectiveAddress } from "./address";
 import type { ModerationStatus, RefInfo, RepoInfo } from "./registry";
 
+/**
+ * Browser-reachable LCD candidates for the V1 archive, tried in order. The
+ * official sentry LCD drops a meaningful share of browser connections
+ * (observed roughly 40% "Failed to fetch"), which used to render the whole V1
+ * surface unavailable in the Monitor because it was the only endpoint. The
+ * Polkachu community endpoint serves the same chain and contract state and
+ * answers plain GETs with CORS `*`, but rejects CORS preflights, so requests
+ * routed there must not carry the custom snapshot-height header.
+ */
+export interface CosmWasmV1LcdEndpoint {
+  /** Base URL serving both /cosmwasm and /cosmos LCD routes. */
+  lcd: string;
+  /** Human-readable name used in diagnostics. */
+  label: string;
+  /**
+   * Whether the custom x-cosmos-block-height header may be sent. The header
+   * triggers a CORS preflight; endpoints whose preflight fails are queried
+   * header-less at their latest committed state instead of failing hard.
+   */
+  pinnedHeightHeader: boolean;
+}
+
+export const COSMWASM_V1_LCD_ENDPOINTS: readonly CosmWasmV1LcdEndpoint[] = [
+  {
+    lcd: "https://testnet.sentry.lcd.injective.network",
+    label: "Injective sentry LCD",
+    pinnedHeightHeader: true,
+  },
+  {
+    lcd: "https://injective-testnet-api.polkachu.com",
+    label: "Polkachu community LCD",
+    pinnedHeightHeader: false,
+  },
+];
+
 export const COSMWASM_V1_ARCHIVE = {
   network: "Injective Testnet",
-  lcd: "https://testnet.sentry.lcd.injective.network:443",
+  lcd: COSMWASM_V1_LCD_ENDPOINTS[0].lcd,
   contract: "inj1mg6x7ht3zyyszed9aq67q6kd0y5rtq7wf756jh",
   explorer: "https://testnet.explorer.injective.network/contract/inj1mg6x7ht3zyyszed9aq67q6kd0y5rtq7wf756jh/",
 } as const;
@@ -12,11 +47,19 @@ export const COSMWASM_V1_ARCHIVE = {
 const PAGE_SIZE = 100;
 const MAX_PAGES = 1_000;
 const MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
-const FETCH_ATTEMPTS = 2;
-const FETCH_RETRY_DELAY_MS = 150;
+const FETCH_ATTEMPTS = 3;
+const FETCH_RETRY_DELAYS_MS = [200, 600] as const;
+// Individual attempts are capped so a hanging LCD connection cannot leave the
+// Monitor stuck on "Checking" forever; the budget stays inside the 90s
+// refresh window even when every attempt times out.
+const FETCH_TIMEOUT_MS = 10_000;
 const latestBlockPath = "/cosmos/base/tendermint/v1beta1/blocks/latest";
 let snapshotHeight: number | null = null;
 let snapshotHeightPromise: Promise<number> | null = null;
+// Sessions stick to whichever endpoint last answered so a flaky primary is
+// not retried on every 90-second Monitor refresh; resetCosmWasmV1Snapshot()
+// restores the canonical order.
+let preferredEndpoint = 0;
 
 type JsonRecord = Record<string, unknown>;
 
@@ -105,42 +148,73 @@ function encodeQuery(query: JsonRecord): string {
 async function fetchWithRetry(input: string, init: RequestInit): Promise<Response> {
   let lastError: unknown;
   for (let attempt = 0; attempt < FETCH_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    // The timer only bounds awaiting the response headers; it is cleared as
+    // soon as fetch resolves so bounded body reads are never aborted mid-way.
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     try {
-      return await fetch(input, init);
+      return await fetch(input, { ...init, signal: controller.signal });
     } catch (error) {
       lastError = error;
       if (attempt + 1 < FETCH_ATTEMPTS) {
-        await new Promise((resolve) => setTimeout(resolve, FETCH_RETRY_DELAY_MS));
+        const delay = FETCH_RETRY_DELAYS_MS[Math.min(attempt, FETCH_RETRY_DELAYS_MS.length - 1)];
+        await new Promise((resolve) => setTimeout(resolve, delay));
       }
+    } finally {
+      clearTimeout(timer);
     }
   }
   throw lastError;
 }
 
+function endpointOrder(): CosmWasmV1LcdEndpoint[] {
+  const endpoints = [...COSMWASM_V1_LCD_ENDPOINTS];
+  // Rotate so the preferred endpoint is tried first without reordering the
+  // exported canonical list.
+  return endpoints.slice(preferredEndpoint).concat(endpoints.slice(0, preferredEndpoint));
+}
+
 async function loadSnapshotHeight(): Promise<number> {
-  let response: Response;
-  try {
-    response = await fetchWithRetry(`${COSMWASM_V1_ARCHIVE.lcd}${latestBlockPath}`, {
-      method: "GET",
-      headers: { Accept: "application/json" },
-    });
-  } catch (cause) {
+  let lastNetworkError: unknown;
+  let lastStatus: number | null = null;
+  for (const endpoint of endpointOrder()) {
+    let response: Response;
+    try {
+      response = await fetchWithRetry(`${endpoint.lcd}${latestBlockPath}`, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+      });
+    } catch (cause) {
+      lastNetworkError = cause;
+      continue;
+    }
+    if (!response.ok) {
+      lastStatus = response.status;
+      continue;
+    }
+    const payload = record(await readJsonBounded(response, "latest block"), "latest block response");
+    const block = record(payload.block, "latest block");
+    const header = record(block.header, "latest block header");
+    const rawHeight = stringField(header.height, "latest block height");
+    const height = Number(rawHeight);
+    if (!Number.isSafeInteger(height) || height <= 0) {
+      throw new CosmWasmV1ArchiveError("CosmWasm V1 returned an invalid latest block height");
+    }
+    preferredEndpoint = COSMWASM_V1_LCD_ENDPOINTS.indexOf(endpoint);
+    return height;
+  }
+  if (lastNetworkError != null) {
+    const labels = COSMWASM_V1_LCD_ENDPOINTS.map((endpoint) => endpoint.label).join(", ");
     throw new CosmWasmV1ArchiveError(
-      cause instanceof Error ? `CosmWasm V1 network error: ${cause.message}` : "CosmWasm V1 network error",
+      lastNetworkError instanceof Error
+        ? `CosmWasm V1 network error (${labels}): ${lastNetworkError.message}`
+        : `CosmWasm V1 network error (${labels})`,
     );
   }
-  if (!response.ok) {
-    throw new CosmWasmV1ArchiveError(`CosmWasm V1 latest block query failed (HTTP ${response.status})`, response.status);
-  }
-  const payload = record(await readJsonBounded(response, "latest block"), "latest block response");
-  const block = record(payload.block, "latest block");
-  const header = record(block.header, "latest block header");
-  const rawHeight = stringField(header.height, "latest block height");
-  const height = Number(rawHeight);
-  if (!Number.isSafeInteger(height) || height <= 0) {
-    throw new CosmWasmV1ArchiveError("CosmWasm V1 returned an invalid latest block height");
-  }
-  return height;
+  throw new CosmWasmV1ArchiveError(
+    `CosmWasm V1 latest block query failed on every endpoint (last HTTP ${lastStatus ?? "unknown"})`,
+    lastStatus ?? undefined,
+  );
 }
 
 async function getSnapshotHeight(): Promise<number> {
@@ -167,49 +241,73 @@ export function prepareCosmWasmV1Snapshot(): Promise<number> {
 export function resetCosmWasmV1Snapshot(): void {
   snapshotHeight = null;
   snapshotHeightPromise = null;
+  preferredEndpoint = 0;
 }
 
 export async function queryCosmWasmV1<T>(query: JsonRecord): Promise<T> {
   const encoded = encodeQuery(query);
-  const endpoint = `${COSMWASM_V1_ARCHIVE.lcd}/cosmwasm/wasm/v1/contract/${COSMWASM_V1_ARCHIVE.contract}/smart/${encoded}`;
   const height = await getSnapshotHeight();
-  let response: Response;
-  try {
-    response = await fetchWithRetry(endpoint, {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-        "x-cosmos-block-height": String(height),
-      },
-    });
-  } catch (cause) {
-    throw new CosmWasmV1ArchiveError(
-      cause instanceof Error ? `CosmWasm V1 network error: ${cause.message}` : "CosmWasm V1 network error",
-    );
-  }
+  let lastNetworkError: unknown;
+  let lastServerError: CosmWasmV1ArchiveError | null = null;
+  for (const endpoint of endpointOrder()) {
+    const url = `${endpoint.lcd}/cosmwasm/wasm/v1/contract/${COSMWASM_V1_ARCHIVE.contract}/smart/${encoded}`;
+    // The pinned-height header triggers a CORS preflight; endpoints whose
+    // preflight rejects custom headers are queried at their latest committed
+    // state instead. The archive is write-frozen, so the bounded drift is
+    // preferable to failing the read outright.
+    const headers: Record<string, string> = { Accept: "application/json" };
+    if (endpoint.pinnedHeightHeader) headers["x-cosmos-block-height"] = String(height);
+    let response: Response;
+    try {
+      response = await fetchWithRetry(url, { method: "GET", headers });
+    } catch (cause) {
+      lastNetworkError = cause;
+      continue;
+    }
 
-  let payload: unknown;
-  try {
-    payload = await readJsonBounded(response, "query");
-  } catch (cause) {
-    if (cause instanceof CosmWasmV1ArchiveError) throw cause;
-    throw new CosmWasmV1ArchiveError(
-      `CosmWasm V1 returned malformed JSON (HTTP ${response.status})`,
-      response.status,
-    );
-  }
+    if (response.status >= 500) {
+      // Server-side failures (rate limits, pruned pinned state, node errors)
+      // are endpoint-local: move on to the next candidate.
+      lastServerError = new CosmWasmV1ArchiveError(
+        `CosmWasm V1 query failed (HTTP ${response.status})`,
+        response.status,
+      );
+      continue;
+    }
 
-  const envelope = record(payload, "response");
-  if (!response.ok) {
-    const message = typeof envelope.message === "string"
-      ? envelope.message
-      : `CosmWasm V1 query failed (HTTP ${response.status})`;
-    throw new CosmWasmV1ArchiveError(message, response.status);
+    let payload: unknown;
+    try {
+      payload = await readJsonBounded(response, "query");
+    } catch (cause) {
+      if (cause instanceof CosmWasmV1ArchiveError) throw cause;
+      throw new CosmWasmV1ArchiveError(
+        `CosmWasm V1 returned malformed JSON (HTTP ${response.status})`,
+        response.status,
+      );
+    }
+
+    const envelope = record(payload, "response");
+    if (!response.ok) {
+      // 4xx bodies are deterministic contract-level answers (e.g. unknown
+      // repository); they must not be retried against another endpoint.
+      const message = typeof envelope.message === "string"
+        ? envelope.message
+        : `CosmWasm V1 query failed (HTTP ${response.status})`;
+      throw new CosmWasmV1ArchiveError(message, response.status);
+    }
+    if (!("data" in envelope)) {
+      throw new CosmWasmV1ArchiveError("CosmWasm V1 response is missing data", response.status);
+    }
+    preferredEndpoint = COSMWASM_V1_LCD_ENDPOINTS.indexOf(endpoint);
+    return envelope.data as T;
   }
-  if (!("data" in envelope)) {
-    throw new CosmWasmV1ArchiveError("CosmWasm V1 response is missing data", response.status);
-  }
-  return envelope.data as T;
+  if (lastServerError != null) throw lastServerError;
+  const labels = COSMWASM_V1_LCD_ENDPOINTS.map((endpoint) => endpoint.label).join(", ");
+  throw new CosmWasmV1ArchiveError(
+    lastNetworkError instanceof Error
+      ? `CosmWasm V1 network error (${labels}): ${lastNetworkError.message}`
+      : `CosmWasm V1 network error (${labels})`,
+  );
 }
 
 function parseRepo(value: unknown): RepoInfo {
