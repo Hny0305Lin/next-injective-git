@@ -1,7 +1,0 @@
-{
-  "network": "injective-evm-testnet",
-  "chain_id": 1439,
-  "suite_directory": "0xf8844F90887731FFd607E1f59e39a3918F6eAb35",
-  "coordinator": "0x6578331956265Ce0BbE951A9D56446675aA63Bc0",
-  "snapshot_root": "0x5c25a7ca0b51fd2b7bbe6ac4f9ac91f582ccd508166b4eb10329ab6d910dfb48"
-}
