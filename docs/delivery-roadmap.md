@@ -2,7 +2,7 @@
 
 - Status: Active execution plan
 - Initial assessment: 2026-08-15
-- Latest assessment: 2026-08-29
+- Latest assessment: 2026-08-31
 - Suite evidence baseline: `4fd6a07ad2f45eb4b0b09b58eeed1621ddc8f986`
 - Latest progress: P1.2 deployment evidence and P1.3 fresh-empty activation complete
 - Current public availability: None; checked-in Suite profiles remain intentionally empty
@@ -42,7 +42,7 @@ When this roadmap conflicts with an accepted ADR, the ADR wins. When it
 conflicts with real cutover evidence, the evidence wins and this roadmap must
 be corrected.
 
-## Current Delivery Truth (Updated 2026-08-29)
+## Current Delivery Truth (Updated 2026-08-31)
 
 The status below describes the repository at the assessment baseline. Source
 presence, CI configuration, fixtures, and local probes do not establish public
@@ -209,7 +209,7 @@ commit:
 
 ## P1: Suite V3 Testnet Deployment And Cutover
 
-**Status:** P1.1, P1.2, and P1.3 complete. The next critical work is P1.4-P1.6 product E2E, finality, security review, and approval.
+**Status:** P1.1, P1.2, and P1.3 complete. The next critical work is P1.4-P1.6 product E2E, finality, security review, approval, and the final checksum-bound gate.
 
 ### Deliverables
 
@@ -227,8 +227,7 @@ commit:
    uncertain-receipt handling and V1 archive-preview isolation.
 5. ⏳ **P1.5:** Complete finality evidence and deep source/security review.
 6. ⏳ **P1.6:** Obtain the independent hash-bound cutover approval, bind the complete
-   evidence directory, and pass the release gate.
-   hash-bound cutover approval.
+   evidence directory, generate `cutover-evidence.sha256`, and pass the release gate.
 
 ### Exit Criteria
 

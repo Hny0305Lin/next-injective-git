@@ -5,7 +5,7 @@ current milestone status, and shared exit criteria are maintained in the
 [Delivery Roadmap](delivery-roadmap.md). For a high-level status overview, see
 [Project Status](project-status.md).
 
-**Last Updated:** 2026-08-29
+**Last Updated:** 2026-08-31
 
 The immutable Suite source path is implemented, but no checked-in profile may
 claim a live deployment until all real evidence exists.
@@ -80,6 +80,7 @@ The public SuiteDirectory fields remain empty until the cutover gate passes.
   
 - [ ] **P1.6 证据收集**（阻塞配置文件更新）
   - [ ] 收集完整的证据目录
+  - [ ] 生成最终的 `cutover-evidence.sha256` 校验和清单
   - [ ] 运行 `scripts/migration-cutover-readiness.sh`
   - [ ] 验证所有证据通过门控
   - [ ] 仅在此之后更新测试网 `SuiteDirectory` 配置文件
@@ -144,8 +145,8 @@ The public SuiteDirectory fields remain empty until the cutover gate passes.
   and configuration transactions, and generate no-clobber deployment evidence.
 - [x] Verify all nine contracts, bind the fresh-empty scope, prove zero module
   imports and matching empty roots, and activate the Directory at a fixed block.
-- Record Blockscout verification, MetaMask receipts, Linux/Windows Git E2E,
-  finality handling, and an independent hash-bound cutover approval.
+- [ ] Record the remaining MetaMask receipts, Linux/Windows Git E2E, finality
+  handling, independent hash-bound cutover approval, and final checksum gate.
 - Only after the evidence gate passes, set the single SuiteDirectory address in
   the CLI and Web testnet profiles.
 

@@ -1,7 +1,7 @@
 # Project Status Overview
 
 - Status: P1.2 deployment evidence and P1.3 fresh-empty activation complete; P1.4-P1.6 acceptance in progress
-- Last Updated: 2026-08-29
+- Last Updated: 2026-08-31
 - Current Suite Evidence Baseline: `4fd6a07ad2f45eb4b0b09b58eeed1621ddc8f986`
 - Latest Progress: 17 deployment/configuration transactions revalidated, 9/9 Blockscout verification complete, fresh-empty Suite activated
 - Public Availability: None; checked-in Suite profiles remain intentionally empty
@@ -110,11 +110,12 @@ The V1 control plane used CosmWasm. It ran natively on Linux, but the Windows su
 
 #### P1.6 Evidence Collection and Gates (Final Step)
 - [ ] Collect complete evidence directory
+- [ ] Generate the final `cutover-evidence.sha256` checksum manifest
 - [ ] Run `scripts/migration-cutover-readiness.sh`
 - [ ] Verify all evidence passes gates
 - [ ] **Only then** update testnet `SuiteDirectory` profiles
 
-**Estimated Engineering Time:** P1.1-P1.3 are complete; P1.4-P1.6 now consist primarily of product E2E, finality, security review, and independent approval.
+**Estimated Engineering Time:** P1.1-P1.3 are complete; P1.4-P1.6 now consist primarily of product E2E, finality, security review, independent approval, and the final checksum-bound gate.
 
 ### 📋 Planned Milestones
 
@@ -435,6 +436,7 @@ Security and trust minimization. Non-upgradeable means:
 |---|---|---|
 | 2026-08-21 | Initial version - created based on P0 completion status | Project Assessment |
 | 2026-08-22 | P1.1 operator tooling complete - updated metrics and blocking status | Project Assessment |
+| 2026-08-31 | Confirmed P1.2/P1.3 complete; clarified P1.4-P1.6 and fresh-empty scope | Project Assessment |
 
 **Next Update:** After P1 completion or significant architectural changes
 
