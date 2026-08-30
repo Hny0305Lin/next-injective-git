@@ -23,20 +23,22 @@ The initial EVM V2 foundation was superseded during the immutable Suite rewrite:
   narrowly scoped V1 read fallback from the foundation plan is no longer a
   supported runtime. The Web has an explicit `/archive/cosmwasm-v1` viewer for
   historical read-only inspection; it is a separate GET-only archive surface,
-  not a fallback and not a write path. V1 access used for migration remains
-  explicit, fixed-height archive evidence followed by verified one-time
-  import.
+  not a fallback and not a write path. Under the current scope, V1 data is not
+  imported into the EVM Suite.
 - The original monolithic EVM registry alpha was replaced by one
   `SuiteDirectory`, one `BootstrapCoordinator`, `RepositoryCore`, and six
   bounded business modules with immutable bindings.
 - The foundation-era signed migration runner targeted the alpha layout and was
-  withdrawn. The current command builds and verifies unsigned calldata only. A
-  newly reviewed operator runner is required before real import or activation.
+  withdrawn. A replacement Suite operator runner was implemented and tested,
+  but the current fresh-empty cutover does not use it because no V1 state is
+  imported.
 
 These are deliberate product and safety decisions, not incidental file moves.
 Their rationale and consequences are recorded in
 [ADR 0001](adr/0001-evm-v2-runtime-and-migration-scope.md). The storage direction
-is recorded separately in [ADR 0002](adr/0002-pluggable-pack-storage.md).
+is recorded separately in [ADR 0002](adr/0002-pluggable-pack-storage.md). The
+fresh-Suite and V1 archive-preview decision is recorded in
+[ADR 0003](adr/0003-fresh-evm-suite-and-v1-archive-preview.md).
 
 ## Delivery Status
 
@@ -44,48 +46,43 @@ is recorded separately in [ADR 0002](adr/0002-pluggable-pack-storage.md).
 |---|---|---|
 | Suite source architecture | Present in source; P0 source/CI baseline complete | Independent security findings and approval remain open |
 | Native Windows/EVM baseline | P0 source, environment, and CI gates complete | Clean release-asset Git E2E and product acceptance |
-| V1 inventory and planning | Offline source tooling present | Complete fixed-height production inventory and independently verified plan |
-| Operator broadcast and import | ✅ P1.1 Complete (2026-08-22): Operator runner implemented and tested. Location: `cli/cmd/igit-suite-operator/` with encrypted keystore (keystore.go), signed journal (journal.go), safe resume (main.go), manifest execution (manifest.go). 15/15 tests passing, 60.5% coverage, all quality checks passing. | P1.1b: Dry-run validation testing; P1.2: Deployment execution and receipt collection |
-| Activation and cutover | Not executed | Module parity, active Directory, Linux/Windows Git E2E, Web receipts, finality and approval |
+| V1 archive scope | Read-only `/archive/cosmwasm-v1` preview retained | No import or ordinary-client compatibility path is required |
+| Operator broadcast and import | ✅ P1.1 tool complete and retained | Not used by the accepted fresh-empty cutover; future migration requires a separate decision |
+| Testnet deployment | ✅ P1.2 complete: 9 deployments, 8 configuration calls, 17 historical transactions revalidated, 9/9 Blockscout verified | Common product-acceptance evidence remains open |
+| Activation and cutover | ✅ P1.3 fresh-empty activation complete at fixed block with zero counts and matching empty roots | Linux/Windows Git E2E, Web receipts, finality, security review, and approval |
 | Pluggable object storage | Planned only | Successor URI protocol plus S3/R2 upload, fetch, integrity, credential and E2E support |
 
-## Cutover Workflow
+## Current Fresh-Suite Cutover Workflow
 
-Migration turns a complete fixed-height V1 archive snapshot into an immutable
-Suite bootstrap. It does not provide an ordinary V1 runtime path. Until a
-reviewed migration runner exists, an archived repository is shown with a
-migration-required notice and remains read-only in the Web viewer.
+The current cutover starts the EVM product from empty state. CosmWasm V1 remains
+available through the explicit archive preview and is not an ordinary runtime or
+an import source for this Suite.
 
-1. `igit archive inventory` reconstructs owners, reports, usernames, badge
-   recipients, and release versions from successful transaction events.
-2. `igit archive verify` cross-checks inventory, transaction search, block
-   evidence, block hash, and canonical snapshot at the cutover height.
-3. Username deposits are refunded on the historical chain; all releases and a
-   zero escrow balance are required before planning.
-4. `igit-deploy-suite` deploys the nine contracts and writes no-clobber
-   bootstrapping evidence.
-5. `igit-suite-migrate build` produces deterministic plan and unsigned ABI
-   calldata. `verify` independently checks exact parity.
-6. ✅ **P1.1 Complete (2026-08-22):** Reviewed operator runner (`igit-suite-operator`) 
-   implemented with encrypted keystore (scrypt KDF), append-only ECDSA-signed journal, 
-   safe resume for uncertain receipts, manifest-driven execution, and fixed-block 
-   state evidence emission. Location: `cli/cmd/igit-suite-operator/`. Test results: 
-   15/15 passing, 60.5% coverage. Code quality: go fmt/vet/build all passing.
-   Next: P1.1b dry-run validation testing.
-7. After every module count and root is verified, the runner requests atomic
-   Directory activation. Pending execution against testnet Suite.
-8. Fixed-block queries compare every imported item and write activation, code
-   hash, and binding evidence.
-9. Clean Git and Web acceptance plus security review feed the cutover gate.
+1. `igit-deploy-suite` deploys the nine contracts and writes no-clobber evidence,
+   or its historical-recovery mode revalidates an existing deployment from the
+   exact ordered transaction journal.
+2. Blockscout evidence independently proves source verification for all nine
+   deployed addresses.
+3. `cutover-scope.json` binds the reviewed commit to `fresh-empty-suite`, the
+   archive-preview-only V1 policy, and zero expected records for all modules.
+4. Every coordinator module progress record is started and finalized with zero
+   expected/imported records, zero batches and sequences, and equal expected and
+   rolling empty roots.
+5. Username escrow non-liability is attested for the empty Suite, then the
+   Directory is atomically activated.
+6. Fixed-block queries record active state, code hashes, module bindings, zero
+   import progress, and the activation block hash.
+7. Clean Git and Web acceptance plus finality, security review, and approval feed
+   the cutover gate.
 
 Pending ownership transfers, recovery proposals, and other temporal operations
 are not migrated. They are re-created after activation. New sponsorship accepts
 native INJ only; migrated historical denomination totals remain queryable.
 
-All snapshots, hashes, plans, manifests, journals, receipts, and state outputs
-are no-clobber. Duplicate or missing inventory, reorged evidence, tampering,
-incorrect commitments, partial imports, count mismatch, or nonzero username
-escrow fail closed.
+All scope files, transaction journals, deployment manifests, receipts, and state
+outputs are no-clobber. Missing transactions, altered initcode or calldata,
+reorged blocks, tampering, nonzero import counts, mismatched empty roots, or
+nonzero username escrow liability fail closed.
 
 ## Completion Definition
 
@@ -99,12 +96,14 @@ escrow fail closed.
 - CLI, the ordinary Web repository path, and the remote helper enforce the same
   Suite behavior and use one trust root; the explicit Web archive viewer is
   read-only and there is no V1 write fallback or double write.
-- Every V1 repository kept in the supported product is verified and imported
-  before cutover; unimported V1 state is available only through archive tools.
+- V1 repositories remain available only through the explicit read-only archive
+  preview. Repositories intended for active EVM use are recreated in the fresh
+  Suite rather than imported implicitly.
 - Private keys and object-storage credentials never enter logs, Git config,
   on-chain URIs, or ordinary plaintext configuration.
-- Solidity runtime tests, native Windows/Linux E2E, Web receipts, imported-state
-  parity, finality handling, and independent security approval all pass.
+- Solidity runtime tests, zero-import fixed-block parity, native Windows/Linux
+  E2E, Web receipts, finality handling, and independent security approval all
+  pass.
 
 No checked-in profile currently claims a deployed Suite. See
 [release and cutover](release.md) for the evidence gate.

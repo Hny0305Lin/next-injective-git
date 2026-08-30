@@ -257,7 +257,7 @@ func prepare(options Options) (*artifactSet, common.Address, [32]byte, *Manifest
 	inspection := artifacts.inspection()
 	operatorHex := lowerAddress(operator)
 	manifest := &Manifest{
-		Schema: manifestSchema, Status: "preparing", CreatedAt: now, UpdatedAt: now,
+		Schema: manifestSchema, Status: "preparing", EvidenceMode: evidenceModeLiveBroadcast, CreatedAt: now, UpdatedAt: now,
 		Compiler:     requiredCompilerEvidence(),
 		Source:       SourceEvidence{Commit: options.SourceCommit, ArtifactSetSHA256: artifacts.digest, Contracts: inspection.Contracts},
 		Chain:        ChainEvidence{Network: strings.TrimSpace(options.Network), ChainID: options.ChainID, RPCEndpoint: evidenceEndpoint(options.RPCEndpoint), BlockExplorer: options.BlockExplorer},

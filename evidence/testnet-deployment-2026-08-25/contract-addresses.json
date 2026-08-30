@@ -1,0 +1,67 @@
+{
+  "schema": "igit.evm-suite.deployment.v1",
+  "status": "deployed",
+  "deployment_date": "2026-08-19",
+  "evidence_recovered_at": "2026-08-29T18:17:44.4316631Z",
+  "chain": {
+    "name": "injective-testnet",
+    "cosmos_chain_id": "injective-888",
+    "evm_chain_id": 1439,
+    "explorer": "https://testnet.blockscout.injective.network"
+  },
+  "deployer": {
+    "address": "0x85eAc7bC081488AA77D1D82f9cB8e053De1e4Fa8",
+    "explorer_url": "https://testnet.blockscout.injective.network/address/0x85eAc7bC081488AA77D1D82f9cB8e053De1e4Fa8"
+  },
+  "contracts": [
+    {
+      "name": "SuiteDirectory",
+      "address": "0x24124cb60F9EF02F7DeB5BC868c028Fb412F5334",
+      "explorer_url": "https://testnet.blockscout.injective.network/address/0x24124cb60F9EF02F7DeB5BC868c028Fb412F5334"
+    },
+    {
+      "name": "BootstrapCoordinator",
+      "address": "0x329921023FCf6E337E924686b92f7521549B5970",
+      "explorer_url": "https://testnet.blockscout.injective.network/address/0x329921023FCf6E337E924686b92f7521549B5970"
+    },
+    {
+      "name": "RepositoryCore",
+      "address": "0x20269Fb750D77E7c6c812290E7A7B99E0a3780D4",
+      "explorer_url": "https://testnet.blockscout.injective.network/address/0x20269Fb750D77E7c6c812290E7A7B99E0a3780D4"
+    },
+    {
+      "name": "RecoveryModule",
+      "address": "0xa7249cE20B54C4Be440838F0eF403d2a6a07E532",
+      "explorer_url": "https://testnet.blockscout.injective.network/address/0xa7249cE20B54C4Be440838F0eF403d2a6a07E532"
+    },
+    {
+      "name": "ModerationModule",
+      "address": "0xb957B65634931dD0613abAC296D5a3837BF979Bd",
+      "explorer_url": "https://testnet.blockscout.injective.network/address/0xb957B65634931dD0613abAC296D5a3837BF979Bd"
+    },
+    {
+      "name": "EconomicModule",
+      "address": "0x608380F355bf3D7cb0D3DCD58Fc4DBe695dAF3dd",
+      "explorer_url": "https://testnet.blockscout.injective.network/address/0x608380F355bf3D7cb0D3DCD58Fc4DBe695dAF3dd"
+    },
+    {
+      "name": "UsernameModule",
+      "address": "0xc7C164E46788b37e98D27aCe908C489999c09853",
+      "explorer_url": "https://testnet.blockscout.injective.network/address/0xc7C164E46788b37e98D27aCe908C489999c09853"
+    },
+    {
+      "name": "BadgeModule",
+      "address": "0x5e4EA68e31f89977BF056BE9cb3d4F1c43AB995D",
+      "explorer_url": "https://testnet.blockscout.injective.network/address/0x5e4EA68e31f89977BF056BE9cb3d4F1c43AB995D"
+    },
+    {
+      "name": "ReleaseModule",
+      "address": "0xaa0dD566Eb2b21FeD0Ba9426c0e30887cE2de63f",
+      "explorer_url": "https://testnet.blockscout.injective.network/address/0xaa0dD566Eb2b21FeD0Ba9426c0e30887cE2de63f"
+    }
+  ],
+  "demo": {
+    "repository_url": "https://www.igit.xyz/inj1sh4v00qgzjy25a73mqheew8q200punaglrzec5/demo-showcase",
+    "status": "operational"
+  }
+}

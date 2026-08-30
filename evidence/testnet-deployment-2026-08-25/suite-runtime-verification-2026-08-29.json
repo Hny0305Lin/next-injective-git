@@ -1,0 +1,53 @@
+{
+  "directory": "0x24124cb60f9ef02f7deb5bc868c028fb412f5334",
+  "version": 3,
+  "chain_id": 1439,
+  "state": "active",
+  "snapshot_root": "0x5e2eaab50320b54d85e45bdc9f59ce94ada216d440fac3086fb30da7f98a1cea",
+  "bootstrap_coordinator": "0x329921023FCf6E337E924686b92f7521549B5970",
+  "block_tag": "0x83f6bc1",
+  "modules": [
+    {
+      "name": "core",
+      "id": "0x0f2aa236426cdfb44f309719da4a1e7bf3c2f26dc5d3c28a474082cc7ad909b8",
+      "address": "0x20269Fb750D77E7c6c812290E7A7B99E0a3780D4",
+      "code_hash": "0x1c5e3ca62fa52b1b4ecef6da246b1b4dcfe5d027102165721c42ba3b5e21b467"
+    },
+    {
+      "name": "recovery",
+      "id": "0x6cde1210dbeb58848fe7ff3cb286576a5f76ed31424ebc2117eff3f42e060631",
+      "address": "0xa7249cE20B54C4Be440838F0eF403d2a6a07E532",
+      "code_hash": "0x166e917cc005b551e15d840fb9fc92fb012048a715016304c7dd34047984b3c2"
+    },
+    {
+      "name": "moderation",
+      "id": "0xa49a32b2d99126d93610cb8045423f52f62b8f3240b6c53899cbd19ca5eae7f3",
+      "address": "0xb957B65634931dD0613abAC296D5a3837BF979Bd",
+      "code_hash": "0x3407b2f48bd761b0c241ba827960c84d95f6a100919f4a9863cf39c73c6e8de3"
+    },
+    {
+      "name": "economic",
+      "id": "0xc9ab9ceae89076b0f126fd5329cb2bdf61760459991af4a5a599ad3a063c0c17",
+      "address": "0x608380F355bf3D7cb0D3DCD58Fc4DBe695dAF3dd",
+      "code_hash": "0x907035110aeb8fa07f3a092ffd91b46b879ef54badcd4115459b79e6b9b0ad0d"
+    },
+    {
+      "name": "username",
+      "id": "0xab916fa805962ec369f8b0815c08c95b3feab5da2e9c29cfdfacbbd9d7b3ee97",
+      "address": "0xc7C164E46788b37e98D27aCe908C489999c09853",
+      "code_hash": "0xb7350b5e913d992a522ce2e05c3f3cb37ac50450486880bc36ab0c295292b49e"
+    },
+    {
+      "name": "badge",
+      "id": "0x129ffdcb675a98ccf83106de66261add937e83339ca1c3bcdea11a21d01137c2",
+      "address": "0x5e4EA68e31f89977BF056BE9cb3d4F1c43AB995D",
+      "code_hash": "0x50300d8ae14280acd2f48939d9095f932ac3dc22b481af9e45e07e58f898a77c"
+    },
+    {
+      "name": "release",
+      "id": "0xe3b2d8c3973efdefb548d9f71c6e48d9cd24914c9f7df467aa34f6feac411993",
+      "address": "0xaa0dD566Eb2b21FeD0Ba9426c0e30887cE2de63f",
+      "code_hash": "0x3834e5dcdf1f26f1c30bd628c4a5117021eb70525e88d725e196f019a43c151c"
+    }
+  ]
+}

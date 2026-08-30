@@ -159,6 +159,87 @@ func TestDeployPersistsBroadcastHashOnUnconfirmedReceipt(t *testing.T) {
 	}
 }
 
+func TestRecoverExistingDeploymentRevalidatesHistoricalTransactions(t *testing.T) {
+	artifacts, err := loadArtifactSet(testArtifactDirectory(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, _ := parseBytes32("0x" + strings.Repeat("11", 32))
+	operator := common.HexToAddress("0x00000000000000000000000000000000000000aa")
+	fixture := newDeployFixture(artifacts, snapshot, operator)
+	options := Options{
+		ArtifactDirectory: testArtifactDirectory(t), SourceCommit: testCommit,
+		Network: "injective-testnet", ChainID: 1439, RPCEndpoint: "http://fixture.invalid",
+		BlockExplorer: "https://fixture.blockscout.invalid", SnapshotRoot: hashHex(snapshot),
+		Operator: lowerAddress(operator), PlatformFeeBPS: 300,
+		Clock: func() time.Time { return time.Date(2026, 8, 29, 12, 0, 0, 0, time.UTC) },
+	}
+	live, err := Deploy(context.Background(), options, fixture, fixture, filepath.Join(t.TempDir(), "live.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	references := make([]RecoveryTransactionReference, 17)
+	transactions := make(map[string]*HistoricalTransaction, 17)
+	for _, contract := range live.Contracts {
+		constructor, err := decodeBytecode("constructor args", contract.ConstructorArgsABI)
+		if err != nil {
+			t.Fatal(err)
+		}
+		input := append(append([]byte(nil), artifacts.byName[contract.ContractName].creation...), constructor...)
+		purpose := "deploy_" + contract.ContractName
+		references[contract.TransactionOrder-1] = RecoveryTransactionReference{Purpose: purpose, TransactionHash: contract.TransactionHash}
+		transactions[contract.TransactionHash] = historicalFromReceipt(contract.TransactionHash, lowerAddress(operator), "", contract.Address, "0x"+hex.EncodeToString(input), contract.TransactionOrder, contract.Receipt)
+	}
+	for _, configuration := range live.ConfigurationTransactions {
+		references[configuration.TransactionOrder-1] = RecoveryTransactionReference{Purpose: configuration.Purpose, TransactionHash: configuration.TransactionHash}
+		transactions[configuration.TransactionHash] = historicalFromReceipt(configuration.TransactionHash, lowerAddress(operator), configuration.Target, "", configuration.Calldata, configuration.TransactionOrder, configuration.Receipt)
+	}
+	input := &RecoveryInput{Schema: recoveryInputSchema, Transactions: references}
+	recovered, err := Recover(context.Background(), options, fixture, &historicalFixture{transactions: transactions}, input, filepath.Join(t.TempDir(), "recovered.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered.EvidenceMode != evidenceModeHistoricalRecovery || recovered.Recovery == nil || recovered.Recovery.TransactionsValidated != 17 {
+		t.Fatalf("recovery metadata = %#v", recovered.Recovery)
+	}
+	if recovered.Status != "bootstrapping" || recovered.DirectoryBindingVerification == nil || recovered.DirectoryBindingVerification.Active {
+		t.Fatalf("recovered deployment status = %#v", recovered.DirectoryBindingVerification)
+	}
+	if len(recovered.Contracts) != 9 || len(recovered.ConfigurationTransactions) != 8 {
+		t.Fatalf("contracts=%d configurations=%d", len(recovered.Contracts), len(recovered.ConfigurationTransactions))
+	}
+	for index := range recovered.Contracts {
+		if recovered.Contracts[index].Address != live.Contracts[index].Address || recovered.Contracts[index].Runtime.CodeHashKeccak256 != live.Contracts[index].Runtime.CodeHashKeccak256 {
+			t.Fatalf("recovered contract %d mismatch", index)
+		}
+	}
+}
+
+type historicalFixture struct {
+	transactions map[string]*HistoricalTransaction
+}
+
+func (fixture *historicalFixture) Description() string { return "https://fixture.blockscout.invalid" }
+
+func (fixture *historicalFixture) Transaction(_ context.Context, hash string) (*HistoricalTransaction, error) {
+	transaction := fixture.transactions[normalizeHash(hash)]
+	if transaction == nil {
+		return nil, fmt.Errorf("missing historical transaction %s", hash)
+	}
+	copy := *transaction
+	return &copy, nil
+}
+
+func historicalFromReceipt(hash, from, to, contractAddress, input string, order uint64, receipt *chain.EVMReceipt) *HistoricalTransaction {
+	blockNumber, _ := parseHexQuantity(receipt.BlockNumber)
+	return &HistoricalTransaction{
+		Hash: hash, From: from, To: to, ContractAddress: contractAddress, Input: input,
+		BlockNumber: blockNumber, GasUsed: receipt.GasUsed, Nonce: 100 + order,
+		Timestamp: time.Date(2026, 8, 19, 18, 0, int(order), 0, time.UTC).Format(time.RFC3339Nano), Successful: true,
+	}
+}
+
 type deployFixture struct {
 	artifacts        *artifactSet
 	snapshot         [32]byte

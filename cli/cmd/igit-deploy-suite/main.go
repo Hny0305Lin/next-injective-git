@@ -26,6 +26,7 @@ type commandServices struct {
 	inspect    func(string) (*suitedeploy.ArtifactInspection, error)
 	verifyGit  func(string, string) error
 	deploy     func(context.Context, suitedeploy.Options, *chain.EVMRPC, *chain.EVMTransactor, string) (*suitedeploy.Manifest, error)
+	recover    func(context.Context, suitedeploy.Options, *chain.EVMRPC, suitedeploy.HistoricalTransactionSource, *suitedeploy.RecoveryInput, string) (*suitedeploy.Manifest, error)
 }
 
 func main() {
@@ -42,6 +43,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		deploy: func(ctx context.Context, options suitedeploy.Options, rpc *chain.EVMRPC, transactor *chain.EVMTransactor, output string) (*suitedeploy.Manifest, error) {
 			return suitedeploy.Deploy(ctx, options, rpc, transactor, output)
 		},
+		recover: func(ctx context.Context, options suitedeploy.Options, rpc *chain.EVMRPC, source suitedeploy.HistoricalTransactionSource, input *suitedeploy.RecoveryInput, output string) (*suitedeploy.Manifest, error) {
+			return suitedeploy.Recover(ctx, options, rpc, source, input, output)
+		},
 	})
 }
 
@@ -54,6 +58,9 @@ func runWithServices(ctx context.Context, args []string, stdout, stderr io.Write
 	var sourceCommit string
 	var confirmation string
 	var snapshotRoot string
+	var recoveryInput string
+	var recoveryOperator string
+	var blockscoutAPI string
 	var platformFeeBPS uint
 	var checkOnly bool
 	flags := flag.NewFlagSet("igit-deploy-suite", flag.ContinueOnError)
@@ -66,6 +73,9 @@ func runWithServices(ctx context.Context, args []string, stdout, stderr io.Write
 	flags.StringVar(&sourceCommit, "source-commit", "", "reviewed source Git commit recorded in evidence")
 	flags.StringVar(&confirmation, "confirm-source-commit", "", "exact source commit required before any broadcast")
 	flags.StringVar(&snapshotRoot, "snapshot-root", "", "reviewed 0x-prefixed snapshot root")
+	flags.StringVar(&recoveryInput, "recover-transactions", "", "read-only historical transaction journal used to recover deployment evidence")
+	flags.StringVar(&recoveryOperator, "operator", "", "bootstrap operator address required with --recover-transactions")
+	flags.StringVar(&blockscoutAPI, "blockscout-api", "", "credential-free Blockscout API base required with --recover-transactions")
 	flags.UintVar(&platformFeeBPS, "platform-fee-bps", 300, "initial platform fee in basis points (maximum 500)")
 	flags.BoolVar(&checkOnly, "check", false, "validate and hash checked-in artifacts without config, key, or RPC")
 	if err := flags.Parse(args); err != nil {
@@ -135,6 +145,53 @@ func runWithServices(ctx context.Context, args []string, stdout, stderr io.Write
 		fmt.Fprintf(stderr, "validate EVM RPC endpoint: %v\n", err)
 		return 2
 	}
+	rpc := chain.NewEVMRPC(endpoint)
+	if strings.TrimSpace(recoveryInput) != "" {
+		if strings.TrimSpace(recoveryOperator) == "" || strings.TrimSpace(blockscoutAPI) == "" {
+			fmt.Fprintln(stderr, "historical recovery requires --operator and --blockscout-api")
+			return 2
+		}
+		if services.recover == nil {
+			fmt.Fprintln(stderr, "historical deployment recovery is unavailable")
+			return 1
+		}
+		input, err := suitedeploy.LoadRecoveryInput(filepath.Clean(recoveryInput))
+		if err != nil {
+			fmt.Fprintf(stderr, "load historical deployment transactions: %v\n", err)
+			return 1
+		}
+		source, err := suitedeploy.NewBlockscoutTransactionSource(blockscoutAPI)
+		if err != nil {
+			fmt.Fprintf(stderr, "configure historical transaction source: %v\n", err)
+			return 2
+		}
+		manifest, err := services.recover(ctx, suitedeploy.Options{
+			ArtifactDirectory: filepath.Clean(artifacts), SourceCommit: sourceCommit,
+			Network: profile.Name, ChainID: profile.EVMChainID, RPCEndpoint: endpoint,
+			BlockExplorer: profile.EVMExplorer, SnapshotRoot: snapshotRoot, Operator: recoveryOperator,
+			PlatformFeeBPS: uint16(platformFeeBPS),
+		}, rpc, source, input, filepath.Clean(output))
+		if err != nil {
+			fmt.Fprintf(stderr, "recover immutable EVM suite deployment evidence: %v\n", err)
+			fmt.Fprintf(stderr, "inspect the no-clobber evidence file before any retry: %s\n", output)
+			return 1
+		}
+		if manifest == nil || manifest.DirectoryBindingVerification == nil || manifest.DirectoryBindingVerification.Active || manifest.Recovery == nil {
+			fmt.Fprintln(stderr, "historical recovery returned invalid bootstrapping evidence")
+			return 1
+		}
+		var directory string
+		for _, contract := range manifest.Contracts {
+			if contract.ContractName == "SuiteDirectory" {
+				directory = contract.Address
+				break
+			}
+		}
+		fmt.Fprintf(stdout, "recovered deployment evidence: %s\nnetwork: %s\nchain id: %d\nsuite directory: %s\ncontracts: %d\nconfiguration transactions: %d\nvalidated historical transactions: %d\ndirectory state at deployment block: bootstrapping\n",
+			output, profile.Name, profile.EVMChainID, directory, len(manifest.Contracts), len(manifest.ConfigurationTransactions), manifest.Recovery.TransactionsValidated)
+		return 0
+	}
+
 	cfg, err := services.loadConfig()
 	if err != nil {
 		fmt.Fprintf(stderr, "load encrypted EVM key configuration: %v\n", err)
@@ -156,7 +213,6 @@ func runWithServices(ctx context.Context, args []string, stdout, stderr io.Write
 		fmt.Fprintf(stderr, "resolve encrypted EVM bootstrap key: %v\n", err)
 		return 1
 	}
-	rpc := chain.NewEVMRPC(endpoint)
 	transactor := chain.NewEVMTransactor(cfg, rpc, signer)
 	manifest, err := services.deploy(ctx, suitedeploy.Options{
 		ArtifactDirectory: filepath.Clean(artifacts), SourceCommit: sourceCommit,

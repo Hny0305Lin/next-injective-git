@@ -6,6 +6,12 @@
 - Delivery status: Cutover pending; not released
 - Supersedes: Foundation assumptions recorded in `cbd3d44`
 
+> [!IMPORTANT]
+> [ADR 0003](0003-fresh-evm-suite-and-v1-archive-preview.md) supersedes
+> this ADR's mandatory V1 import requirements for the current testnet cutover.
+> The accepted current scope starts the EVM Suite empty and keeps V1 as an
+> explicit read-only archive preview.
+
 ## Context
 
 The CosmWasm V1 Push workflow ran natively on Linux. The supported Windows

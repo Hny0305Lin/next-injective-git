@@ -30,18 +30,23 @@ EVIDENCE="$(cd "$EVIDENCE" && pwd -P)"
 
 manifest="$EVIDENCE/cutover-evidence.sha256"
 approval="$EVIDENCE/cutover-approval.txt"
+scope="$EVIDENCE/cutover-scope.json"
+if [[ ! -s "$scope" || -L "$scope" ]]; then
+  echo "CUTOVER READINESS: FAIL (missing or unsafe cutover-scope.json)" >&2
+  exit 1
+fi
+cutover_mode="$(node -e 'const fs=require("fs");const value=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));if(typeof value.mode!=="string")process.exit(1);process.stdout.write(value.mode)' "$scope")" || {
+  echo "CUTOVER READINESS: FAIL (invalid cutover-scope.json)" >&2
+  exit 1
+}
 required=(
+  cutover-scope.json
   deployment.json
   suite-verification.json
   blockscout-verification.json
   foundry-test.txt
   foundry-invariant.txt
   foundry-gas.txt
-  admin-dry-run-journal.tar
-  migration-plan.json
-  migration-manifest.json
-  migration-receipt-journal.tar
-  imported-state.json
   windows-clean-e2e.txt
   linux-clean-e2e.txt
   web-receipt-e2e.txt
@@ -49,6 +54,28 @@ required=(
   finality-runbook.md
   cutover-approval.txt
 )
+case "$cutover_mode" in
+  fresh-empty-suite)
+    activation_journal="$(node -e 'const fs=require("fs");const value=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const name=value.activation_journal;if(typeof name!=="string"||!/^[A-Za-z0-9._-]+$/.test(name))process.exit(1);process.stdout.write(name)' "$scope")" || {
+      echo "CUTOVER READINESS: FAIL (invalid fresh-suite activation journal path)" >&2
+      exit 1
+    }
+    required+=(empty-username-escrow-attestation.json "$activation_journal")
+    ;;
+  cosmwasm-v1-migration)
+    required+=(
+      admin-dry-run-journal.tar
+      migration-plan.json
+      migration-manifest.json
+      migration-receipt-journal.tar
+      imported-state.json
+    )
+    ;;
+  *)
+    echo "CUTOVER READINESS: FAIL (unsupported cutover mode: $cutover_mode)" >&2
+    exit 1
+    ;;
+esac
 
 if [[ ! -s "$manifest" ]]; then
   echo "CUTOVER READINESS: FAIL (missing cutover-evidence.sha256)" >&2

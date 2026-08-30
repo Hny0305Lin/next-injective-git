@@ -5,7 +5,7 @@ current milestone status, and shared exit criteria are maintained in the
 [Delivery Roadmap](delivery-roadmap.md). For a high-level status overview, see
 [Project Status](project-status.md).
 
-**Last Updated:** 2026-08-22
+**Last Updated:** 2026-08-29
 
 The immutable Suite source path is implemented, but no checked-in profile may
 claim a live deployment until all real evidence exists.
@@ -13,9 +13,9 @@ claim a live deployment until all real evidence exists.
 | Work | Required evidence |
 |---|---|
 | Testnet deployment | No-clobber manifest, nine successful receipts, runtime/template hashes, constructor arguments, and Blockscout results |
-| Historical import | Complete fixed-height inventory, snapshot/hash, deterministic plan/calldata, signed journal, receipts, and module count/root parity |
-| Activation | Fixed-block active Directory, version/chain checks, seven module code hashes/bindings, and imported-state comparison |
-| Git acceptance | Clean native Windows without WSL2 or injectived, and clean Linux without injectived: init/push/clone/fetch/pull/delete plus historical alias resolution |
+| Fresh-Suite scope | Hash-bound scope, V1 archive-preview-only policy, zero module counts/batches, matching empty roots, escrow non-liability, and activation journal |
+| Activation | Fixed-block active Directory, version/chain checks, seven module code hashes/bindings, and zero-import parity |
+| Git acceptance | Clean native Windows without WSL2 or injectived, and clean Linux without injectived: init/push/clone/fetch/pull/delete plus V1 archive-preview isolation |
 | Web acceptance | MetaMask receipts for supported writes with explicit legacy transaction parameters |
 | Storage portability | Successor URI/digest contract and Linux/Windows E2E for Amazon S3 and Cloudflare R2 without Kubo |
 | Isolated ZKP prototype | Approved statement/public inputs, pinned circuit/setup artifacts, native Windows proof generation, testnet valid/invalid/replay receipts, and gas/prover benchmarks; no Suite integration |
@@ -35,7 +35,7 @@ The public SuiteDirectory fields remain empty until the cutover gate passes.
   the PowerShell cutover fixture. The reviewed P0 Windows job passed these
   gates; clean release-asset Git E2E remains a separate P2 requirement.
 
-### P1 (当前进行中 - P1.1 完成 ✅ 2026-08-22)
+### P1（当前进行中 - P1.1、P1.2、P1.3 已完成）
 - [x] **P1.1 运营运行器**（✅ 完成 2026-08-22）
   - [x] 实现带加密密钥存储事务处理器的操作运行器
   - [x] 实现仅追加签名日志（journal）
@@ -46,32 +46,29 @@ The public SuiteDirectory fields remain empty until the cutover gate passes.
   - [x] 位置：`cli/cmd/igit-suite-operator/`
   - [x] 核心文件：keystore.go, journal.go, manifest.go, main.go
   
-- [ ] **P1.1b 验证阶段**（下一步）
-  - [ ] 使用测试清单执行 dry-run 端到端测试
-  - [ ] 验证日志写入和签名验证功能
-  - [ ] 测试不确定收据恢复逻辑
-  - [ ] 确认 dry-run 模式下不广播交易
+- [x] **P1.1b 当前范围评估**（2026-08-29）
+  - [x] `fresh-empty-suite` 不执行 V1 导入，迁移 dry-run 和导入日志不属于当前切换门槛
+  - [x] 迁移运行器保留给未来单独批准的迁移范围
   
-- [ ] **P1.2 部署执行**（阻塞切换 - 依赖 P1.1 ✅）
-  - [ ] 轮换并资助测试网操作员密钥
-  - [ ] 修复 V1 切换高度
-  - [ ] 生成完整清单、快照、SHA-256 侧车和用户名托管释放证据
-  - [ ] 部署全部 9 个合约（使用 no-clobber 证据）
-  - [ ] 在 Blockscout 上验证所有合约
-  - [ ] 收集所有 9 个部署收据
+- [x] **P1.2 部署执行**（✅ 完成 2026-08-29）
+  - [x] 部署全部 9 个合约
+  - [x] 验证 9 个创建交易和 8 个初始化调用的完整顺序和输入
+  - [x] 在历史区块验证 runtime/template、不可变量和绑定
+  - [x] 在 Blockscout 上验证全部 9 个合约
+  - [x] 生成 no-clobber `deployment.json` 和独立 Blockscout 证据
   
-- [ ] **P1.3 导入和激活**（阻塞验证）
-  - [ ] 按顺序导入每个有界批次
-  - [ ] 验证计数和滚动承诺
-  - [ ] 原子激活 Directory
-  - [ ] 在一个最终区块比较每个迁移的域
-  - [ ] 记录最终 Directory 状态、代码哈希和模块绑定
+- [x] **P1.3 空状态激活**（✅ 完成 2026-08-29）
+  - [x] 固定 V1 只读归档预览、不迁移的范围
+  - [x] 验证所有模块零 expected/imported count、batch 和 sequence
+  - [x] 验证 expected root 与 rolling empty root 一致
+  - [x] 原子激活 Directory
+  - [x] 在固定区块记录最终状态、代码哈希和模块绑定
   
 - [ ] **P1.4 E2E 和钱包测试**（阻塞切换）
   - [ ] 执行 MetaMask 写入并记录收据
   - [ ] 在干净的 Linux 环境中执行 Git E2E（init/push/clone/fetch/pull/delete）
   - [ ] 在干净的 Windows 环境中执行 Git E2E
-  - [ ] 测试历史别名解析
+  - [ ] 验证 V1 归档预览只读且不进入普通 EVM 路径
   - [ ] 测试不确定收据处理
   
 - [ ] **P1.5 安全和批准**（阻塞切换）
@@ -143,11 +140,10 @@ The public SuiteDirectory fields remain empty until the cutover gate passes.
 
 ## Testnet Cutover TODO
 
-- Rotate and fund the testnet EOA, fix the V1 cutover height, and generate the
-  complete inventory, snapshot, SHA-256 sidecar, and username escrow-release
-  evidence.
-- Deploy and verify all nine contracts, import every ordered batch, activate
-  the Directory, and compare every migrated domain at one finalized block.
+- [x] Retain the protected testnet EOA, recover and validate all 17 deployment
+  and configuration transactions, and generate no-clobber deployment evidence.
+- [x] Verify all nine contracts, bind the fresh-empty scope, prove zero module
+  imports and matching empty roots, and activate the Directory at a fixed block.
 - Record Blockscout verification, MetaMask receipts, Linux/Windows Git E2E,
   finality handling, and an independent hash-bound cutover approval.
 - Only after the evidence gate passes, set the single SuiteDirectory address in

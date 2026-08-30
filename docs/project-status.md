@@ -1,9 +1,9 @@
 # Project Status Overview
 
-- Status: P0 baseline complete, P1.1 operator runner complete (2026-08-22), P1.2 preparation phase
-- Last Updated: 2026-08-22
-- Current Assessment Baseline: `f6dcee9aa67255bfdff1867785435022df7ec5e9`
-- Latest Progress: P1.1 operator runner implemented and tested (15/15 tests passing, 60.5% coverage)
+- Status: P1.2 deployment evidence and P1.3 fresh-empty activation complete; P1.4-P1.6 acceptance in progress
+- Last Updated: 2026-08-29
+- Current Suite Evidence Baseline: `4fd6a07ad2f45eb4b0b09b58eeed1621ddc8f986`
+- Latest Progress: 17 deployment/configuration transactions revalidated, 9/9 Blockscout verification complete, fresh-empty Suite activated
 - Public Availability: None; checked-in Suite profiles remain intentionally empty
 
 > [!IMPORTANT]
@@ -56,13 +56,13 @@ The V1 control plane used CosmWasm. It ran natively on Linux, but the Windows su
 
 ### 🚧 In Progress
 
-**P1: Suite V3 Testnet Deployment and Cutover** (In Progress - P1.1 Complete)
+**P1: Suite V3 Testnet Deployment and Cutover** (In Progress - P1.1, P1.2, and P1.3 Complete)
 
 **Blocking Factors:**
-1. ❌ **No Public Deployment Evidence** - `SuiteDirectory` address remains empty in profiles
-2. ✅ **Operator Tooling Complete** - Migration tool with encrypted keystore, signed journal, resume capability complete (2026-08-22)
-3. ❌ **Missing Independent Security Review** - Currently skipped by operator decision, but cutover gate still requires `security-review.pdf`
-4. ❌ **Missing Migration Evidence** - No deployment receipts, Blockscout verification, MetaMask receipts, or complete migration journal
+1. ✅ **Deployment Evidence Complete** - Nine creations and eight configuration calls are retained in no-clobber `deployment.json`
+2. ✅ **Fresh-Suite Scope Complete** - V1 is archive-preview-only and all seven module import counts are zero
+3. ❌ **Missing Product E2E And Wallet Receipts** - MetaMask, clean Windows/Linux Git, and finality evidence remain open
+4. ❌ **Missing Independent Security Review And Approval** - `security-review.pdf` and `cutover-approval.txt` remain required
 
 **Required Work (By Priority):**
 
@@ -74,33 +74,32 @@ The V1 control plane used CosmWasm. It ran natively on Linux, but the Windows su
 - [x] Complete unit tests (15/15 passing, 60.5% coverage)
 - [x] Pass code quality checks (go fmt, go vet, compilation)
 
-#### P1.1b Next Immediate Steps (Validation Phase)
-- [ ] Execute dry-run end-to-end test with test manifest
-- [ ] Verify journal writing and signature verification
-- [ ] Test uncertain receipt recovery logic
-- [ ] Confirm no transactions broadcast in dry-run mode
+#### P1.1b Migration Runner Validation (➖ Not Applicable To Current Cutover)
+- The accepted `fresh-empty-suite` scope performs no V1 import and therefore does not require a migration dry run, manifest, or import journal
+- The runner remains available for a separately approved future `cosmwasm-v1-migration`
 
-#### P1.2 Deployment Execution (Priority 2 - Blocks Cutover)
-- [ ] Rotate and fund testnet operator key
-- [ ] Fix V1 cutover height
-- [ ] Generate complete inventory, snapshot, SHA-256 sidecar, username escrow release evidence
-- [ ] Deploy all 9 contracts with no-clobber evidence
-- [ ] Verify all contracts on Blockscout
-- [ ] Collect all 9 deployment receipts
+#### P1.2 Deployment Execution (✅ Complete - 2026-08-29)
+- [x] Deploy all nine contracts
+- [x] Revalidate the ordered sender, nonce, initcode, and calldata for nine creation and eight configuration transactions
+- [x] Revalidate historical runtime code, immutables, and Directory bindings
+- [x] Verify all nine contracts on Blockscout
+- [x] Generate `deployment.json` through the no-clobber historical-recovery mode
+- [x] Generate independent `blockscout-verification.json`
 
-#### P1.3 Import and Activation (Blocks Verification)
-- [ ] Import every bounded batch in order
-- [ ] Verify counts and rolling commitments
-- [ ] Atomically activate Directory
-- [ ] Compare every migrated domain at one finalized block
-- [ ] Record final Directory state, code hashes, module bindings
+#### P1.3 Fresh-Empty Activation (✅ Complete - 2026-08-29)
+- [x] Bind `fresh-empty-suite` and the archive-preview-only V1 policy in `cutover-scope.json`
+- [x] Verify zero expected/imported counts, batches, and sequences for all seven modules
+- [x] Verify each expected root equals its deterministic empty rolling root
+- [x] Record username escrow non-liability evidence
+- [x] Atomically activate the Directory
+- [x] Record final Directory state, code hashes, and module bindings at a fixed block
 
 #### P1.4 E2E and Wallet Testing (Blocks Cutover)
 - [ ] Execute MetaMask writes and record receipts
 - [ ] Execute Git E2E on clean Linux environment
 - [ ] Execute Git E2E on clean Windows environment
-- [ ] Test historical alias resolution
 - [ ] Test uncertain receipt handling
+- [ ] Verify the V1 archive preview remains read-only and isolated from ordinary EVM paths
 
 #### P1.5 Security and Approval (Priority 1, Can Parallel - Blocks Cutover)
 - [ ] Launch and complete deep source security review
@@ -115,7 +114,7 @@ The V1 control plane used CosmWasm. It ran natively on Linux, but the Windows su
 - [ ] Verify all evidence passes gates
 - [ ] **Only then** update testnet `SuiteDirectory` profiles
 
-**Estimated Engineering Time:** P1.1 complete ✅ (2026-08-22), remaining P1.2-P1.6 approximately 1-2 weeks (excludes external security review scheduling)
+**Estimated Engineering Time:** P1.1-P1.3 are complete; P1.4-P1.6 now consist primarily of product E2E, finality, security review, and independent approval.
 
 ### 📋 Planned Milestones
 
@@ -219,13 +218,12 @@ scripts/                   Source, release, migration evidence, ops gates
 P0 ████████ Complete (2026-08-19)
    └─ Windows/Linux baseline, CI green, Chinese support, DACL
 
-P1 ░░░░░░░░ 1-2 weeks (P1.1 Complete ✅, P1.2-P1.6 In Progress)
+P1 ▓▓▓▓░░░░ P1.1-P1.3 Complete ✅, P1.4-P1.6 In Progress
    ├─ Operator runner implementation ✅
-   ├─ 9 contract deployments (Next)
-   ├─ Blockscout verification (Next)
-   ├─ Batch import and activation
-   ├─ Git E2E tests
-   └─ Security review and approval 🔒
+   ├─ 9 contract deployments and Blockscout verification ✅
+   ├─ Fresh-empty activation; no V1 import ✅
+   ├─ Git, MetaMask, and finality E2E tests
+   └─ Security review, evidence gate, and approval 🔒
 
 P2 ░░░░ 3-5 days (Depends on P1)
    └─ Windows installer, release assets, clean VM tests
@@ -291,34 +289,15 @@ Critical Path: P0 ✅ → P1 ⚠️ → P2 → M0
    - Prepare review materials (architecture, threat model, critical paths)
    - Target: Start immediately, parallel with deployment execution
 
-**Priority 2: Deployment Execution** (P1.1 Complete ✅)
+**Priority 2: Product E2E And Finality**
 
-2. **Test Operator Runner in Protected Environment**
-   - Execute dry-run end-to-end test with test manifest
-   - Verify journal writing and signature verification
-   - Test uncertain receipt resume logic
-   - Target: 1-2 days
-
-3. **Execute Testnet Deployment**
-   - Rotate testnet operator key and fund
-   - Deploy all 9 contracts
-   - Verify all contracts on Blockscout
-   - Collect all deployment receipts
-   - Target: 3-5 days after dry-run complete
-
-4. **Execute Batch Import and Activation**
-   - Import all batches in order
-   - Atomically activate Directory
-   - Compare migrated state at fixed block
-   - Target: Same week as deployment
-
-5. **Execute E2E Testing**
+2. **Execute E2E Testing**
    - MetaMask writes and receipt recording
    - Linux/Windows clean environment Git E2E
-   - Historical alias resolution tests
-   - Target: 2-3 days after activation
+   - V1 archive-preview read-only isolation
+   - Uncertain-receipt and finality handling
 
-6. **Collect Evidence and Pass Gates**
+3. **Collect Evidence and Pass Gates**
    - Run `migration-cutover-readiness.sh`
    - Obtain independent approval
    - Update testnet `SuiteDirectory` profiles
@@ -389,13 +368,16 @@ Critical Path: P0 ✅ → P1 ⚠️ → P2 → M0
 
 **Future (after P4):** S3/R2 profiles will eliminate Kubo dependency entirely.
 
-### Why can't it be deployed yet?
-P1 is blocked by:
-1. Incomplete operator runner tooling
-2. Independent security review not yet started
-3. Missing complete deployment and migration evidence
+### Why can't the public cutover complete yet?
+P1 is still blocked by:
+1. Missing clean Windows/Linux Git, MetaMask, and finality E2E evidence
+2. Independent security review and hash-bound approval are not complete
+3. The final checksum-bound P1.4-P1.6 evidence gate has not passed
 
-These are non-code work items but critical for responsible public deployment.
+Deployment and fresh-empty activation are complete. CosmWasm V1 import is not
+part of this cutover; V1 remains available only through the read-only archive
+preview. The remaining acceptance work is still critical for a responsible
+public cutover.
 
 ### Which networks are supported?
 - **Injective Testnet:** EVM chain ID 1439
@@ -426,7 +408,7 @@ Security and trust minimization. Non-upgradeable means:
 **Developers:**
 - Review P0 code and CI configuration
 - Test native Windows/Linux setup
-- Assist with P1.2+ deployment and testing
+- Assist with P1.4-P1.6 E2E, finality, and acceptance evidence
 
 **Security Researchers:**
 - Independent source code review

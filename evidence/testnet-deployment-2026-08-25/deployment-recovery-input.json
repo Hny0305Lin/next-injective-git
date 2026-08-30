@@ -1,0 +1,22 @@
+{
+  "schema": "igit.evm-suite.deployment-recovery-input.v1",
+  "transactions": [
+    {"purpose":"deploy_SuiteDirectory","transaction_hash":"0xd01c3326ab0454947d719b3aeb30e6ac6a6ee3a44f9cc78d1e028a74da7e7e70"},
+    {"purpose":"deploy_BootstrapCoordinator","transaction_hash":"0x4bbdb47cb28fada7d618d84d7dddb4726902b3ae0be8a823e0a30e9c0188e937"},
+    {"purpose":"bind_bootstrap_coordinator","transaction_hash":"0x2f5af6b963d057b7fba5811ccfb2a608fad097463c55dc28436f160214c5179e"},
+    {"purpose":"deploy_RepositoryCore","transaction_hash":"0xa0d2eceba2810a533af4e21523c0469b4202ffc89decd6391e0f1c9f55358b0d"},
+    {"purpose":"register_repositorycore","transaction_hash":"0xc6a30c9da28c9d53fba3063f785ed349f4550afd1db5e4394ca653ac4f6d8e22"},
+    {"purpose":"deploy_RecoveryModule","transaction_hash":"0x6d51a2c7126b2f26c108f805c8388711d21c7feb71d7f558f72ecf49813a1543"},
+    {"purpose":"register_recoverymodule","transaction_hash":"0xe958ed1b54d3a27834b9a639e098353c9a9148c7f9910be7b5ebd7386664b772"},
+    {"purpose":"deploy_ModerationModule","transaction_hash":"0x003efa8e9e104dfc9b3a0ec00ef5d70693724e90f3fdeefb4874d58f121af072"},
+    {"purpose":"register_moderationmodule","transaction_hash":"0x6959484788b053c5d5cde586e005bbaece9ac7381b79c018a45cd70f6ce933aa"},
+    {"purpose":"deploy_EconomicModule","transaction_hash":"0x900c305d1689a7caedd81ca441d4acfbeb779b7ca6194aadc5e9cd886b74d148"},
+    {"purpose":"register_economicmodule","transaction_hash":"0xb17735a576c430e89c07943bcf6ed81cf6c2f09c9d92002e3b220850b3eb4793"},
+    {"purpose":"deploy_UsernameModule","transaction_hash":"0x77c7261415201cd3029d6947f11b1a4414004ed15e1043b9b4a77038d4444b6b"},
+    {"purpose":"register_usernamemodule","transaction_hash":"0x01e7d044f3159bf11e4e86677c4d1b3454ed2019d18ec7ac0eda417de5b0150e"},
+    {"purpose":"deploy_BadgeModule","transaction_hash":"0x15972710e41dea2ad06df0a2c8c2caa586a4d01100a89b2b8975cd571c158aa8"},
+    {"purpose":"register_badgemodule","transaction_hash":"0x613728a917cca48a5fd46985f5d49ce6e7b199aa3b9c8f6b797058be8c017aab"},
+    {"purpose":"deploy_ReleaseModule","transaction_hash":"0xa8e5934ce28f9e361dcd66d72a57ee90ddaee4277142730b1220331ee3e9ce80"},
+    {"purpose":"register_releasemodule","transaction_hash":"0xf739c167da5e9422cc3cee25dd377a2ffe90d0d8fd21dd7c98d4a48894bc816d"}
+  ]
+}

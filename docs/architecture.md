@@ -71,7 +71,9 @@ height. It never signs or broadcasts CosmWasm messages, and it is not an
 ordinary Web fallback when EVM Suite verification fails. EVM V2 remains the
 sole `SuiteDirectory` trust root and the only write-capable product path.
 Snapshot evidence is fixed-height, block-hash bound, inventory complete, and
-verified before it can become a Suite bootstrap plan.
+available for audit tooling. Under the accepted current scope in
+[ADR 0003](adr/0003-fresh-evm-suite-and-v1-archive-preview.md), it does not become
+a Suite bootstrap plan: the EVM Suite starts empty and V1 remains preview-only.
 
 ## Data Plane Direction
 

@@ -25,18 +25,29 @@ if (($evidenceItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
 }
 $evidence = $evidenceItem.FullName
 
+$scopePath = Join-Path $evidence "cutover-scope.json"
+if (-not (Test-Path -LiteralPath $scopePath -PathType Leaf) -or (Get-Item -LiteralPath $scopePath).Length -eq 0) {
+  Write-Error "CUTOVER READINESS: FAIL (missing cutover-scope.json)"
+  exit 1
+}
+if (((Get-Item -LiteralPath $scopePath -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+  Write-Error "CUTOVER READINESS: FAIL (cutover-scope.json must not be a symbolic link or reparse point)"
+  exit 1
+}
+try {
+  $scope = Get-Content -LiteralPath $scopePath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop
+} catch {
+  Write-Error "CUTOVER READINESS: FAIL (invalid cutover-scope.json)"
+  exit 1
+}
 $required = @(
+  "cutover-scope.json",
   "deployment.json",
   "suite-verification.json",
   "blockscout-verification.json",
   "foundry-test.txt",
   "foundry-invariant.txt",
   "foundry-gas.txt",
-  "admin-dry-run-journal.tar",
-  "migration-plan.json",
-  "migration-manifest.json",
-  "migration-receipt-journal.tar",
-  "imported-state.json",
   "windows-clean-e2e.txt",
   "linux-clean-e2e.txt",
   "web-receipt-e2e.txt",
@@ -44,6 +55,29 @@ $required = @(
   "finality-runbook.md",
   "cutover-approval.txt"
 )
+switch ([string]$scope.mode) {
+  "fresh-empty-suite" {
+    $activationJournal = [string]$scope.activation_journal
+    if ($activationJournal -notmatch '^[A-Za-z0-9._-]+$') {
+      Write-Error "CUTOVER READINESS: FAIL (invalid fresh-suite activation journal path)"
+      exit 1
+    }
+    $required += @("empty-username-escrow-attestation.json", $activationJournal)
+  }
+  "cosmwasm-v1-migration" {
+    $required += @(
+      "admin-dry-run-journal.tar",
+      "migration-plan.json",
+      "migration-manifest.json",
+      "migration-receipt-journal.tar",
+      "imported-state.json"
+    )
+  }
+  default {
+    Write-Error "CUTOVER READINESS: FAIL (unsupported cutover mode: $($scope.mode))"
+    exit 1
+  }
+}
 $manifestPath = Join-Path $evidence "cutover-evidence.sha256"
 if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf) -or (Get-Item -LiteralPath $manifestPath).Length -eq 0) {
   Write-Error "CUTOVER READINESS: FAIL (missing cutover-evidence.sha256)"

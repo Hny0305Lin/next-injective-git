@@ -45,16 +45,15 @@ try {
   if (-not $failedClosed) { throw "empty evidence unexpectedly passed" }
 
   $required = @(
-    "deployment.json", "suite-verification.json", "blockscout-verification.json", "foundry-test.txt", "foundry-invariant.txt", "foundry-gas.txt",
-    "admin-dry-run-journal.tar", "migration-plan.json", "migration-manifest.json",
-    "migration-receipt-journal.tar", "imported-state.json", "windows-clean-e2e.txt",
+    "cutover-scope.json", "deployment.json", "suite-verification.json", "blockscout-verification.json", "foundry-test.txt", "foundry-invariant.txt", "foundry-gas.txt",
+    "empty-username-escrow-attestation.json", "empty-suite-activation.log", "windows-clean-e2e.txt",
     "linux-clean-e2e.txt", "web-receipt-e2e.txt", "security-review.pdf",
     "finality-runbook.md", "cutover-approval.txt"
   )
   foreach ($name in $required) {
     $content = if ($name -eq "cutover-approval.txt") {
       "decision=approved`nreviewer=$unicodeReviewer`nreviewed_commit=$expectedCommit`nreviewed_at=2026-08-12T00:00:00Z`n"
-    } elseif ($name -notin @("deployment.json", "suite-verification.json", "blockscout-verification.json")) {
+    } elseif ($name -notin @("cutover-scope.json", "deployment.json", "suite-verification.json", "blockscout-verification.json", "empty-username-escrow-attestation.json")) {
       "fixture for $name`n"
     } else {
       $null
@@ -65,48 +64,86 @@ try {
   }
   function Address([int]$value) { "0x" + $value.ToString("x40") }
   function CodeHash([int]$value) { "0x" + $value.ToString("x64") }
+  function Digest([int]$value) { $value.ToString("x64") }
   $contractNames = @(
     "SuiteDirectory", "BootstrapCoordinator", "RepositoryCore", "RecoveryModule", "ModerationModule",
     "EconomicModule", "UsernameModule", "BadgeModule", "ReleaseModule"
   )
   $contracts = for ($index = 0; $index -lt $contractNames.Count; $index++) {
+    $order = if ($index -lt 2) { $index + 1 } else { 2 * $index }
+    $transactionHash = CodeHash ($index + 100)
+    $address = Address ($index + 1)
     [ordered]@{
-      transaction_order = $index
+      transaction_order = $order
       contract_name = $contractNames[$index]
-      address = Address ($index + 1)
-      transaction_hash = CodeHash ($index + 100)
-      receipt = [ordered]@{ status = "0x1"; blockHash = CodeHash 900 }
+      address = $address
+      transaction_hash = $transactionHash
+      receipt = [ordered]@{ transactionHash = $transactionHash; blockNumber = "0x123"; blockHash = CodeHash 900; contractAddress = $address; status = "0x1" }
       runtime = [ordered]@{ code_hash_keccak256 = CodeHash ($index + 200); template_match_verified = $true }
     }
   }
+  $purposes = @(
+    "bind_bootstrap_coordinator", "register_repositorycore", "register_recoverymodule", "register_moderationmodule",
+    "register_economicmodule", "register_usernamemodule", "register_badgemodule", "register_releasemodule"
+  )
+  $configurations = for ($index = 0; $index -lt $purposes.Count; $index++) {
+    $transactionHash = CodeHash ($index + 300)
+    [ordered]@{
+      transaction_order = 3 + (2 * $index); purpose = $purposes[$index]
+      target = if ($index -eq 0) { Address 1 } else { Address 2 }
+      calldata = "0x01"; calldata_sha256 = Digest ($index + 400); transaction_hash = $transactionHash
+      receipt = [ordered]@{ transactionHash = $transactionHash; blockNumber = "0x123"; blockHash = CodeHash 900; status = "0x1" }
+    }
+  }
   $deployment = [ordered]@{
-    schema = "igit.evm-suite.deployment.v1"; status = "bootstrapping"
+    schema = "igit.evm-suite.deployment.v1"; status = "bootstrapping"; evidence_mode = "live-broadcast"
     compiler = [ordered]@{ version = "0.8.24" }
     source = [ordered]@{ commit = $expectedCommit }
     chain = [ordered]@{ chain_id = 1439 }
     snapshot_root = CodeHash 700
     contracts = @($contracts)
+    configuration_transactions = @($configurations)
     directory_binding_verification = [ordered]@{ active = $false; registered_module_count = 7 }
   }
   $modules = for ($index = 2; $index -lt $contractNames.Count; $index++) {
+    $root = CodeHash ($index + 500)
     [ordered]@{
-      contract_name = $contractNames[$index]; address = Address ($index + 1)
+      contract_name = $contractNames[$index]; module_id = CodeHash ($index + 600)
+      bootstrap_started = $true; expected_count = 0; expected_batches = 0; imported_count = 0; next_sequence = 0
+      expected_root = $root; rolling_root = $root; address = Address ($index + 1)
       observed_code_hash = CodeHash ($index + 200); directory_code_hash = CodeHash ($index + 200)
       directory_verified = $true; module_directory = Address 1; bootstrap_finalized = $true
     }
   }
   $activation = [ordered]@{
     schema = "igit.evm-suite.activation-verification.v1"; source_commit = $expectedCommit; chain_id = 1439
-    suite_version = 3; state = 1; active = $true; coordinator_activated = $true; registered_module_count = 7
+    suite_version = 3; state = 1; active = $true; activation_mode = "fresh-empty-suite"
+    v1_runtime_policy = "archive-preview-only"; v1_migration_performed = $false
+    coordinator_activated = $true; registered_module_count = 7
     block_number = "0x123"; block_hash = CodeHash 900; snapshot_root = CodeHash 700; directory = Address 1
     modules = @($modules)
   }
+  $expectedImported = [ordered]@{}
+  foreach ($name in $contractNames[2..8]) { $expectedImported[$name] = 0 }
+  $scope = [ordered]@{
+    schema = "igit.evm-suite.cutover-scope.v1"; source_commit = $expectedCommit; mode = "fresh-empty-suite"
+    v1_runtime_policy = "archive-preview-only"; v1_migration_performed = $false; migration_evidence_required = $false
+    activation_journal = "empty-suite-activation.log"; chain_id = 1439; directory = Address 1; snapshot_root = CodeHash 700
+    expected_imported_records = $expectedImported
+  }
+  $attestation = [ordered]@{
+    schema = "igit.evm-suite.empty-username-escrow-attestation.v1"; source_commit = $expectedCommit
+    activation_mode = "fresh-empty-suite"; v1_migration_performed = $false; imported_username_records = 0; username_escrow_liability = "none"
+    attestation_transaction_hash = CodeHash 999
+  }
+  [IO.File]::WriteAllText((Join-Path $temp "cutover-scope.json"), (($scope | ConvertTo-Json -Depth 8 -Compress) + "`n"), $utf8)
   [IO.File]::WriteAllText((Join-Path $temp "deployment.json"), (($deployment | ConvertTo-Json -Depth 8 -Compress) + "`n"), $utf8)
   [IO.File]::WriteAllText((Join-Path $temp "suite-verification.json"), (($activation | ConvertTo-Json -Depth 8 -Compress) + "`n"), $utf8)
+  [IO.File]::WriteAllText((Join-Path $temp "empty-username-escrow-attestation.json"), (($attestation | ConvertTo-Json -Depth 8 -Compress) + "`n"), $utf8)
   $blockscout = [ordered]@{
     schema = "igit.evm-suite.blockscout-verification.v1"; source_commit = $expectedCommit; chain_id = 1439
     explorer = "https://fixture.invalid"
-    contracts = @($contracts | ForEach-Object { [ordered]@{ contract_name = $_.contract_name; address = $_.address; status = "verified" } })
+    contracts = @($contracts | ForEach-Object { [ordered]@{ contract_name = $_.contract_name; address = $_.address; status = "verified"; creation_transaction_hash = $_.transaction_hash } })
   }
   [IO.File]::WriteAllText((Join-Path $temp "blockscout-verification.json"), (($blockscout | ConvertTo-Json -Depth 8 -Compress) + "`n"), $utf8)
   $records = foreach ($name in $required) {

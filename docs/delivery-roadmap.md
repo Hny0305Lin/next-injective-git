@@ -2,9 +2,9 @@
 
 - Status: Active execution plan
 - Initial assessment: 2026-08-15
-- Latest assessment: 2026-08-22
-- Assessment baseline: `f6dcee9aa67255bfdff1867785435022df7ec5e9` (P0 complete)
-- Latest progress: P1.1 operator runner complete with 15/15 tests passing (2026-08-22)
+- Latest assessment: 2026-08-29
+- Suite evidence baseline: `4fd6a07ad2f45eb4b0b09b58eeed1621ddc8f986`
+- Latest progress: P1.2 deployment evidence and P1.3 fresh-empty activation complete
 - Current public availability: None; checked-in Suite profiles remain intentionally empty
 - Quick overview: See [Project Status](project-status.md) for a high-level summary
 
@@ -27,6 +27,7 @@ The surrounding documents retain their narrower authority:
 |---|---|
 | [ADR 0001](adr/0001-evm-v2-runtime-and-migration-scope.md) | Accepted EVM V2 runtime, immutable Suite, migration, and platform decisions |
 | [ADR 0002](adr/0002-pluggable-pack-storage.md) | Accepted direction and required properties for pluggable pack storage |
+| [ADR 0003](adr/0003-fresh-evm-suite-and-v1-archive-preview.md) | Accepted fresh-empty Suite and V1 archive-preview-only cutover scope |
 | [Architecture](architecture.md) | Current immutable Suite and data-plane boundaries |
 | [EVM V2 Migration](evm-v2-migration.md) | Migration workflow, present implementation, and completion definition |
 | [Remaining Work](backlog.md) | Granular engineering and policy task inventory |
@@ -41,7 +42,7 @@ When this roadmap conflicts with an accepted ADR, the ADR wins. When it
 conflicts with real cutover evidence, the evidence wins and this roadmap must
 be corrected.
 
-## Current Delivery Truth (Updated 2026-08-22)
+## Current Delivery Truth (Updated 2026-08-29)
 
 The status below describes the repository at the assessment baseline. Source
 presence, CI configuration, fixtures, and local probes do not establish public
@@ -50,8 +51,8 @@ availability.
 | Area | Current status | Blocking fact | Recent activity |
 |---|---|---|---|
 | Immutable EVM Suite source | Implemented; P0 source and CI evidence retained | Independent security approval and real cutover evidence remain open | 85+ commits since Aug 1 |
-| Testnet Suite deployment | Blocked | Public `SuiteDirectory` profiles are empty; no reviewed deployment, import, activation, or cutover evidence exists | P1.1 operator runner complete (2026-08-22), 15/15 tests passing, ready for P1.1b dry-run validation |
-| Migration operator | ✅ Complete (2026-08-22) | Operator runner with encrypted keystore, signed journal, resume capability implemented and tested (15/15 tests passing, 60.5% coverage, all quality checks passing) | Implementation and testing completed 2026-08-22 |
+| Testnet Suite deployment | ✅ P1.2 deployment and P1.3 fresh-empty activation complete | Public profiles remain empty until common E2E, security, finality, and approval evidence passes | 17 historical transactions validated, 9/9 Blockscout verified, active fixed-block Suite evidence retained |
+| Migration operator | ✅ Implemented and retained | Not required by the accepted fresh-empty scope; future V1 import needs a separate approval | 15/15 tests passing, 60.5% coverage |
 | Native Windows ordinary use | P0 source gates green; product acceptance blocked | Clean release-asset Git E2E and product acceptance remain open | P0 completed 2026-08-19 |
 | Current IPFS pack storage | Implemented current data path | Native Kubo is still required for push; clone/fetch use gateways | Stable; no changes needed for P1 |
 | Amazon S3 / Cloudflare R2 | Direction accepted; not implemented | Current Suite, CLI, and Web accept only `ipfs://` | P3-P5 planned work |
@@ -146,7 +147,7 @@ party service delays.
 | ID | Milestone | Initial status | Estimate | Primary exit condition |
 |---|---|---|---:|---|
 | P0 | Windows and EVM baseline repair | Complete for source/CI baseline; security and cutover follow-up | 2-4 days (historical) | `f6dcee9` has green native Windows/Linux/Foundry/race gates and retained local/CI evidence |
-| P1 | Suite v3 testnet deployment and cutover | Blocked by operator work and cutover prerequisites | 1-2 weeks | Active verified Directory plus complete real cutover evidence |
+| P1 | Suite v3 testnet deployment and cutover | P1.2/P1.3 complete; blocked by product acceptance and approval | Remaining work depends on external review | Active verified Directory plus complete common cutover evidence |
 | P2 | Native Windows product acceptance | Blocked by P1 | 3-5 days | Clean Windows release-asset Git E2E without WSL2 or `injectived` |
 | P3 | Verified packstore boundary and streaming | Planned; may proceed in parallel with P1 | 4-7 days | IPFS behavior preserved behind the new boundary; all downloads verify digest and size |
 | P4 | S3/R2 successor protocol and adapters | Blocked by design gate | 2-3 weeks | Successor Suite and real AWS/R2 provider workflows pass |
@@ -208,7 +209,7 @@ commit:
 
 ## P1: Suite V3 Testnet Deployment And Cutover
 
-**Status:** P1.1 complete (2026-08-22); P1.2-P1.6 awaiting execution. Next step: dry-run testing and deployment execution.
+**Status:** P1.1, P1.2, and P1.3 complete. The next critical work is P1.4-P1.6 product E2E, finality, security review, and approval.
 
 ### Deliverables
 
@@ -216,19 +217,17 @@ commit:
    manifest. It must use the encrypted EVM keystore, preserve an append-only
    signed journal and receipts, resume safely after uncertain receipts, and
    emit fixed-block imported-state evidence. (15/15 tests passing, 60.5% coverage, go fmt/vet/build passing)
-2. ⏳ **P1.2 Next:** Test operator runner in protected environment with dry-run end-to-end verification.
-3. ⏳ **P1.3:** Rotate and fund the testnet operator key. Fix the V1 cutover height and
-   produce the complete inventory, snapshot, sidecar hash, and username escrow
-   release evidence.
-4. ⏳ **P1.4:** Deploy all nine contracts with no-clobber evidence and verify each contract
-   on Blockscout.
-5. ⏳ **P1.5:** Import every bounded batch in the required order, verify counts and rolling
-   commitments, then atomically activate the Directory.
-6. ⏳ **P1.6:** Compare every migrated domain at one finalized block and record the final
-   Directory state, code hashes, and module bindings.
-7. ⏳ **P1.7:** Execute MetaMask writes and clean Linux/Windows Git E2E, including historical
-   alias resolution and uncertain-receipt handling.
-8. ⏳ **P1.8 (Parallel):** Resolve deep source and runner security findings and obtain the independent
+2. ✅ **P1.2 Complete (2026-08-29):** Revalidate all nine creation transactions and eight
+   configuration calls, historical runtime/templates, immutable values, and
+   Directory bindings in no-clobber `deployment.json`; verify 9/9 contracts on Blockscout.
+3. ✅ **P1.3 Complete (2026-08-29):** Bind the `fresh-empty-suite` scope, prove zero
+   import counts and matching empty roots for all modules, attest no username
+   escrow liability, atomically activate, and retain fixed-block Suite evidence.
+4. ⏳ **P1.4:** Execute MetaMask writes and clean Linux/Windows Git E2E, including
+   uncertain-receipt handling and V1 archive-preview isolation.
+5. ⏳ **P1.5:** Complete finality evidence and deep source/security review.
+6. ⏳ **P1.6:** Obtain the independent hash-bound cutover approval, bind the complete
+   evidence directory, and pass the release gate.
    hash-bound cutover approval.
 
 ### Exit Criteria
@@ -259,7 +258,7 @@ Native Windows has three distinct scopes:
   the current IPFS profile.
 - From a clean Windows VM and release artifacts only, complete `init`, `push`,
   `clone`, `fetch`, `pull`, incremental push, force push, ref deletion, and
-  historical alias resolution.
+  explicit V1 archive-preview isolation.
 - Record that WSL2 and `injectived` are absent. An accepted future S3/R2 profile
   must additionally record that Kubo is absent.
 
@@ -583,8 +582,8 @@ skill was installed during this assessment.
    Record](p0-evidence.md).
 2. **PR 2 - Operator runner:** append-only journal, safe resume, receipt and
    fixed-block evidence, with no public profile change.
-3. **PR 3 - Testnet evidence:** rotate key, deploy, verify, import, activate,
-   run Git/Web/finality/security gates, then publish the testnet Directory.
+3. **PR 3 - Testnet evidence:** deployment and fresh-empty activation evidence
+   are complete; add Git/Web/finality/security evidence, then publish the testnet Directory.
 4. **PR 4 - Windows distribution:** installer, managed Kubo lifecycle, and
    release-asset clean-VM E2E.
 5. **PR 5 - Packstore boundary:** streaming packs and verified IPFS reads with

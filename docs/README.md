@@ -21,6 +21,7 @@
 - **[Architecture](architecture.md)** - 不可变 EVM Suite 架构和数据平面边界
 - **[ADR 0001: EVM V2 Runtime and Migration Scope](adr/0001-evm-v2-runtime-and-migration-scope.md)** - EVM V2 运行时和迁移范围决策
 - **[ADR 0002: Pluggable Pack Storage](adr/0002-pluggable-pack-storage.md)** - 可插拔 pack 存储方向和要求
+- **[ADR 0003: Fresh EVM Suite and V1 Archive Preview](adr/0003-fresh-evm-suite-and-v1-archive-preview.md)** - 当前测试网采用空状态 Suite，V1 仅保留只读预览
 
 ### 🔒 证据和审查
 
@@ -56,12 +57,14 @@
 
 | 文档类别 | 当前状态 | 最后更新 |
 |---|---|---|
-| 项目状态和规划 | ✅ 最新 | 2026-08-22 |
-| 架构和 ADR | ✅ 稳定 | 2026-08-18 |
+| 项目状态和规划 | ✅ 最新 | 2026-08-29 |
+| 架构和 ADR | ✅ 稳定 | 2026-08-29 |
 | P0 证据 | ✅ 完整 | 2026-08-19 |
 | P1.1 运营运行器 | ✅ 完成 | 2026-08-22 |
-| P1.1b 验证测试 | ⏳ 下一步 | - |
-| P1.2-P1.6 证据 | ⏳ 待收集 | - |
+| P1.1b 迁移验证 | ➖ 当前空状态切换不适用 | 2026-08-29 |
+| P1.2 部署证据 | ✅ 完成 | 2026-08-29 |
+| P1.3 空状态激活 | ✅ 完成 | 2026-08-29 |
+| P1.4-P1.6 验收证据 | ⏳ 待收集 | - |
 | 安全审查 | ⏳ 待启动 | - |
 | 用户文档 | ⚠️ 需更新 | 2026-08-16 |
 

@@ -1,0 +1,883 @@
+{
+  "schema": "igit.evm-suite.deployment.v1",
+  "status": "bootstrapping",
+  "evidence_mode": "historical-recovery",
+  "created_at": "2026-08-19T18:13:41Z",
+  "updated_at": "2026-08-19T18:45:01Z",
+  "compiler": {
+    "version": "0.8.24",
+    "optimizer": {
+      "enabled": true,
+      "runs": 1
+    },
+    "via_ir": true,
+    "evm_version": "default"
+  },
+  "source": {
+    "commit": "4fd6a07ad2f45eb4b0b09b58eeed1621ddc8f986",
+    "artifact_set_sha256": "cea6b53f5bdffabd0c0606d439e613ba1d36116cd5509ebbb1cad08e9b732d0f",
+    "contracts": [
+      {
+        "contract_name": "SuiteDirectory",
+        "source_name": "src/SuiteDirectory.sol",
+        "source_sha256": "f45d4a2dad277631499818672b01ace44e7650a6f0677b6a06c126107c82d0e7",
+        "creation_bytecode_sha256": "2b822723c524058fb32f61a479a6297c071c989c21fea6e588ff9bbbdc1cb0a1",
+        "runtime_template_sha256": "b2de5fba6b132eba6d5e552c58ea33892588cea5452d7f1bd2f0b4ba9e5de9dd",
+        "creation_bytes": 4059,
+        "runtime_bytes": 3745
+      },
+      {
+        "contract_name": "BootstrapCoordinator",
+        "source_name": "src/BootstrapCoordinator.sol",
+        "source_sha256": "f1c9d9c52f6506bb5879cac6a90add3380821c8f7976ebbc065b89e8747d0534",
+        "creation_bytecode_sha256": "54f3a5dc8d4d51aa5c70ce20783c1e84d9178e6cfa413b72a051fea1e8a42bb0",
+        "runtime_template_sha256": "5e496154c8fc2d782e160f4ff36f589dda68993362324e0da8a8ad08723773e2",
+        "creation_bytes": 4968,
+        "runtime_bytes": 4478
+      },
+      {
+        "contract_name": "RepositoryCore",
+        "source_name": "src/RepositoryCore.sol",
+        "source_sha256": "935965cbe3fa1d3e968d2f2a41608a9c6ef77fc68ec0dd59c8a8f8f79b5af069",
+        "creation_bytecode_sha256": "cbd4a384ee5fa1474c56b43e0e1e5e7e2e50c8041b19627adf229eb2cb979ca3",
+        "runtime_template_sha256": "2a147f2f1d1ab1aaf1a2bb656b90405ade25b5d0de2a59d4bf8509c4e6fa048b",
+        "creation_bytes": 23925,
+        "runtime_bytes": 23504
+      },
+      {
+        "contract_name": "RecoveryModule",
+        "source_name": "src/RecoveryModule.sol",
+        "source_sha256": "841876162a997be05de230e9c6d6bd59d5ad82217f6673690d2cd8589f3b2b54",
+        "creation_bytecode_sha256": "395e2c271adac81a7cb24b316c2c5ad86537ef3b503a0ac9a9bbfae45669de6b",
+        "runtime_template_sha256": "2a0a279d945d77f3f2f321c3e7944f539a240f3892d0b1e2f1d06a3cb65ffd8c",
+        "creation_bytes": 9350,
+        "runtime_bytes": 9006
+      },
+      {
+        "contract_name": "ModerationModule",
+        "source_name": "src/ModerationModule.sol",
+        "source_sha256": "82d86ec79a80ba672ab9303e0db3dbae96d22e8364d8677f71c723996669e891",
+        "creation_bytecode_sha256": "f39626775f12b8ddb8efdb7be08f44acaccf856bdc35bf78d7d362120edc537f",
+        "runtime_template_sha256": "ff6a1de2a963aaf138ef4a7cd3f6f46fb3ae7b3efdcd69f0412dafc604b25c25",
+        "creation_bytes": 16862,
+        "runtime_bytes": 16383
+      },
+      {
+        "contract_name": "EconomicModule",
+        "source_name": "src/EconomicModule.sol",
+        "source_sha256": "be27f25cf97c9e045fe0c1b43740a89638fbfd0c50b94782596f06e9d323d4bb",
+        "creation_bytecode_sha256": "50fd6eb6542faae82b1444237925134916e62a0a928b83475e97bb68df031198",
+        "runtime_template_sha256": "68603709196703a85e35a469f8dff500657cc5170a745c2dedb7286e2ff0e628",
+        "creation_bytes": 10008,
+        "runtime_bytes": 9476
+      },
+      {
+        "contract_name": "UsernameModule",
+        "source_name": "src/UsernameModule.sol",
+        "source_sha256": "f7526dea27c2646ba5b5afe4b1a5a71d75608295d0925dd835b2d6a7f5696102",
+        "creation_bytecode_sha256": "0929660349b584645231d90fbf27015669aee13537576cae17c815951b2dbc81",
+        "runtime_template_sha256": "cc809827cda2ebd894108de7149c39f30d197d5ca408e48bcdb6e189ffea3b22",
+        "creation_bytes": 8800,
+        "runtime_bytes": 8417
+      },
+      {
+        "contract_name": "BadgeModule",
+        "source_name": "src/BadgeModule.sol",
+        "source_sha256": "156aad191338155abb7a39da4c678feb282170f2d10f3afa06420e83dfb94740",
+        "creation_bytecode_sha256": "939a2666414409571a29ea7ab633cba829ef794ca3daa68ece86468109cd8853",
+        "runtime_template_sha256": "0b7f126321131f3e94de27f72a6d7bf988d19ce80b2b6393648d7df33f0ac626",
+        "creation_bytes": 6967,
+        "runtime_bytes": 6653
+      },
+      {
+        "contract_name": "ReleaseModule",
+        "source_name": "src/ReleaseModule.sol",
+        "source_sha256": "301e63f27a07b71594ab53de9f8371fde043266c645b47d796437897e7a075b2",
+        "creation_bytecode_sha256": "dd712d5659e07fdc4146f607aa18d06b37822bd051e8a6dacab0820d27bb9544",
+        "runtime_template_sha256": "e988ec6f8c553aa123b633c423dc8577644b0906a79fe104675c108ad50eca80",
+        "creation_bytes": 6589,
+        "runtime_bytes": 6227
+      }
+    ]
+  },
+  "chain": {
+    "network": "injective-testnet",
+    "chain_id": 1439,
+    "rpc_endpoint": "https://k8s.testnet.json-rpc.injective.network",
+    "block_explorer": "https://testnet.blockscout.injective.network"
+  },
+  "snapshot_root": "0x5e2eaab50320b54d85e45bdc9f59ce94ada216d440fac3086fb30da7f98a1cea",
+  "platform_fee_bps": 300,
+  "governance": {
+    "bootstrap_operator": "0x85eac7bc081488aa77d1d82f9cb8e053de1e4fa8",
+    "admin": "0x85eac7bc081488aa77d1d82f9cb8e053de1e4fa8",
+    "treasury": "0x85eac7bc081488aa77d1d82f9cb8e053de1e4fa8",
+    "committee": "0x85eac7bc081488aa77d1d82f9cb8e053de1e4fa8",
+    "username_policy_admin": "0x85eac7bc081488aa77d1d82f9cb8e053de1e4fa8",
+    "release_authority": "0x85eac7bc081488aa77d1d82f9cb8e053de1e4fa8",
+    "production_ready": false,
+    "warning": "testnet bootstrap uses one rotated encrypted-keystore EOA for operator, admin, treasury, committee, username policy, and release authority; production requires redesigned multisig/timelock governance"
+  },
+  "contracts": [
+    {
+      "transaction_order": 1,
+      "contract_name": "SuiteDirectory",
+      "source_name": "src/SuiteDirectory.sol",
+      "source_sha256": "f45d4a2dad277631499818672b01ace44e7650a6f0677b6a06c126107c82d0e7",
+      "creation_bytecode_sha256": "2b822723c524058fb32f61a479a6297c071c989c21fea6e588ff9bbbdc1cb0a1",
+      "runtime_template_sha256": "b2de5fba6b132eba6d5e552c58ea33892588cea5452d7f1bd2f0b4ba9e5de9dd",
+      "constructor_arguments": [
+        {
+          "name": "authority",
+          "type": "address",
+          "value": "0x85eac7bc081488aa77d1d82f9cb8e053de1e4fa8"
+        },
+        {
+          "name": "chainId",
+          "type": "uint256",
+          "value": "1439"
+        },
+        {
+          "name": "snapshotRoot_",
+          "type": "bytes32",
+          "value": "0x5e2eaab50320b54d85e45bdc9f59ce94ada216d440fac3086fb30da7f98a1cea"
+        }
+      ],
+      "constructor_args_abi": "0x00000000000000000000000085eac7bc081488aa77d1d82f9cb8e053de1e4fa8000000000000000000000000000000000000000000000000000000000000059f5e2eaab50320b54d85e45bdc9f59ce94ada216d440fac3086fb30da7f98a1cea",
+      "initcode_sha256": "b81ee90a0a86c6971ba8c773ec63f53b3744254e07cb78f7d8e44539a9da0bb3",
+      "address": "0x24124cb60f9ef02f7deb5bc868c028fb412f5334",
+      "transaction_hash": "0xd01c3326ab0454947d719b3aeb30e6ac6a6ee3a44f9cc78d1e028a74da7e7e70",
+      "receipt": {
+        "transactionHash": "0xd01c3326ab0454947d719b3aeb30e6ac6a6ee3a44f9cc78d1e028a74da7e7e70",
+        "blockNumber": "0x82f53ef",
+        "blockHash": "0x0cf1e3ec7a0dc79265a46377eaa52dcf619eb092ddaa609b5b2c2fc71cdd6dd8",
+        "to": "",
+        "contractAddress": "0x24124cb60f9ef02f7deb5bc868c028fb412f5334",
+        "status": "0x1",
+        "gasUsed": "0xd90e4",
+        "logs": []
+      },
+      "runtime": {
+        "block_number": "0x82f53ef",
+        "block_hash": "0x0cf1e3ec7a0dc79265a46377eaa52dcf619eb092ddaa609b5b2c2fc71cdd6dd8",
+        "byte_length": 3745,
+        "sha256": "42cd69dc3016e3284a9ca8032c1ae6c94a98560c6c9b1056ce396ddf9399cd28",
+        "code_hash_keccak256": "0x48460f1f91897091148cfb4028956db320fcc7eb1f35e158a067cfe50269efcd",
+        "template_sha256": "b2de5fba6b132eba6d5e552c58ea33892588cea5452d7f1bd2f0b4ba9e5de9dd",
+        "immutable_values_by_solc_id": {
+          "10947": "0x000000000000000000000000000000000000000000000000000000000000059f",
+          "10949": "0x5e2eaab50320b54d85e45bdc9f59ce94ada216d440fac3086fb30da7f98a1cea"
+        },
+        "template_match_verified": true
+      }
+    },
+    {
+      "transaction_order": 2,
+      "contract_name": "BootstrapCoordinator",
+      "source_name": "src/BootstrapCoordinator.sol",
+      "source_sha256": "f1c9d9c52f6506bb5879cac6a90add3380821c8f7976ebbc065b89e8747d0534",
+      "creation_bytecode_sha256": "54f3a5dc8d4d51aa5c70ce20783c1e84d9178e6cfa413b72a051fea1e8a42bb0",
+      "runtime_template_sha256": "5e496154c8fc2d782e160f4ff36f589dda68993362324e0da8a8ad08723773e2",
+      "constructor_arguments": [
+        {
+          "name": "directory",
+          "type": "address",
+          "value": "0x24124cb60f9ef02f7deb5bc868c028fb412f5334"
+        },
+        {
+          "name": "operator_",
+          "type": "address",
+          "value": "0x85eac7bc081488aa77d1d82f9cb8e053de1e4fa8"
+        }
+      ],
+      "constructor_args_abi": "0x00000000000000000000000024124cb60f9ef02f7deb5bc868c028fb412f533400000000000000000000000085eac7bc081488aa77d1d82f9cb8e053de1e4fa8",
+      "initcode_sha256": "7c5f90fb8c99d910d06b0174676f836ac546c358352ca683c426bca9f24833b2",
+      "address": "0x329921023fcf6e337e924686b92f7521549b5970",
+      "transaction_hash": "0x4bbdb47cb28fada7d618d84d7dddb4726902b3ae0be8a823e0a30e9c0188e937",
+      "receipt": {
+        "transactionHash": "0x4bbdb47cb28fada7d618d84d7dddb4726902b3ae0be8a823e0a30e9c0188e937",
+        "blockNumber": "0x82f5abb",
+        "blockHash": "0xcf285a867174ca8fa751e38b01fc9b5ced354a40598493e5861e8b40558e31bf",
+        "to": "",
+        "contractAddress": "0x329921023fcf6e337e924686b92f7521549b5970",
+        "status": "0x1",
+        "gasUsed": "0xfabe7",
+        "logs": []
+      },
+      "runtime": {
+        "block_number": "0x82f5abb",
+        "block_hash": "0xcf285a867174ca8fa751e38b01fc9b5ced354a40598493e5861e8b40558e31bf",
+        "byte_length": 4478,
+        "sha256": "cfeacbdd383f9dc7cc557e283ba9522d590cfae3d658aec7ef3fcc3dff9c1a34",
+        "code_hash_keccak256": "0xbbf6b60d9a90b2f87bfa15bca9733aa5851b2cbae05f1997dd34671b42cf27b7",
+        "template_sha256": "5e496154c8fc2d782e160f4ff36f589dda68993362324e0da8a8ad08723773e2",
+        "immutable_values_by_solc_id": {
+          "720": "0x00000000000000000000000024124cb60f9ef02f7deb5bc868c028fb412f5334",
+          "722": "0x5e2eaab50320b54d85e45bdc9f59ce94ada216d440fac3086fb30da7f98a1cea",
+          "724": "0x00000000000000000000000085eac7bc081488aa77d1d82f9cb8e053de1e4fa8"
+        },
+        "template_match_verified": true
+      }
+    },
+    {
+      "transaction_order": 4,
+      "contract_name": "RepositoryCore",
+      "module_id": "0x0f2aa236426cdfb44f309719da4a1e7bf3c2f26dc5d3c28a474082cc7ad909b8",
+      "source_name": "src/RepositoryCore.sol",
+      "source_sha256": "935965cbe3fa1d3e968d2f2a41608a9c6ef77fc68ec0dd59c8a8f8f79b5af069",
+      "creation_bytecode_sha256": "cbd4a384ee5fa1474c56b43e0e1e5e7e2e50c8041b19627adf229eb2cb979ca3",
+      "runtime_template_sha256": "2a147f2f1d1ab1aaf1a2bb656b90405ade25b5d0de2a59d4bf8509c4e6fa048b",
+      "constructor_arguments": [
+        {
+          "name": "directory",
+          "type": "address",
+          "value": "0x24124cb60f9ef02f7deb5bc868c028fb412f5334"
+        },
+        {
+          "name": "coordinator",
+          "type": "address",
+          "value": "0x329921023fcf6e337e924686b92f7521549b5970"
+        }
+      ],
+      "constructor_args_abi": "0x00000000000000000000000024124cb60f9ef02f7deb5bc868c028fb412f5334000000000000000000000000329921023fcf6e337e924686b92f7521549b5970",
+      "initcode_sha256": "a90363ad89356648f8e45038a00f748cbb4eac5936bfb8e0df2fbd6ef7c36472",
+      "address": "0x20269fb750d77e7c6c812290e7a7b99e0a3780d4",
+      "transaction_hash": "0xa0d2eceba2810a533af4e21523c0469b4202ffc89decd6391e0f1c9f55358b0d",
+      "receipt": {
+        "transactionHash": "0xa0d2eceba2810a533af4e21523c0469b4202ffc89decd6391e0f1c9f55358b0d",
+        "blockNumber": "0x82f5b0b",
+        "blockHash": "0x61d72387b55502d49c4f96a3dfac8dbfa1b0ec23a31cba729f9ca4220a1a273a",
+        "to": "",
+        "contractAddress": "0x20269fb750d77e7c6c812290e7a7b99e0a3780d4",
+        "status": "0x1",
+        "gasUsed": "0x4e711a",
+        "logs": []
+      },
+      "runtime": {
+        "block_number": "0x82f5b0b",
+        "block_hash": "0x61d72387b55502d49c4f96a3dfac8dbfa1b0ec23a31cba729f9ca4220a1a273a",
+        "byte_length": 23504,
+        "sha256": "3f1fbb058355a056f19256da18b882bb4c5de837e24551641995f96cdc7daf54",
+        "code_hash_keccak256": "0x1c5e3ca62fa52b1b4ecef6da246b1b4dcfe5d027102165721c42ba3b5e21b467",
+        "template_sha256": "2a147f2f1d1ab1aaf1a2bb656b90405ade25b5d0de2a59d4bf8509c4e6fa048b",
+        "immutable_values_by_solc_id": {
+          "12916": "0x00000000000000000000000024124cb60f9ef02f7deb5bc868c028fb412f5334",
+          "12919": "0x000000000000000000000000329921023fcf6e337e924686b92f7521549b5970"
+        },
+        "template_match_verified": true
+      }
+    },
+    {
+      "transaction_order": 6,
+      "contract_name": "RecoveryModule",
+      "module_id": "0x6cde1210dbeb58848fe7ff3cb286576a5f76ed31424ebc2117eff3f42e060631",
+      "source_name": "src/RecoveryModule.sol",
+      "source_sha256": "841876162a997be05de230e9c6d6bd59d5ad82217f6673690d2cd8589f3b2b54",
+      "creation_bytecode_sha256": "395e2c271adac81a7cb24b316c2c5ad86537ef3b503a0ac9a9bbfae45669de6b",
+      "runtime_template_sha256": "2a0a279d945d77f3f2f321c3e7944f539a240f3892d0b1e2f1d06a3cb65ffd8c",
+      "constructor_arguments": [
+        {
+          "name": "directory",
+          "type": "address",
+          "value": "0x24124cb60f9ef02f7deb5bc868c028fb412f5334"
+        },
+        {
+          "name": "coordinator",
+          "type": "address",
+          "value": "0x329921023fcf6e337e924686b92f7521549b5970"
+        }
+      ],
+      "constructor_args_abi": "0x00000000000000000000000024124cb60f9ef02f7deb5bc868c028fb412f5334000000000000000000000000329921023fcf6e337e924686b92f7521549b5970",
+      "initcode_sha256": "804865bed84bee2617fb0ffc0123b88b598e52c2e7f615544a7574aae6b9b85b",
+      "address": "0xa7249ce20b54c4be440838f0ef403d2a6a07e532",
+      "transaction_hash": "0x6d51a2c7126b2f26c108f805c8388711d21c7feb71d7f558f72ecf49813a1543",
+      "receipt": {
+        "transactionHash": "0x6d51a2c7126b2f26c108f805c8388711d21c7feb71d7f558f72ecf49813a1543",
+        "blockNumber": "0x82f5b39",
+        "blockHash": "0xa282706f7c316c107b53940357be4eced0101277708c078b503da71ec2fe4514",
+        "to": "",
+        "contractAddress": "0xa7249ce20b54c4be440838f0ef403d2a6a07e532",
+        "status": "0x1",
+        "gasUsed": "0x1ea307",
+        "logs": []
+      },
+      "runtime": {
+        "block_number": "0x82f5b39",
+        "block_hash": "0xa282706f7c316c107b53940357be4eced0101277708c078b503da71ec2fe4514",
+        "byte_length": 9006,
+        "sha256": "6f3dbcbf0955279ae4fc360feabc8f8f52b2e00a1521df0de8f632bcd9b04da5",
+        "code_hash_keccak256": "0x166e917cc005b551e15d840fb9fc92fb012048a715016304c7dd34047984b3c2",
+        "template_sha256": "2a0a279d945d77f3f2f321c3e7944f539a240f3892d0b1e2f1d06a3cb65ffd8c",
+        "immutable_values_by_solc_id": {
+          "12916": "0x00000000000000000000000024124cb60f9ef02f7deb5bc868c028fb412f5334",
+          "12919": "0x000000000000000000000000329921023fcf6e337e924686b92f7521549b5970"
+        },
+        "template_match_verified": true
+      }
+    },
+    {
+      "transaction_order": 8,
+      "contract_name": "ModerationModule",
+      "module_id": "0xa49a32b2d99126d93610cb8045423f52f62b8f3240b6c53899cbd19ca5eae7f3",
+      "source_name": "src/ModerationModule.sol",
+      "source_sha256": "82d86ec79a80ba672ab9303e0db3dbae96d22e8364d8677f71c723996669e891",
+      "creation_bytecode_sha256": "f39626775f12b8ddb8efdb7be08f44acaccf856bdc35bf78d7d362120edc537f",
+      "runtime_template_sha256": "ff6a1de2a963aaf138ef4a7cd3f6f46fb3ae7b3efdcd69f0412dafc604b25c25",
+      "constructor_arguments": [
+        {
+          "name": "directory",
+          "type": "address",
+          "value": "0x24124cb60f9ef02f7deb5bc868c028fb412f5334"
+        },
+        {
+          "name": "coordinator",
+          "type": "address",
+          "value": "0x329921023fcf6e337e924686b92f7521549b5970"
+        },
+        {
+          "name": "admin_",
+          "type": "address",
+          "value": "0x85eac7bc081488aa77d1d82f9cb8e053de1e4fa8"
+        },
+        {
+          "name": "committee_",
+          "type": "address",
+          "value": "0x85eac7bc081488aa77d1d82f9cb8e053de1e4fa8"
+        }
+      ],
+      "constructor_args_abi": "0x00000000000000000000000024124cb60f9ef02f7deb5bc868c028fb412f5334000000000000000000000000329921023fcf6e337e924686b92f7521549b597000000000000000000000000085eac7bc081488aa77d1d82f9cb8e053de1e4fa800000000000000000000000085eac7bc081488aa77d1d82f9cb8e053de1e4fa8",
+      "initcode_sha256": "2f56f8322011a10e3c70b854f1f54c475c69889414d349137bc4b53ceb98853d",
+      "address": "0xb957b65634931dd0613abac296d5a3837bf979bd",
+      "transaction_hash": "0x003efa8e9e104dfc9b3a0ec00ef5d70693724e90f3fdeefb4874d58f121af072",
+      "receipt": {
+        "transactionHash": "0x003efa8e9e104dfc9b3a0ec00ef5d70693724e90f3fdeefb4874d58f121af072",
+        "blockNumber": "0x82f5b86",
+        "blockHash": "0x41dcc7670e9fb416003557b760aa4260b6453a02cba12bf946b29594b20ed1e1",
+        "to": "",
+        "contractAddress": "0xb957b65634931dd0613abac296d5a3837bf979bd",
+        "status": "0x1",
+        "gasUsed": "0x37afd7",
+        "logs": []
+      },
+      "runtime": {
+        "block_number": "0x82f5b86",
+        "block_hash": "0x41dcc7670e9fb416003557b760aa4260b6453a02cba12bf946b29594b20ed1e1",
+        "byte_length": 16383,
+        "sha256": "e7213d9df9d74e384598bcdad7c6e334169b8cd1527b13685172b1622e5b3456",
+        "code_hash_keccak256": "0x3407b2f48bd761b0c241ba827960c84d95f6a100919f4a9863cf39c73c6e8de3",
+        "template_sha256": "ff6a1de2a963aaf138ef4a7cd3f6f46fb3ae7b3efdcd69f0412dafc604b25c25",
+        "immutable_values_by_solc_id": {
+          "12916": "0x00000000000000000000000024124cb60f9ef02f7deb5bc868c028fb412f5334",
+          "12919": "0x000000000000000000000000329921023fcf6e337e924686b92f7521549b5970",
+          "2843": "0x00000000000000000000000085eac7bc081488aa77d1d82f9cb8e053de1e4fa8"
+        },
+        "template_match_verified": true
+      }
+    },
+    {
+      "transaction_order": 10,
+      "contract_name": "EconomicModule",
+      "module_id": "0xc9ab9ceae89076b0f126fd5329cb2bdf61760459991af4a5a599ad3a063c0c17",
+      "source_name": "src/EconomicModule.sol",
+      "source_sha256": "be27f25cf97c9e045fe0c1b43740a89638fbfd0c50b94782596f06e9d323d4bb",
+      "creation_bytecode_sha256": "50fd6eb6542faae82b1444237925134916e62a0a928b83475e97bb68df031198",
+      "runtime_template_sha256": "68603709196703a85e35a469f8dff500657cc5170a745c2dedb7286e2ff0e628",
+      "constructor_arguments": [
+        {
+          "name": "directory",
+          "type": "address",
+          "value": "0x24124cb60f9ef02f7deb5bc868c028fb412f5334"
+        },
+        {
+          "name": "coordinator",
+          "type": "address",
+          "value": "0x329921023fcf6e337e924686b92f7521549b5970"
+        },
+        {
+          "name": "admin_",
+          "type": "address",
+          "value": "0x85eac7bc081488aa77d1d82f9cb8e053de1e4fa8"
+        },
+        {
+          "name": "treasury_",
+          "type": "address",
+          "value": "0x85eac7bc081488aa77d1d82f9cb8e053de1e4fa8"
+        },
+        {
+          "name": "platformFeeBps_",
+          "type": "uint16",
+          "value": "300"
+        }
+      ],
+      "constructor_args_abi": "0x00000000000000000000000024124cb60f9ef02f7deb5bc868c028fb412f5334000000000000000000000000329921023fcf6e337e924686b92f7521549b597000000000000000000000000085eac7bc081488aa77d1d82f9cb8e053de1e4fa800000000000000000000000085eac7bc081488aa77d1d82f9cb8e053de1e4fa8000000000000000000000000000000000000000000000000000000000000012c",
+      "initcode_sha256": "31670158652cc9ae82069a8464b839897fc809fd054839588e44df4d83825bef",
+      "address": "0x608380f355bf3d7cb0d3dcd58fc4dbe695daf3dd",
+      "transaction_hash": "0x900c305d1689a7caedd81ca441d4acfbeb779b7ca6194aadc5e9cd886b74d148",
+      "receipt": {
+        "transactionHash": "0x900c305d1689a7caedd81ca441d4acfbeb779b7ca6194aadc5e9cd886b74d148",
+        "blockNumber": "0x82f5bd8",
+        "blockHash": "0xd1b8cdf176886a6403b5bc7d4094c10421894e46bd2249939c807ea8e1140444",
+        "to": "",
+        "contractAddress": "0x608380f355bf3d7cb0d3dcd58fc4dbe695daf3dd",
+        "status": "0x1",
+        "gasUsed": "0x20ed54",
+        "logs": []
+      },
+      "runtime": {
+        "block_number": "0x82f5bd8",
+        "block_hash": "0xd1b8cdf176886a6403b5bc7d4094c10421894e46bd2249939c807ea8e1140444",
+        "byte_length": 9476,
+        "sha256": "3e04bfa3720d32b442d7cf7d2d49f0a4b8d2304b94d8929d5948a9961a749b25",
+        "code_hash_keccak256": "0x907035110aeb8fa07f3a092ffd91b46b879ef54badcd4115459b79e6b9b0ad0d",
+        "template_sha256": "68603709196703a85e35a469f8dff500657cc5170a745c2dedb7286e2ff0e628",
+        "immutable_values_by_solc_id": {
+          "12916": "0x00000000000000000000000024124cb60f9ef02f7deb5bc868c028fb412f5334",
+          "12919": "0x000000000000000000000000329921023fcf6e337e924686b92f7521549b5970",
+          "1522": "0x00000000000000000000000085eac7bc081488aa77d1d82f9cb8e053de1e4fa8"
+        },
+        "template_match_verified": true
+      }
+    },
+    {
+      "transaction_order": 12,
+      "contract_name": "UsernameModule",
+      "module_id": "0xab916fa805962ec369f8b0815c08c95b3feab5da2e9c29cfdfacbbd9d7b3ee97",
+      "source_name": "src/UsernameModule.sol",
+      "source_sha256": "f7526dea27c2646ba5b5afe4b1a5a71d75608295d0925dd835b2d6a7f5696102",
+      "creation_bytecode_sha256": "0929660349b584645231d90fbf27015669aee13537576cae17c815951b2dbc81",
+      "runtime_template_sha256": "cc809827cda2ebd894108de7149c39f30d197d5ca408e48bcdb6e189ffea3b22",
+      "constructor_arguments": [
+        {
+          "name": "directory",
+          "type": "address",
+          "value": "0x24124cb60f9ef02f7deb5bc868c028fb412f5334"
+        },
+        {
+          "name": "coordinator",
+          "type": "address",
+          "value": "0x329921023fcf6e337e924686b92f7521549b5970"
+        },
+        {
+          "name": "policyAdmin_",
+          "type": "address",
+          "value": "0x85eac7bc081488aa77d1d82f9cb8e053de1e4fa8"
+        }
+      ],
+      "constructor_args_abi": "0x00000000000000000000000024124cb60f9ef02f7deb5bc868c028fb412f5334000000000000000000000000329921023fcf6e337e924686b92f7521549b597000000000000000000000000085eac7bc081488aa77d1d82f9cb8e053de1e4fa8",
+      "initcode_sha256": "5f5fa809c2fe5640547cdab9bd084c7ad6f19becc6eabb726182900f9316a835",
+      "address": "0xc7c164e46788b37e98d27ace908c489999c09853",
+      "transaction_hash": "0x77c7261415201cd3029d6947f11b1a4414004ed15e1043b9b4a77038d4444b6b",
+      "receipt": {
+        "transactionHash": "0x77c7261415201cd3029d6947f11b1a4414004ed15e1043b9b4a77038d4444b6b",
+        "blockNumber": "0x82f5c29",
+        "blockHash": "0x0b25dcaf44d31b547f080a88d87f4147326696d3ace90bfb9ef396d5743a8779",
+        "to": "",
+        "contractAddress": "0xc7c164e46788b37e98d27ace908c489999c09853",
+        "status": "0x1",
+        "gasUsed": "0x1cb6f2",
+        "logs": []
+      },
+      "runtime": {
+        "block_number": "0x82f5c29",
+        "block_hash": "0x0b25dcaf44d31b547f080a88d87f4147326696d3ace90bfb9ef396d5743a8779",
+        "byte_length": 8417,
+        "sha256": "819b8c9f63be4306e9f05ae1fc9a71b594071c19646079f33da5737ae6f919f6",
+        "code_hash_keccak256": "0xb7350b5e913d992a522ce2e05c3f3cb37ac50450486880bc36ab0c295292b49e",
+        "template_sha256": "cc809827cda2ebd894108de7149c39f30d197d5ca408e48bcdb6e189ffea3b22",
+        "immutable_values_by_solc_id": {
+          "11684": "0x00000000000000000000000085eac7bc081488aa77d1d82f9cb8e053de1e4fa8",
+          "12916": "0x00000000000000000000000024124cb60f9ef02f7deb5bc868c028fb412f5334",
+          "12919": "0x000000000000000000000000329921023fcf6e337e924686b92f7521549b5970"
+        },
+        "template_match_verified": true
+      }
+    },
+    {
+      "transaction_order": 14,
+      "contract_name": "BadgeModule",
+      "module_id": "0x129ffdcb675a98ccf83106de66261add937e83339ca1c3bcdea11a21d01137c2",
+      "source_name": "src/BadgeModule.sol",
+      "source_sha256": "156aad191338155abb7a39da4c678feb282170f2d10f3afa06420e83dfb94740",
+      "creation_bytecode_sha256": "939a2666414409571a29ea7ab633cba829ef794ca3daa68ece86468109cd8853",
+      "runtime_template_sha256": "0b7f126321131f3e94de27f72a6d7bf988d19ce80b2b6393648d7df33f0ac626",
+      "constructor_arguments": [
+        {
+          "name": "directory",
+          "type": "address",
+          "value": "0x24124cb60f9ef02f7deb5bc868c028fb412f5334"
+        },
+        {
+          "name": "coordinator",
+          "type": "address",
+          "value": "0x329921023fcf6e337e924686b92f7521549b5970"
+        }
+      ],
+      "constructor_args_abi": "0x00000000000000000000000024124cb60f9ef02f7deb5bc868c028fb412f5334000000000000000000000000329921023fcf6e337e924686b92f7521549b5970",
+      "initcode_sha256": "1a1f56cd1884222f54080036f1965a03b783f9806774f27800d4dd74257d7770",
+      "address": "0x5e4ea68e31f89977bf056be9cb3d4f1c43ab995d",
+      "transaction_hash": "0x15972710e41dea2ad06df0a2c8c2caa586a4d01100a89b2b8975cd571c158aa8",
+      "receipt": {
+        "transactionHash": "0x15972710e41dea2ad06df0a2c8c2caa586a4d01100a89b2b8975cd571c158aa8",
+        "blockNumber": "0x82f5c74",
+        "blockHash": "0x443bd0e7e92a24a8ef8b35cdf52f1a770cad1ab22075f7b797f76da45dd902a7",
+        "to": "",
+        "contractAddress": "0x5e4ea68e31f89977bf056be9cb3d4f1c43ab995d",
+        "status": "0x1",
+        "gasUsed": "0x173ac3",
+        "logs": []
+      },
+      "runtime": {
+        "block_number": "0x82f5c74",
+        "block_hash": "0x443bd0e7e92a24a8ef8b35cdf52f1a770cad1ab22075f7b797f76da45dd902a7",
+        "byte_length": 6653,
+        "sha256": "d86984bdd6bf95e4e345d028979131d5af578aae1891611f68f531b8c34f918e",
+        "code_hash_keccak256": "0x50300d8ae14280acd2f48939d9095f932ac3dc22b481af9e45e07e58f898a77c",
+        "template_sha256": "0b7f126321131f3e94de27f72a6d7bf988d19ce80b2b6393648d7df33f0ac626",
+        "immutable_values_by_solc_id": {
+          "12916": "0x00000000000000000000000024124cb60f9ef02f7deb5bc868c028fb412f5334",
+          "12919": "0x000000000000000000000000329921023fcf6e337e924686b92f7521549b5970"
+        },
+        "template_match_verified": true
+      }
+    },
+    {
+      "transaction_order": 16,
+      "contract_name": "ReleaseModule",
+      "module_id": "0xe3b2d8c3973efdefb548d9f71c6e48d9cd24914c9f7df467aa34f6feac411993",
+      "source_name": "src/ReleaseModule.sol",
+      "source_sha256": "301e63f27a07b71594ab53de9f8371fde043266c645b47d796437897e7a075b2",
+      "creation_bytecode_sha256": "dd712d5659e07fdc4146f607aa18d06b37822bd051e8a6dacab0820d27bb9544",
+      "runtime_template_sha256": "e988ec6f8c553aa123b633c423dc8577644b0906a79fe104675c108ad50eca80",
+      "constructor_arguments": [
+        {
+          "name": "directory",
+          "type": "address",
+          "value": "0x24124cb60f9ef02f7deb5bc868c028fb412f5334"
+        },
+        {
+          "name": "coordinator",
+          "type": "address",
+          "value": "0x329921023fcf6e337e924686b92f7521549b5970"
+        },
+        {
+          "name": "releaseAuthority_",
+          "type": "address",
+          "value": "0x85eac7bc081488aa77d1d82f9cb8e053de1e4fa8"
+        }
+      ],
+      "constructor_args_abi": "0x00000000000000000000000024124cb60f9ef02f7deb5bc868c028fb412f5334000000000000000000000000329921023fcf6e337e924686b92f7521549b597000000000000000000000000085eac7bc081488aa77d1d82f9cb8e053de1e4fa8",
+      "initcode_sha256": "09aed836e3ba98a485f7b775ee22b70ca1637e30a11ed5f9dd9a8a8cb79c022a",
+      "address": "0xaa0dd566eb2b21fed0ba9426c0e30887ce2de63f",
+      "transaction_hash": "0xa8e5934ce28f9e361dcd66d72a57ee90ddaee4277142730b1220331ee3e9ce80",
+      "receipt": {
+        "transactionHash": "0xa8e5934ce28f9e361dcd66d72a57ee90ddaee4277142730b1220331ee3e9ce80",
+        "blockNumber": "0x82f5cc2",
+        "blockHash": "0x0a10e24d533eb8e6a9cb90e058a98c730491e382f08c426483774bbcaf09003c",
+        "to": "",
+        "contractAddress": "0xaa0dd566eb2b21fed0ba9426c0e30887ce2de63f",
+        "status": "0x1",
+        "gasUsed": "0x158029",
+        "logs": []
+      },
+      "runtime": {
+        "block_number": "0x82f5cc2",
+        "block_hash": "0x0a10e24d533eb8e6a9cb90e058a98c730491e382f08c426483774bbcaf09003c",
+        "byte_length": 6227,
+        "sha256": "5be9749942d5958bec7176a72800fcd345e3d424f3354c993f717c7c77f2985c",
+        "code_hash_keccak256": "0x3834e5dcdf1f26f1c30bd628c4a5117021eb70525e88d725e196f019a43c151c",
+        "template_sha256": "e988ec6f8c553aa123b633c423dc8577644b0906a79fe104675c108ad50eca80",
+        "immutable_values_by_solc_id": {
+          "12916": "0x00000000000000000000000024124cb60f9ef02f7deb5bc868c028fb412f5334",
+          "12919": "0x000000000000000000000000329921023fcf6e337e924686b92f7521549b5970",
+          "6335": "0x00000000000000000000000085eac7bc081488aa77d1d82f9cb8e053de1e4fa8"
+        },
+        "template_match_verified": true
+      }
+    }
+  ],
+  "configuration_transactions": [
+    {
+      "transaction_order": 3,
+      "purpose": "bind_bootstrap_coordinator",
+      "target": "0x24124cb60f9ef02f7deb5bc868c028fb412f5334",
+      "calldata": "0xc62cd5a3000000000000000000000000329921023fcf6e337e924686b92f7521549b5970bbf6b60d9a90b2f87bfa15bca9733aa5851b2cbae05f1997dd34671b42cf27b7",
+      "calldata_sha256": "ef293946ca56ebe8151113f13a6ee388659d7a5fa6bfaab38dec12b5b90ffdd3",
+      "transaction_hash": "0x2f5af6b963d057b7fba5811ccfb2a608fad097463c55dc28436f160214c5179e",
+      "receipt": {
+        "transactionHash": "0x2f5af6b963d057b7fba5811ccfb2a608fad097463c55dc28436f160214c5179e",
+        "blockNumber": "0x82f5ae1",
+        "blockHash": "0xb80b01ab51b1021fe04dbb4c9e4e387c6bbb5fe1f4c4112af7ddcbfa8a2e8172",
+        "to": "0x24124cb60f9ef02f7deb5bc868c028fb412f5334",
+        "contractAddress": "",
+        "status": "0x1",
+        "gasUsed": "0x12f3a",
+        "logs": []
+      }
+    },
+    {
+      "transaction_order": 5,
+      "purpose": "register_repositorycore",
+      "module_id": "0x0f2aa236426cdfb44f309719da4a1e7bf3c2f26dc5d3c28a474082cc7ad909b8",
+      "target": "0x329921023fcf6e337e924686b92f7521549b5970",
+      "calldata": "0x86f3302b0f2aa236426cdfb44f309719da4a1e7bf3c2f26dc5d3c28a474082cc7ad909b800000000000000000000000020269fb750d77e7c6c812290e7a7b99e0a3780d41c5e3ca62fa52b1b4ecef6da246b1b4dcfe5d027102165721c42ba3b5e21b467",
+      "calldata_sha256": "ae6249f3d88e7d840e869a845af2b38e32ac896e36d7b8d1cd466f04f8629e64",
+      "transaction_hash": "0xc6a30c9da28c9d53fba3063f785ed349f4550afd1db5e4394ca653ac4f6d8e22",
+      "receipt": {
+        "transactionHash": "0xc6a30c9da28c9d53fba3063f785ed349f4550afd1db5e4394ca653ac4f6d8e22",
+        "blockNumber": "0x82f5b11",
+        "blockHash": "0x7abd5ae605dedb7802efb196bc52ba169ab5ab0e9d8e09535ae9e15320010835",
+        "to": "0x329921023fcf6e337e924686b92f7521549b5970",
+        "contractAddress": "",
+        "status": "0x1",
+        "gasUsed": "0x1ae2c",
+        "logs": []
+      }
+    },
+    {
+      "transaction_order": 7,
+      "purpose": "register_recoverymodule",
+      "module_id": "0x6cde1210dbeb58848fe7ff3cb286576a5f76ed31424ebc2117eff3f42e060631",
+      "target": "0x329921023fcf6e337e924686b92f7521549b5970",
+      "calldata": "0x86f3302b6cde1210dbeb58848fe7ff3cb286576a5f76ed31424ebc2117eff3f42e060631000000000000000000000000a7249ce20b54c4be440838f0ef403d2a6a07e532166e917cc005b551e15d840fb9fc92fb012048a715016304c7dd34047984b3c2",
+      "calldata_sha256": "fd094c28b660353cb13f61c5a63653dc21d97cd99e2665f482f45d7c0350eb66",
+      "transaction_hash": "0xe958ed1b54d3a27834b9a639e098353c9a9148c7f9910be7b5ebd7386664b772",
+      "receipt": {
+        "transactionHash": "0xe958ed1b54d3a27834b9a639e098353c9a9148c7f9910be7b5ebd7386664b772",
+        "blockNumber": "0x82f5b5f",
+        "blockHash": "0xe4c0eecb8a1c0d1419b5c096a9b209fd59225249da368821431fe33f6967dbc6",
+        "to": "0x329921023fcf6e337e924686b92f7521549b5970",
+        "contractAddress": "",
+        "status": "0x1",
+        "gasUsed": "0x1681a",
+        "logs": []
+      }
+    },
+    {
+      "transaction_order": 9,
+      "purpose": "register_moderationmodule",
+      "module_id": "0xa49a32b2d99126d93610cb8045423f52f62b8f3240b6c53899cbd19ca5eae7f3",
+      "target": "0x329921023fcf6e337e924686b92f7521549b5970",
+      "calldata": "0x86f3302ba49a32b2d99126d93610cb8045423f52f62b8f3240b6c53899cbd19ca5eae7f3000000000000000000000000b957b65634931dd0613abac296d5a3837bf979bd3407b2f48bd761b0c241ba827960c84d95f6a100919f4a9863cf39c73c6e8de3",
+      "calldata_sha256": "7073af779db14b91310193c19ed6de59d2c48e47bfb61260a7edac192cfc9208",
+      "transaction_hash": "0x6959484788b053c5d5cde586e005bbaece9ac7381b79c018a45cd70f6ce933aa",
+      "receipt": {
+        "transactionHash": "0x6959484788b053c5d5cde586e005bbaece9ac7381b79c018a45cd70f6ce933aa",
+        "blockNumber": "0x82f5bb1",
+        "blockHash": "0x50b75482c905f9b2e7c2e1d675d23e01d83d70abc2f633dd9a8ddfc74f89225e",
+        "to": "0x329921023fcf6e337e924686b92f7521549b5970",
+        "contractAddress": "",
+        "status": "0x1",
+        "gasUsed": "0x16888",
+        "logs": []
+      }
+    },
+    {
+      "transaction_order": 11,
+      "purpose": "register_economicmodule",
+      "module_id": "0xc9ab9ceae89076b0f126fd5329cb2bdf61760459991af4a5a599ad3a063c0c17",
+      "target": "0x329921023fcf6e337e924686b92f7521549b5970",
+      "calldata": "0x86f3302bc9ab9ceae89076b0f126fd5329cb2bdf61760459991af4a5a599ad3a063c0c17000000000000000000000000608380f355bf3d7cb0d3dcd58fc4dbe695daf3dd907035110aeb8fa07f3a092ffd91b46b879ef54badcd4115459b79e6b9b0ad0d",
+      "calldata_sha256": "d4f2ae7b5646a4f4147695f17c072581c3a9133560deded7b68543140070fb18",
+      "transaction_hash": "0xb17735a576c430e89c07943bcf6ed81cf6c2f09c9d92002e3b220850b3eb4793",
+      "receipt": {
+        "transactionHash": "0xb17735a576c430e89c07943bcf6ed81cf6c2f09c9d92002e3b220850b3eb4793",
+        "blockNumber": "0x82f5c00",
+        "blockHash": "0x8e7dc0fd55dfc149a3ce0f9b2be316147594dffd61d788866ad1177dc3a3ac2f",
+        "to": "0x329921023fcf6e337e924686b92f7521549b5970",
+        "contractAddress": "",
+        "status": "0x1",
+        "gasUsed": "0x168a1",
+        "logs": []
+      }
+    },
+    {
+      "transaction_order": 13,
+      "purpose": "register_usernamemodule",
+      "module_id": "0xab916fa805962ec369f8b0815c08c95b3feab5da2e9c29cfdfacbbd9d7b3ee97",
+      "target": "0x329921023fcf6e337e924686b92f7521549b5970",
+      "calldata": "0x86f3302bab916fa805962ec369f8b0815c08c95b3feab5da2e9c29cfdfacbbd9d7b3ee97000000000000000000000000c7c164e46788b37e98d27ace908c489999c09853b7350b5e913d992a522ce2e05c3f3cb37ac50450486880bc36ab0c295292b49e",
+      "calldata_sha256": "5919b1d28f0a44c67f94f6c700dc65f3113b5d8deede5a9f6482f8c192c4d2c1",
+      "transaction_hash": "0x01e7d044f3159bf11e4e86677c4d1b3454ed2019d18ec7ac0eda417de5b0150e",
+      "receipt": {
+        "transactionHash": "0x01e7d044f3159bf11e4e86677c4d1b3454ed2019d18ec7ac0eda417de5b0150e",
+        "blockNumber": "0x82f5c50",
+        "blockHash": "0x09d79b19c7fe732f9b13840655b1205d6ad85a9d4a1cc5db41499faa54571394",
+        "to": "0x329921023fcf6e337e924686b92f7521549b5970",
+        "contractAddress": "",
+        "status": "0x1",
+        "gasUsed": "0x16868",
+        "logs": []
+      }
+    },
+    {
+      "transaction_order": 15,
+      "purpose": "register_badgemodule",
+      "module_id": "0x129ffdcb675a98ccf83106de66261add937e83339ca1c3bcdea11a21d01137c2",
+      "target": "0x329921023fcf6e337e924686b92f7521549b5970",
+      "calldata": "0x86f3302b129ffdcb675a98ccf83106de66261add937e83339ca1c3bcdea11a21d01137c20000000000000000000000005e4ea68e31f89977bf056be9cb3d4f1c43ab995d50300d8ae14280acd2f48939d9095f932ac3dc22b481af9e45e07e58f898a77c",
+      "calldata_sha256": "35c394286fcdb3c8505e297ce7a15ea934a9de3f5667313328ccf350d08a4019",
+      "transaction_hash": "0x613728a917cca48a5fd46985f5d49ce6e7b199aa3b9c8f6b797058be8c017aab",
+      "receipt": {
+        "transactionHash": "0x613728a917cca48a5fd46985f5d49ce6e7b199aa3b9c8f6b797058be8c017aab",
+        "blockNumber": "0x82f5c9d",
+        "blockHash": "0x978e3a455706916516e903342a2de8de7b9f6288287b4f7e544cc3d1127fc92e",
+        "to": "0x329921023fcf6e337e924686b92f7521549b5970",
+        "contractAddress": "",
+        "status": "0x1",
+        "gasUsed": "0x167af",
+        "logs": []
+      }
+    },
+    {
+      "transaction_order": 17,
+      "purpose": "register_releasemodule",
+      "module_id": "0xe3b2d8c3973efdefb548d9f71c6e48d9cd24914c9f7df467aa34f6feac411993",
+      "target": "0x329921023fcf6e337e924686b92f7521549b5970",
+      "calldata": "0x86f3302be3b2d8c3973efdefb548d9f71c6e48d9cd24914c9f7df467aa34f6feac411993000000000000000000000000aa0dd566eb2b21fed0ba9426c0e30887ce2de63f3834e5dcdf1f26f1c30bd628c4a5117021eb70525e88d725e196f019a43c151c",
+      "calldata_sha256": "4a5c618f1a7cbfdbad75e14ad9c53b8ad5f83671b0172d2f7d17e796e5de2762",
+      "transaction_hash": "0xf739c167da5e9422cc3cee25dd377a2ffe90d0d8fd21dd7c98d4a48894bc816d",
+      "receipt": {
+        "transactionHash": "0xf739c167da5e9422cc3cee25dd377a2ffe90d0d8fd21dd7c98d4a48894bc816d",
+        "blockNumber": "0x82f5ce8",
+        "blockHash": "0x60832ee86ea1a2b7f8d491ee67eaab4c68f358e980454d6640a8845896c76352",
+        "to": "0x329921023fcf6e337e924686b92f7521549b5970",
+        "contractAddress": "",
+        "status": "0x1",
+        "gasUsed": "0x167f8",
+        "logs": []
+      }
+    }
+  ],
+  "directory_binding_verification": {
+    "block_number": "0x82f5ce8",
+    "block_hash": "0x60832ee86ea1a2b7f8d491ee67eaab4c68f358e980454d6640a8845896c76352",
+    "suite_version": 3,
+    "state": 0,
+    "active": false,
+    "configured_chain_id": 1439,
+    "snapshot_root": "0x5e2eaab50320b54d85e45bdc9f59ce94ada216d440fac3086fb30da7f98a1cea",
+    "bootstrap_authority": "0x0000000000000000000000000000000000000000",
+    "bootstrap_coordinator": "0x329921023fcf6e337e924686b92f7521549b5970",
+    "coordinator_code_hash": "0xbbf6b60d9a90b2f87bfa15bca9733aa5851b2cbae05f1997dd34671b42cf27b7",
+    "registered_module_count": 7,
+    "coordinator_directory": "0x24124cb60f9ef02f7deb5bc868c028fb412f5334",
+    "coordinator_snapshot_root": "0x5e2eaab50320b54d85e45bdc9f59ce94ada216d440fac3086fb30da7f98a1cea",
+    "coordinator_operator": "0x85eac7bc081488aa77d1d82f9cb8e053de1e4fa8",
+    "coordinator_activated": false,
+    "coordinator_next_module_index": 0,
+    "modules": [
+      {
+        "module_id": "0x0f2aa236426cdfb44f309719da4a1e7bf3c2f26dc5d3c28a474082cc7ad909b8",
+        "contract_name": "RepositoryCore",
+        "address": "0x20269fb750d77e7c6c812290e7a7b99e0a3780d4",
+        "directory_code_hash": "0x1c5e3ca62fa52b1b4ecef6da246b1b4dcfe5d027102165721c42ba3b5e21b467",
+        "observed_code_hash": "0x1c5e3ca62fa52b1b4ecef6da246b1b4dcfe5d027102165721c42ba3b5e21b467",
+        "directory_verified": true,
+        "module_directory": "0x24124cb60f9ef02f7deb5bc868c028fb412f5334",
+        "module_coordinator": "0x329921023fcf6e337e924686b92f7521549b5970",
+        "observed_module_id": "0x0f2aa236426cdfb44f309719da4a1e7bf3c2f26dc5d3c28a474082cc7ad909b8",
+        "bootstrap_finalized": false
+      },
+      {
+        "module_id": "0x6cde1210dbeb58848fe7ff3cb286576a5f76ed31424ebc2117eff3f42e060631",
+        "contract_name": "RecoveryModule",
+        "address": "0xa7249ce20b54c4be440838f0ef403d2a6a07e532",
+        "directory_code_hash": "0x166e917cc005b551e15d840fb9fc92fb012048a715016304c7dd34047984b3c2",
+        "observed_code_hash": "0x166e917cc005b551e15d840fb9fc92fb012048a715016304c7dd34047984b3c2",
+        "directory_verified": true,
+        "module_directory": "0x24124cb60f9ef02f7deb5bc868c028fb412f5334",
+        "module_coordinator": "0x329921023fcf6e337e924686b92f7521549b5970",
+        "observed_module_id": "0x6cde1210dbeb58848fe7ff3cb286576a5f76ed31424ebc2117eff3f42e060631",
+        "bootstrap_finalized": false
+      },
+      {
+        "module_id": "0xa49a32b2d99126d93610cb8045423f52f62b8f3240b6c53899cbd19ca5eae7f3",
+        "contract_name": "ModerationModule",
+        "address": "0xb957b65634931dd0613abac296d5a3837bf979bd",
+        "directory_code_hash": "0x3407b2f48bd761b0c241ba827960c84d95f6a100919f4a9863cf39c73c6e8de3",
+        "observed_code_hash": "0x3407b2f48bd761b0c241ba827960c84d95f6a100919f4a9863cf39c73c6e8de3",
+        "directory_verified": true,
+        "module_directory": "0x24124cb60f9ef02f7deb5bc868c028fb412f5334",
+        "module_coordinator": "0x329921023fcf6e337e924686b92f7521549b5970",
+        "observed_module_id": "0xa49a32b2d99126d93610cb8045423f52f62b8f3240b6c53899cbd19ca5eae7f3",
+        "bootstrap_finalized": false,
+        "authority_role": "admin",
+        "authority_address": "0x85eac7bc081488aa77d1d82f9cb8e053de1e4fa8"
+      },
+      {
+        "module_id": "0xc9ab9ceae89076b0f126fd5329cb2bdf61760459991af4a5a599ad3a063c0c17",
+        "contract_name": "EconomicModule",
+        "address": "0x608380f355bf3d7cb0d3dcd58fc4dbe695daf3dd",
+        "directory_code_hash": "0x907035110aeb8fa07f3a092ffd91b46b879ef54badcd4115459b79e6b9b0ad0d",
+        "observed_code_hash": "0x907035110aeb8fa07f3a092ffd91b46b879ef54badcd4115459b79e6b9b0ad0d",
+        "directory_verified": true,
+        "module_directory": "0x24124cb60f9ef02f7deb5bc868c028fb412f5334",
+        "module_coordinator": "0x329921023fcf6e337e924686b92f7521549b5970",
+        "observed_module_id": "0xc9ab9ceae89076b0f126fd5329cb2bdf61760459991af4a5a599ad3a063c0c17",
+        "bootstrap_finalized": false,
+        "authority_role": "admin",
+        "authority_address": "0x85eac7bc081488aa77d1d82f9cb8e053de1e4fa8"
+      },
+      {
+        "module_id": "0xab916fa805962ec369f8b0815c08c95b3feab5da2e9c29cfdfacbbd9d7b3ee97",
+        "contract_name": "UsernameModule",
+        "address": "0xc7c164e46788b37e98d27ace908c489999c09853",
+        "directory_code_hash": "0xb7350b5e913d992a522ce2e05c3f3cb37ac50450486880bc36ab0c295292b49e",
+        "observed_code_hash": "0xb7350b5e913d992a522ce2e05c3f3cb37ac50450486880bc36ab0c295292b49e",
+        "directory_verified": true,
+        "module_directory": "0x24124cb60f9ef02f7deb5bc868c028fb412f5334",
+        "module_coordinator": "0x329921023fcf6e337e924686b92f7521549b5970",
+        "observed_module_id": "0xab916fa805962ec369f8b0815c08c95b3feab5da2e9c29cfdfacbbd9d7b3ee97",
+        "bootstrap_finalized": false,
+        "authority_role": "username_policy_admin",
+        "authority_address": "0x85eac7bc081488aa77d1d82f9cb8e053de1e4fa8"
+      },
+      {
+        "module_id": "0x129ffdcb675a98ccf83106de66261add937e83339ca1c3bcdea11a21d01137c2",
+        "contract_name": "BadgeModule",
+        "address": "0x5e4ea68e31f89977bf056be9cb3d4f1c43ab995d",
+        "directory_code_hash": "0x50300d8ae14280acd2f48939d9095f932ac3dc22b481af9e45e07e58f898a77c",
+        "observed_code_hash": "0x50300d8ae14280acd2f48939d9095f932ac3dc22b481af9e45e07e58f898a77c",
+        "directory_verified": true,
+        "module_directory": "0x24124cb60f9ef02f7deb5bc868c028fb412f5334",
+        "module_coordinator": "0x329921023fcf6e337e924686b92f7521549b5970",
+        "observed_module_id": "0x129ffdcb675a98ccf83106de66261add937e83339ca1c3bcdea11a21d01137c2",
+        "bootstrap_finalized": false
+      },
+      {
+        "module_id": "0xe3b2d8c3973efdefb548d9f71c6e48d9cd24914c9f7df467aa34f6feac411993",
+        "contract_name": "ReleaseModule",
+        "address": "0xaa0dd566eb2b21fed0ba9426c0e30887ce2de63f",
+        "directory_code_hash": "0x3834e5dcdf1f26f1c30bd628c4a5117021eb70525e88d725e196f019a43c151c",
+        "observed_code_hash": "0x3834e5dcdf1f26f1c30bd628c4a5117021eb70525e88d725e196f019a43c151c",
+        "directory_verified": true,
+        "module_directory": "0x24124cb60f9ef02f7deb5bc868c028fb412f5334",
+        "module_coordinator": "0x329921023fcf6e337e924686b92f7521549b5970",
+        "observed_module_id": "0xe3b2d8c3973efdefb548d9f71c6e48d9cd24914c9f7df467aa34f6feac411993",
+        "bootstrap_finalized": false,
+        "authority_role": "release_authority",
+        "authority_address": "0x85eac7bc081488aa77d1d82f9cb8e053de1e4fa8"
+      }
+    ],
+    "initial_governance": {
+      "moderation_admin": "0x85eac7bc081488aa77d1d82f9cb8e053de1e4fa8",
+      "moderation_committee": "0x85eac7bc081488aa77d1d82f9cb8e053de1e4fa8",
+      "economic_admin": "0x85eac7bc081488aa77d1d82f9cb8e053de1e4fa8",
+      "economic_treasury": "0x85eac7bc081488aa77d1d82f9cb8e053de1e4fa8",
+      "economic_platform_fee_bps": 300,
+      "username_policy_admin": "0x85eac7bc081488aa77d1d82f9cb8e053de1e4fa8",
+      "release_authority": "0x85eac7bc081488aa77d1d82f9cb8e053de1e4fa8"
+    }
+  },
+  "blockscout_verification": {
+    "status": "not_attempted",
+    "explorer": "https://testnet.blockscout.injective.network",
+    "contracts": {},
+    "note": "source verification is independent of deployment success and must be recorded by a separate evidence-producing command"
+  },
+  "recovery": {
+    "source": "https://testnet.blockscout-api.injective.network",
+    "recovered_at": "2026-08-29T18:17:44.4316631Z",
+    "transactions_validated": 17
+  }
+}

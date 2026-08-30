@@ -1,0 +1,19 @@
+{
+  "schema": "igit.evm-suite.blockscout-verification.v1",
+  "source_commit": "4fd6a07ad2f45eb4b0b09b58eeed1621ddc8f986",
+  "verified_at": "2026-08-29T16:52:36.074Z",
+  "chain_id": 1439,
+  "explorer": "https://testnet.blockscout.injective.network",
+  "api": "https://testnet.blockscout-api.injective.network",
+  "contracts": [
+    {"contract_name":"SuiteDirectory","address":"0x24124cb60f9ef02f7deb5bc868c028fb412f5334","status":"verified","creation_transaction_hash":"0xd01c3326ab0454947d719b3aeb30e6ac6a6ee3a44f9cc78d1e028a74da7e7e70"},
+    {"contract_name":"BootstrapCoordinator","address":"0x329921023fcf6e337e924686b92f7521549b5970","status":"verified","creation_transaction_hash":"0x4bbdb47cb28fada7d618d84d7dddb4726902b3ae0be8a823e0a30e9c0188e937"},
+    {"contract_name":"RepositoryCore","address":"0x20269fb750d77e7c6c812290e7a7b99e0a3780d4","status":"verified","creation_transaction_hash":"0xa0d2eceba2810a533af4e21523c0469b4202ffc89decd6391e0f1c9f55358b0d"},
+    {"contract_name":"RecoveryModule","address":"0xa7249ce20b54c4be440838f0ef403d2a6a07e532","status":"verified","creation_transaction_hash":"0x6d51a2c7126b2f26c108f805c8388711d21c7feb71d7f558f72ecf49813a1543"},
+    {"contract_name":"ModerationModule","address":"0xb957b65634931dd0613abac296d5a3837bf979bd","status":"verified","creation_transaction_hash":"0x003efa8e9e104dfc9b3a0ec00ef5d70693724e90f3fdeefb4874d58f121af072"},
+    {"contract_name":"EconomicModule","address":"0x608380f355bf3d7cb0d3dcd58fc4dbe695daf3dd","status":"verified","creation_transaction_hash":"0x900c305d1689a7caedd81ca441d4acfbeb779b7ca6194aadc5e9cd886b74d148"},
+    {"contract_name":"UsernameModule","address":"0xc7c164e46788b37e98d27ace908c489999c09853","status":"verified","creation_transaction_hash":"0x77c7261415201cd3029d6947f11b1a4414004ed15e1043b9b4a77038d4444b6b"},
+    {"contract_name":"BadgeModule","address":"0x5e4ea68e31f89977bf056be9cb3d4f1c43ab995d","status":"verified","creation_transaction_hash":"0x15972710e41dea2ad06df0a2c8c2caa586a4d01100a89b2b8975cd571c158aa8"},
+    {"contract_name":"ReleaseModule","address":"0xaa0dd566eb2b21fed0ba9426c0e30887ce2de63f","status":"verified","creation_transaction_hash":"0xa8e5934ce28f9e361dcd66d72a57ee90ddaee4277142730b1220331ee3e9ce80"}
+  ]
+}

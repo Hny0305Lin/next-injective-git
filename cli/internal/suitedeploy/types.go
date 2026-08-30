@@ -9,6 +9,11 @@ import (
 
 const manifestSchema = "igit.evm-suite.deployment.v1"
 
+const (
+	evidenceModeLiveBroadcast      = "live-broadcast"
+	evidenceModeHistoricalRecovery = "historical-recovery"
+)
+
 type CompilerEvidence struct {
 	Version   string `json:"version"`
 	Optimizer struct {
@@ -148,12 +153,19 @@ type BlockscoutVerification struct {
 	Note      string            `json:"note"`
 }
 
+type RecoveryEvidence struct {
+	Source                string `json:"source"`
+	RecoveredAt           string `json:"recovered_at"`
+	TransactionsValidated uint64 `json:"transactions_validated"`
+}
+
 // Manifest is append-progress deployment evidence. Status remains
 // "bootstrapping" after successful deployment because import and activation
 // are deliberately separate cutover operations.
 type Manifest struct {
 	Schema                       string                      `json:"schema"`
 	Status                       string                      `json:"status"`
+	EvidenceMode                 string                      `json:"evidence_mode"`
 	CreatedAt                    string                      `json:"created_at"`
 	UpdatedAt                    string                      `json:"updated_at"`
 	FailureStage                 string                      `json:"failure_stage,omitempty"`
@@ -168,6 +180,7 @@ type Manifest struct {
 	ConfigurationTransactions    []*ConfigurationTransaction `json:"configuration_transactions"`
 	DirectoryBindingVerification *DirectoryBindingEvidence   `json:"directory_binding_verification,omitempty"`
 	BlockscoutVerification       BlockscoutVerification      `json:"blockscout_verification"`
+	Recovery                     *RecoveryEvidence           `json:"recovery,omitempty"`
 }
 
 type Options struct {

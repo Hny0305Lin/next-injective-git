@@ -1,0 +1,23 @@
+{
+  "schema": "igit.evm-suite.cutover-scope.v1",
+  "source_commit": "4fd6a07ad2f45eb4b0b09b58eeed1621ddc8f986",
+  "decided_at": "2026-08-29T16:52:36.074Z",
+  "mode": "fresh-empty-suite",
+  "v1_runtime_policy": "archive-preview-only",
+  "v1_migration_performed": false,
+  "migration_evidence_required": false,
+  "activation_journal": "empty-suite-activation-2026-08-29.log",
+  "chain_id": 1439,
+  "directory": "0x24124cb60f9ef02f7deb5bc868c028fb412f5334",
+  "snapshot_root": "0x5e2eaab50320b54d85e45bdc9f59ce94ada216d440fac3086fb30da7f98a1cea",
+  "expected_imported_records": {
+    "RepositoryCore": 0,
+    "RecoveryModule": 0,
+    "ModerationModule": 0,
+    "EconomicModule": 0,
+    "UsernameModule": 0,
+    "BadgeModule": 0,
+    "ReleaseModule": 0
+  },
+  "statement": "The Injective EVM Suite starts from empty state. CosmWasm V1 remains available only through the read-only archive preview and is not imported into this Suite."
+}
