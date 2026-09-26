@@ -1,12 +1,22 @@
 # Immutable EVM Suite Architecture
 
-The public product path is EVM V2. A network profile contains endpoints,
+Scope updated: 2026-09-13 (Asia/Shanghai). Current implementation facts are
+bound to the [audit baseline](reconciliation-baseline-2026-09-12.md), not to a
+new deployment. S01–S03 storage libraries and local/mock tests are **PASS** as scoped in [BYOS section 9](storage-byos.md). Real cloud integration and successor acceptance remain **NOT PROVEN**.
+The first mainnet target is fixed by [ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md):
+user-owned AWS/R2 buckets on a storage-neutral successor, not an IPFS-only v3 launch.
+
+## Current Implementation: EVM V2 Generation, Suite Version 3
+
+The ordinary product code path is EVM V2. A network profile contains endpoints,
 chain ID, and one `SuiteDirectory` address. CLI, the ordinary Web repository
 path, and `git-remote-igit` resolve all current contracts from that Directory
 and fail closed unless it is version 3, active, code-hash verified, and
 internally bound. The Web also exposes a separate, explicit CosmWasm V1
 archive viewer for historical read-only inspection; that viewer is not an
 alternate SuiteDirectory and does not participate in ordinary Git operations.
+EVM V2 is a product-generation name; Suite version 3 and a future successor
+are protocol versions, not alternative Cosmos/EVM runtimes.
 
 This is the EVM V2 product generation because CosmWasm V1 required a WSL2-hosted
 Push toolchain on Windows while Linux ran natively. The EVM path removes WSL2
@@ -29,7 +39,7 @@ flowchart LR
   Directory --> Release[ReleaseModule]
   Helper --> Storage[Current IPFS adapter]
   Web --> Storage
-  Storage -. planned successor .-> ObjectStorage[Amazon S3 / Cloudflare R2]
+  Storage -. successor integration pending .-> ObjectStorage[Local AWS S3 / Cloudflare R2 adapters]
 ```
 
 `RepositoryCore` owns stable repo IDs, canonical and historical locators,
@@ -75,19 +85,102 @@ available for audit tooling. Under the accepted current scope in
 [ADR 0003](adr/0003-fresh-evm-suite-and-v1-archive-preview.md), it does not become
 a Suite bootstrap plan: the EVM Suite starts empty and V1 remains preview-only.
 
-## Data Plane Direction
+## First Mainnet Target: Storage-Neutral Successor
 
 Git pack storage is a replaceable data plane, not the control-plane trust root.
 The current Suite, CLI, and Web paths support only `ipfs://`, so Kubo/IPFS
-remains the implemented adapter for this release. Amazon S3 and Cloudflare R2
-are planned adapters, not aliases for the current gateway.
+remains the legacy v3 adapter. AWS S3 and Cloudflare R2 are the confirmed
+first-release BYOS providers, with local libraries/mock tests implemented; they are not aliases for an
+IPFS gateway. The object-storage path must not probe or require Kubo, the IPFS
+network, or the iGit replication/gateway services.
 
 Because Suite contracts are immutable and currently validate only `ipfs://`, a
-storage-neutral URI contract requires a reviewed successor Suite and explicit
-migration. Object-store credentials and expiring signed URLs must never be
-written on-chain. Integrity must remain independently verifiable from stable
-object metadata or content digests. See
-[ADR 0002](adr/0002-pluggable-pack-storage.md).
+storage-neutral commitment requires a reviewed successor Suite. A fresh
+successor does not require history import; migrating existing v3 history is a
+separate approved scope. Existing v3 addresses, ABIs and deployment evidence
+must not be relabeled as successor evidence.
+
+### Target Data Flow (Design, Not Deployed Capability)
+
+```mermaid
+flowchart TD
+  Git[Git working tree] --> Helper[Remote helper / packstore]
+  Helper --> Pack[Self-contained pack + raw SHA-256 / size]
+  Pack --> Writer[User-owned writer credentials; local only]
+  Writer --> Bucket[AWS S3 or Cloudflare R2 bucket]
+  Bucket --> Verify[Read back and verify stored bytes]
+  Verify --> Manifest[Canonical JSON manifest + digest]
+  Manifest --> Publish[Upload and verify manifest]
+  Publish --> Ref[CAS ref update in successor Core]
+  Ref --> Directory[Verified immutable SuiteDirectory]
+  Reader[CLI reader / public Web] --> Directory
+  Directory --> Commitment[Current ref: digest / size / bootstrap locator]
+  Commitment --> Load[Download and validate manifest]
+  Load --> Read[Read each pack; try its locations]
+  Bucket --> Read
+  Read --> Check[Verify raw SHA-256 and size before Git]
+  Check --> Objects[Git objects / Web repository view]
+  Legacy[Explicit v3 profile] --> IPFS[Isolated legacy IPFS reader / writer]
+```
+
+Data-before-ref is a client rule: the chain cannot fetch a cloud object or
+prove future availability. BYOS introduces no iGit broker or mandatory
+storage-receipt signer. Bucket owners bear provider costs and availability
+risk; one verified location is sufficient initially.
+
+### Commitment Model
+
+| Object | Responsibility |
+|---|---|
+| On-chain ref state | Repo/ref/commit, manifest SHA-256 and size, bounded stable bootstrap locator, protocol/revision, author/time and CAS |
+| PackManifest | Chain/Suite/repo/ref/commit context plus an ordered list of packs; encoded as canonical JSON |
+| PackEntry | Raw-byte SHA-256, exact size, pack version, sequence, thin/dependency information |
+| PackLocation | Alternative locations for the same PackEntry; not additional sequential packs |
+| Local profile | Provider configuration and independent writer/reader credential references, never secret values in ordinary JSON |
+
+Use digest-derived keys such as `packs/sha256/<digest>.pack` and
+`manifests/sha256/<digest>.json` under a user-controlled prefix. The manifest
+digest is outside its own hashed body. Adding a location or changing pack
+bytes creates a new manifest; a same-commit update still requires a new CAS
+revision. Self-contained non-thin packs are the initial successor policy.
+
+The detailed [BYOS specification](storage-byos.md) defines JCS cross-language
+vectors, bootstrap discovery, integer/byte limits, endpoint restrictions,
+provider capabilities, failure recovery and concrete code locations. Those
+wire details must be frozen before the successor ABI is implemented.
+
+### Access And Compatibility Invariants
+
+- Only user-owned AWS S3 and Cloudflare R2 are first-release cloud providers.
+  MinIO, other clouds, generic S3-compatible APIs and self-hosted object stores
+  are not accepted production profiles. A cloud-backed public read domain is
+  not a self-hosted write provider.
+- Repositories are public. Standard Web access uses stable anonymous HTTPS
+  and CORS; authenticated bucket reads use independent user-configured CLI
+  reader credentials, not writer-secret sharing or a hosted broker. A private
+  bucket is not a private-repository/encryption implementation.
+- Published bytes are immutable by protocol, even if a cloud administrator
+  can overwrite/delete objects. Clients detect that damage; a digest cannot
+  recover missing bytes or guarantee persistence.
+- No credential, session token or presigned URL enters chain state, manifest,
+  Git remote, logs or browser storage. Public locators are explicitly public.
+- Do not mix legacy v3 PackURIs and successor commitments in one implicit
+  `string[]` path. Unknown Suite/manifest versions fail closed before uploads.
+- Legacy CID verification is not the same as a chain-bound raw-pack digest:
+  v3 does not contain the latter. A hash computed after download cannot create
+  missing authenticity evidence. Preserve that distinction in adapters/tests.
+- Contract state queries must suffice for cold reads without an event indexer.
+  ABI/indexer checkpoints need independent version/reorg validation; the four
+  existing scripts marked FAIL in the baseline must not be enabled.
+- Preserve V1 archive isolation, Directory code-hash checks and module
+  ownership/moderation/recovery responsibilities. Review successor ref CAS,
+  delete/recreate, fork context, bootstrap and event schemas together.
+
+See [ADR 0002](adr/0002-pluggable-pack-storage.md),
+[ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md), and
+the [next implementation prompt](prompts/next-storage-implementation.md).
 
 See [migration](evm-v2-migration.md), [release](release.md), and the active
 [delivery roadmap](delivery-roadmap.md).
+
+Local storage code now lives under `cli/internal/packmanifest`, `packstore`, `storageconfig`, and `safehttp`, with TypeScript manifest parity in `web/src/lib/packmanifest.ts`. The ordinary remote helper and Web gitstore still use v3 IPFS; these new APIs have no chain write path. See [BYOS implementation and limits](storage-byos.md#9-s01s03-本地实现与可重复验证2026-09-13).

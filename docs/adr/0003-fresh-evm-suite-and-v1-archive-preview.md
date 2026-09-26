@@ -1,9 +1,16 @@
 # ADR 0003: Start The EVM Suite Empty And Keep V1 As Archive Preview
 
-- Status: Accepted for the current testnet cutover
+- Decision scope: The existing v3 testnet cutover
 - Decision date: 2026-08-29
-- Delivery status: Empty Suite activation complete; product cutover pending
+- Existing activation evidence: HISTORICAL; current product cutover: NOT PROVEN
 - Supersedes: The mandatory V1 import portions of [ADR 0001](0001-evm-v2-runtime-and-migration-scope.md)
+
+Scope clarification (2026-09-13): [ADR 0004](0004-mainnet-storage-neutral-successor-and-byos-scope.md)
+makes AWS S3 / R2 BYOS and a storage-neutral successor the first mainnet target.
+The version-3 checks below describe the existing testnet evidence, not a
+mainnet launch recommendation or authorization to import v3 history. A fresh
+successor and any optional history import need their own versioned evidence.
+Current verification facts remain in the [audit baseline](../reconciliation-baseline-2026-09-12.md).
 
 ## Context
 
@@ -36,8 +43,8 @@ compatibility backend and does not participate in EVM writes.
 
 ## Consequences
 
-- P1.3 is satisfied by verified zero-import activation rather than V1 data
-  parity.
+- The historical v3 P1.3 scope uses verified zero-import activation rather
+  than V1 data parity; it does not satisfy successor or product acceptance.
 - Existing V1 repositories do not automatically appear in the EVM Suite and
   must be recreated if they are intended to become active EVM repositories.
 - There is no V1 write fallback, double write, or implicit cross-runtime read.

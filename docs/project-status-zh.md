@@ -1,465 +1,283 @@
-# 项目状态总览（中文版）
+# 项目状态：事实核对入口
 
-- 状态：P1.2 部署证据和 P1.3 空状态激活已完成；P1.4-P1.6 验收进行中
-- 最新更新：2026-08-31
-- 当前 Suite 证据基线：`4fd6a07ad2f45eb4b0b09b58eeed1621ddc8f986`
-- 最新进展：9 个合约及 8 个初始化调用的 17 笔历史交易已复核，9/9 Blockscout 验证完成，空状态 Suite 已激活
-- 公开可用性：无；已签入的 Suite 配置文件中 SuiteDirectory 地址仍为空
+复核日期：2026-09-13（Asia/Shanghai）；基线文件名按任务指定保留 2026-09-12。
+源码：`dev` / `0ba06f436558f12d97625b393767440cdd0f9862`。
 
-> [!IMPORTANT]
-> 本文档提供项目整体状态的快速概览。详细的技术决策、交付序列和证据要求请参考专门文档。
-> 英文版本请参见 [Project Status (English)](project-status.md)。
+当前事实只以 [唯一事实基线](reconciliation-baseline-2026-09-12.md) 为准；本页是入口或摘要，不是另一份验收报告。
+状态限定为 PASS、FAIL、BLOCKED、NOT PROVEN、HISTORICAL，定义和原始命令输出见基线。
 
-## 项目定位
-
-Next Injective Git (igit) 是基于 Injective EVM 的去中心化 Git 存储系统（EVM V2 代）：
-- **数据层：** Git packfiles 存储在 IPFS 上（当前）或 S3/R2 上（计划中）
-- **控制层：** 仓库元数据、refs、权限、审核、经济数据存储在不可升级的 Injective EVM 智能合约套件中
-- **平台支持：** 原生 Windows 和 Linux 支持，无需 WSL2 或 `injectived`
-
-### 为什么是 EVM V2？
-
-V1 控制平面使用 CosmWasm。在 Linux 上可以原生运行，但 Windows 支持路径需要 WSL2 来托管 Linux CLI、`injectived` 和 Kubo。这个后继版本被称为 **EVM V2**，因为将控制平面迁移到 Injective EVM 是消除 Windows 专用兼容环境的机制。目标路径使用原生 Windows 或原生 Linux 工具；普通的 EVM V2 用户不需要安装 WSL2 或 `injectived`。
-
-## 当前状态快照
-
-### ✅ 已完成里程碑
-
-**P0: Windows 和 EVM 基线修复**（2026-08-19 完成）
-
-- **审查提交：** `f6dcee9aa67255bfdff1867785435022df7ec5e9`
-- **CI 运行：** [32215415044](https://github.com/Hny0305Lin/next-injective-git/actions/runs/32215415044)
-- **主要成就：**
-  - ✓ 原生 Windows 支持（无需 WSL2）
-  - ✓ 原生 Linux 支持（无需 injectived）
-  - ✓ 中文 Windows 区域设置兼容性
-  - ✓ Windows DACL 文件权限保护
-  - ✓ Foundry 测试套件全部通过
-  - ✓ Go race detector 检查通过
-  - ✓ 修复 `core.autocrlf=true` 换行符问题
-  - ✓ 修复主网 RPC 端点（更新为当前官方端点）
-  - ✓ 实现有界 Kubo 下载超时和故障转移
-
-**P1.1: 运营运行器实现**（2026-08-22 完成）
-
-- **位置：** `cli/cmd/igit-suite-operator/`
-- **测试结果：** 15/15 通过，覆盖率 60.5%
-- **代码质量：** go fmt/vet/build 全部通过
-- **核心组件：**
-  - ✓ 带 scrypt KDF 的加密密钥存储（keystore.go）
-  - ✓ 带 ECDSA 签名的仅追加日志（journal.go）
-  - ✓ 不确定收据的安全恢复机制（main.go）
-  - ✓ 清单驱动的调用数据执行（manifest.go）
-  - ✓ 固定区块导入状态证据发射
-  - ✓ 全面的单元测试覆盖
-
-### 🚧 进行中
-
-**P1: Suite V3 测试网部署和切换**（进行中 - P1.1、P1.2、P1.3 已完成）
-
-**阻塞原因：**
-1. ✅ **部署证据完成** - 9 个创建交易、8 个初始化调用、历史区块、运行时代码和绑定已写入 no-clobber `deployment.json`
-2. ✅ **空状态范围完成** - 当前 Suite 不迁移 V1；V1 仅保留只读归档预览，7 个模块导入计数均为 0
-3. ❌ **产品 E2E 和钱包收据缺失** - 仍需 MetaMask、干净 Windows/Linux Git 流程和 finality 证据
-4. ❌ **独立安全审查和批准缺失** - 切换门控仍要求 `security-review.pdf` 和 `cutover-approval.txt`
-
-**需要完成的工作（按优先级）：**
-
-#### P1.1 运营运行器（✅ 已完成 - 2026-08-22）
-- [x] 实现带加密密钥存储的操作运行器
-- [x] 实现仅追加签名日志（journal）机制
-- [x] 实现安全恢复机制以处理不确定的收据
-- [x] 实现固定区块导入状态证据发射
-- [x] 完成单元测试（15/15 通过，覆盖率 60.5%）
-- [x] 通过代码质量检查（go fmt、go vet、编译）
-
-#### P1.1b 迁移运行器验证（➖ 当前切换不适用）
-- 当前 `fresh-empty-suite` 不执行 V1 导入，因此不要求迁移 dry-run、迁移清单或导入日志
-- 运行器保留给未来单独批准的 `cosmwasm-v1-migration` 范围
-
-#### P1.2 部署执行（✅ 完成 - 2026-08-29）
-- [x] 部署全部 9 个合约
-- [x] 复核 9 个创建交易和 8 个初始化调用的顺序、发送者、nonce、initcode 和 calldata
-- [x] 在历史区块复核所有运行时代码、不可变量和 Directory 绑定
-- [x] 在 Blockscout 上验证全部 9 个合约
-- [x] 通过 no-clobber 历史恢复模式生成 `deployment.json`
-- [x] 生成独立 `blockscout-verification.json`
-
-#### P1.3 空状态激活（✅ 完成 - 2026-08-29）
-- [x] 通过 `cutover-scope.json` 固定 `fresh-empty-suite` 和 V1 只读预览策略
-- [x] 验证 7 个模块 expected/imported count、batch 和 sequence 均为 0
-- [x] 验证每个模块 expected root 与 rolling root 等于确定性空状态 root
-- [x] 记录用户名托管无历史负债证明
-- [x] 原子激活 Directory
-- [x] 在固定区块记录最终 Directory 状态、代码哈希和模块绑定
-
-#### P1.4 E2E 和钱包测试（阻塞切换）
-- [ ] 执行 MetaMask 写入并记录收据
-- [ ] 在干净的 Linux 环境中执行 Git E2E
-- [ ] 在干净的 Windows 环境中执行 Git E2E
-- [ ] 测试不确定收据处理
-- [ ] 验证 V1 归档预览保持只读并与普通 EVM 路径隔离
-
-#### P1.5 安全和批准（优先级 1，可并行 - 阻塞切换）
-- [ ] 启动并完成深度源代码安全审查
-- [ ] 解决所有安全发现
-- [ ] 获得独立的哈希绑定切换批准
-- [ ] 生成 `security-review.pdf`
-- [ ] 生成 `cutover-approval.txt`
-
-#### P1.6 证据收集和门控（最终步骤）
-- [ ] 收集完整的证据目录
-- [ ] 生成最终的 `cutover-evidence.sha256` 校验和清单
-- [ ] 运行 `scripts/migration-cutover-readiness.sh`
-- [ ] 验证所有证据通过门控
-- [ ] **仅在此之后**更新测试网 `SuiteDirectory` 配置文件
-
-**预计工程时间：** P1.1-P1.3 已完成；剩余 P1.4-P1.6 主要是产品 E2E、finality、安全审查、独立批准和最终校验和绑定门控。
-
-### 📋 计划中的里程碑
-
-| 里程碑 | 预计时间 | 依赖关系 | 主要目标 |
-|---|---|---|---|
-| **P2: 原生 Windows 产品验收** | 3-5 天 | 依赖 P1 | 发布资产、安装程序、无依赖环境的完整 Git 工作流 |
-| **P3: 验证的存储边界** | 4-7 天 | 可与 P1 并行 | 引入 `packstore` 抽象，保留 IPFS 行为，添加流式传输和验证 |
-| **P4: S3/R2 后继协议** | 2-3 周 | 依赖 P3 | 新 Suite 版本、存储中立 URI、AWS/R2 适配器 |
-| **P5: 历史存储迁移** | 1 周 | 依赖 P4 | CID 映射、双读回滚窗口、完整验证 |
-| **Z0: 隔离的 ZKP 测试网原型** | 3-5 天 | 独立，可在 P0 后进行 | 成员资格证明、gnark Groth16、独立实验 |
-| **M0: 主网候选** | 待定 | 依赖 P1/P2、条件性 P5、治理、最终性、独立审批 | 生产部署就绪 |
-
-## 技术架构现状
-
-### 核心组件
-
-```
-contracts/evm-v2/          9 个不可升级 Solidity 合约
-├── SuiteDirectory         目录和配置协调器
-├── BootstrapCoordinator   有序批次导入和激活
-├── RepositoryCore         稳定 repo ID、refs、协作者
-├── RecoveryModule         监护人提案和所有权恢复
-├── ModerationModule       报告、申诉、强制策略钩子
-├── EconomicModule         原生 INJ 赞助和历史总额
-├── UsernameModule         用户名声明和历史迁移
-├── BadgeModule            不可转让徽章
-└── ReleaseModule          不可变发布校验和
-
-cli/                       Go CLI 和 Git 远程助手
-├── igit                   主 CLI
-├── git-remote-igit        Git 协议适配器
-├── igit-deploy-suite      部署工具（仅限测试网密钥）
-├── igit-suite-migrate     确定性迁移计划生成器
-└── internal/              99 个 Go 文件
-
-web/                       React/Vite + viem 浏览器 UI
-archive/cosmwasm-v1/       隔离的 V1 只读历史查看器
-scripts/                   源代码、发布、迁移证据和运营门控
-```
-
-### 技术栈详情
-
-| 层级 | 技术 | 当前版本/工具 | 说明 |
-|---|---|---|---|
-| **智能合约** | Solidity | 0.8.24（固定）| Foundry v1.7.1，不可升级 |
-| **CLI** | Go | 1.22 | go-ethereum，加密密钥存储 |
-| **前端** | JavaScript | React + Vite + viem | Legacy type-0 交易 |
-| **当前存储** | IPFS | Kubo | 推送需要本地 Kubo，克隆/拉取使用 HTTPS 网关 |
-| **计划存储** | 对象存储 | S3 + R2 | 需要后继协议和新 Suite 版本 |
-| **区块链** | Injective EVM | 测试网 1439，主网 1776 | 最低 gas 价格 160000000 wei |
-
-### 不可协商的设计原则
-
-- ✅ **不可升级** - 无代理、无 diamond 模式、无 delegatecall
-- ✅ **单一信任根** - 仅 `SuiteDirectory`，无混合后端或回退路径
-- ✅ **验证优先** - 客户端验证链 ID、suite 版本、活跃状态、所有模块代码哈希
-- ✅ **先数据后引用** - 必须先持久化 pack 后才能更新链上 ref
-- ✅ **不可变证据** - 部署、迁移、收据、固定区块状态必须是不可变证据，不得伪造
-- ⚠️ **存储中立需要新协议** - 当前 Suite 仅接受 `ipfs://` URI，S3/R2 需要后继 Suite
-
-## 量化指标
-
-| 指标 | 当前值 | 说明 |
+| 核对对象 | 状态 | 已证实的范围 / 剩余问题 |
 |---|---|---|
-| **源代码规模** | 99 个 Go 文件，9 个 Solidity 合约 | 不包含 node_modules 和测试文件 |
-| **8月活动** | 85+ 次提交 | 主要集中在 CI/Web 发布流程修复和运营工具 |
-| **测试覆盖** | 全面覆盖 | CLI 单元测试、race 检测、Foundry 单元/不变量、Web API 测试 |
-| **运营工具测试** | ✅ 15/15 通过 | 覆盖率 60.5%，所有核心功能已测试（2026-08-22）|
-| **代码质量** | ✅ 通过 | go fmt、go vet、编译检查全部通过（2026-08-22）|
-| **P0 CI 状态** | ✅ 绿色 | 提交 f6dcee9，所有 5 个 job 通过 |
-| **当前分支** | `dev` | 主分支为 `main` |
-| **公开部署** | 无 | 等待 P1 完成 |
-| **安全审查** | 待启动 | P1 关键阻塞器 |
+| 九合约源码、solc 0.8.24、ABI/artifact、生产尺寸 | PASS | 九个生产合约均存在；`npm run check` 通过。测试合约 SuiteProtocolParityTest 有 25537 > 24576 字节警告。 |
+| Foundry build / test / gas | BLOCKED | 当前 PATH 无 forge；未执行 Foundry 验收，不能用 solc 代替。 |
+| 测试网 Suite 固定区块只读核对 | PASS | chain 1439；区块 139852506 / 0x855fada；state=1(active)，version=3；七模块地址和 code hash 一致。 |
+| Go 本地测试、vet | PASS | `go test -count=1 ./...`、`go vet ./...` 退出 0；包括单元和 mock/fixture，不能推导真实写入。 |
+| CLI 限定代码只读 RPC | PASS | 既有 evm-demo-inspect 的 code-addresses 模式真实读取九个合约；latest 模式，不能冒充固定区块完整 VerifySuite。 |
+| 普通 igit suite verify | BLOCKED | 隔离无密钥配置遇到 Windows DACL Access is denied；详细 inspect 也在 username progress 处超时。 |
+| Web typecheck / API / build | PASS | 73 tests passed / 0 failed；构建改用全新 ignored 输出目录且关闭 emptyOutDir，有 Vite/PURE warning。 |
+| Web Moderation UI 完成声明 | FAIL | 文档声称 Moderation UI 已实现，但对应文件实际不存在。三个指定文件均未创建；modules.ts API 不等于 UI。 |
+| 四个 EVM 索引脚本 | FAIL | 仍为 untracked；错误 Topic、SHA-256 模块 ID、错误 selector、placeholder ABI、checkpoint/reorg/unpin 缺陷。 |
+| 当前本机真实 Kubo / recursive pin | BLOCKED | PATH 无 ipfs、未观察到节点/监听，127.0.0.1:5001 拒绝连接；生命周期测试 SKIP。 |
+| 真实 replication、gateway pack、Git 完整性、EVM 写入、push/fetch E2E | NOT PROVEN | 本轮没有写交易或真实 Kubo 上传；mock 不作为闭环证据。 |
+| 过去部署、激活、Blockscout 记录 | HISTORICAL | 证据绑定 4fd6a07ad2f45eb4b0b09b58eeed1621ddc8f986；当期收据不等于当前产品验收。 |
+| 九合约完整验收、产品切换、生产部署 | NOT PROVEN | 缺 Foundry、真实 E2E、finality、安全审查、批准及 checksum 门禁。 |
 
-## 关键风险与缓解
+IPFS + EVM + CLI 完整闭环尚未验证。未取得可复现的全项目 91% coverage 证据；撤销该数字作为当前指标的效力。
 
-| 风险 | 当前控制措施 | 状态 |
-|---|---|---|
-| **源就绪度误认为可用性** | 空公开配置文件 + 证据门控发布检查 | ✅ 就位 |
-| **Windows 换行符哈希漂移** | .gitattributes 固定 LF + Windows 工件门控 | ✅ 已修复（P0）|
-| **区域设置相关行为测试** | 稳定类型错误 + 独立翻译测试 | ✅ 已修复（P0）|
-| **Windows 密钥暴露** | DACL/凭据提供程序，仅限当前用户和 SYSTEM | ✅ 已实现（P0）|
-| **立即第二次不可变迁移** | 测试网使用 v3 IPFS；主网前决定存储范围 | ⚠️ 待决定 |
-| **大 pack 内存耗尽** | 临时文件流式传输、大小限制、多部分测试 | 📋 P3 范围 |
-| **可变或转换的对象字节** | 摘要派生密钥、无转换、size/SHA-256 验证 | 📋 P4 范围 |
-| **提供者 API 不匹配** | 独立的 AWS/R2 能力配置文件和实时金丝雀 | 📋 P4 范围 |
-| **thin-pack 历史损坏** | 迁移期间保留原始字节和 URI 顺序 | 📋 P5 范围 |
-| **预签名 URL 泄露/重用** | 短 TTL、精确签名头、一次性授权状态、日志编辑 | 📋 P4 设计 |
-| **过早垃圾收集** | 最终清单、长宽限期、回滚窗口、感知保留的 GC | 📋 P5 范围 |
-| **中国大陆提供者可达性** | 真实网络采样和稳定读取网关/故障转移策略 | 📋 运营范围 |
-| **ZKP 重放或抢跑** | 链/合约/协议/收件人/操作/repo 绑定，已花费 nullifier 和 epoch 测试 | 📋 Z0 范围 |
-| **未审查的可信设置或电路** | 哈希绑定设置策略 + 独立电路/验证器审计 | 📋 Z0 门控 |
+公开内置 CLI/Web profile 的 Directory 为空；Web `loadConfig()` 在本地 origin 会使用 `0xf8844F90887731FFd607E1f59e39a3918F6eAb35`，并可载入已有 localStorage Suite 设置，因此“所有路径都为空”不成立。该地址不是本轮核对的 Directory，本轮未查询它。
 
-## 后续时间线
+## 已确认的首期方向（2026-09-13，不是新增验收结果）
 
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- 现在                        未来
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+主网首期直接目标 storage-neutral successor，支持用户自有 AWS S3 / Cloudflare R2 桶。
+不先发布 IPFS-only v3 主网；不接 MinIO/其他云/用户自建对象存储服务。
+仓库公开、用户承担其云费用、canonical JSON、独立 reader 配置、不强制双副本；私有仓库/E2EE 和托管 broker 不在首期。
+对象存储用户不依赖 Kubo/IPFS 主网/iGit IPFS 服务，legacy v3 仍单独保留。
+数据修改发布新的 pack/manifest/ref，不允许通过覆盖摘要 key 改变已承诺历史。
 
-P0 ████████ 完成（2026-08-19）
-   └─ Windows/Linux 基线、CI 绿色、中文支持、DACL
+实现和真实 AWS/R2/successor 验收仍为 **NOT PROVEN**，上述基线检查没有在本次文档更新中重跑。
+见 [ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md)、[实施规格](storage-byos.md)、
+[S01–S07 待办](backlog.md) 和 [下一窗口提示词](prompts/next-storage-implementation.md)。
 
-P1 ▓▓▓▓░░░░ P1.1-P1.3 已完成 ✅，P1.4-P1.6 进行中
-   ├─ 运营运行器实现 ✅
-   ├─ 9 个合约部署和 Blockscout 验证 ✅
-   ├─ fresh-empty 激活，不执行 V1 导入 ✅
-   ├─ Git、MetaMask 和 finality E2E 测试
-   └─ 安全审查、证据门控和批准 🔒
+以下文件保留原样并统一标记为：**“历史迁移草稿/未对齐报告，不作为当前项目状态依据。”**
 
-P2 ░░░░ 3-5 天（依赖 P1）
-   └─ Windows 安装程序、发布资产、干净 VM 测试
+- 根目录 MIGRATION-COMPLETE.md、MIGRATION-REPORT-P1P2.md、A01-BXX-MIGRATION-REPORT.md，以及其余 MIGRATION-/PRIORITY- 草稿。
+- docs/a11-storage-indexer-v2.md、docs/PRIORITY-MAPPING.md。
+- docs/evm-v2-handoff.md、docs/liveagent-evm-v2-context.md、docs/project-knowledge-base-zh.md 中的旧状态快照属于 HISTORICAL；架构描述需按当前代码逐条引用。
 
-P3 ░░░░░░ 4-7 天（可与 P1 并行）
-   └─ packstore 抽象、流式传输、验证
+旧文档中的 P1.1/P1.2/P1.3 分别被用于“operator/部署/激活”和“Moderation/索引/ABI”两套含义，不能互换。旧问题使用 R01–R08；新增存储任务使用 S01–S07。
 
-P4 ░░░░░░░░░░░░░░ 2-3 周（依赖 P3）
-   └─ S3/R2 协议、适配器、预签名流程
+后续工作见 [重新开始的待办清单](backlog.md)。本轮只修改文档；原有未提交内容完整保留在下方历史区，不能作为当前状态。
 
-P5 ░░░░░░░ 1 周（依赖 P4）
-   └─ 历史迁移、CID 映射、回滚窗口
-
-Z0 ░░░░ 3-5 天（独立，可在 P0 后进行）
-   └─ ZKP 电路、gnark、测试网部署
-
-M0 ⏸️ 未安排（依赖 P1/P2 + 条件性 P5 + 治理 + 审批）
-   └─ 主网部署
-
-关键路径：P0 ✅ → P1 ⚠️ → P2 → M0
-```
-
-## 安全与合规状况
-
-### 当前安全态势
-
-**✅ 已实现：**
-- Go race detector 和 vet 检查通过
-- Windows DACL 密钥文件权限隔离（仅当前用户和 LocalSystem）
-- 加密密钥存储（scrypt）
-- Foundry 不变量测试和 gas 上限
-- 稳定的错误代码（区域设置独立）
-- 有界超时和故障转移（Kubo 下载）
-
-**⚠️ 待处理（P1 阻塞器）：**
-- 独立深度源代码安全审查
-- 解决安全发现
-- 生成 `security-review.pdf`
-
-**⚠️ 待处理（主网阻塞器）：**
-- 多签/时间锁治理设计和部署
-- 操作员密钥轮换和备份策略
-- 密钥分离和离线备份
-- ZKP 电路和验证器审计（如果产品化）
-
-### 生产前必需清单
-
-1. ✅ P0 源代码和 CI 基线（已完成）
-2. ⏳ 完成并记录独立安全审查（P1 进行中）
-3. ⏳ 设计并部署多签/时间锁治理（主网前）
-4. ⏳ 建立密钥轮换和灾难恢复流程（主网前）
-5. ⏳ 解决 `open-questions.md` 中的所有 9 个开放决策（主网前）
-6. ⏳ 完整的发布和切换证据哈希绑定批准（P1 进行中）
-
-## 建议行动计划
-
-### 🔴 立即行动（解除 P1 阻塞）
-
-**优先级 1：安全审查（关键路径）**
-
-1. **启动安全审查流程**（阻塞切换）
-   - 立即联系独立安全审查员
-   - 准备审查材料（架构、威胁模型、关键路径）
-   - 目标：立即启动，与部署执行并行
-
-**优先级 2：产品 E2E 和 finality**
-
-2. **执行 E2E 测试**
-   - MetaMask 写入和收据记录
-   - Linux/Windows 干净环境 Git E2E
-   - V1 归档预览只读隔离测试
-   - 不确定收据和 finality 处理
-
-3. **收集证据并通过门控**
-   - 运行 `migration-cutover-readiness.sh`
-   - 获得独立批准
-   - 更新测试网 `SuiteDirectory` 配置文件
-   - 目标：所有测试通过后 1-2 天
-
-### 🟡 短期行动（P1 完成后）
-
-**P2: Windows 产品验收**（3-5 天）
-- 构建 Windows 安装程序
-- 创建发布资产（igit.exe、git-remote-igit.exe）
-- 在干净 VM 上测试完整 Git 工作流
-- 记录 WSL2 和 injectived 缺失
-
-**P3-P5: 存储迁移**（4-5 周总计）
-- P3: 引入 packstore 抽象（4-7 天）
-- P4: 设计并实现 S3/R2 适配器（2-3 周，需要新 ADR）
-- P5: 执行历史迁移（1 周）
-
-**文档和运营**
-- 更新用户设置文档以反映原生 Windows 路径
-- 创建故障排除指南
-- 记录运营手册
-- 准备中国大陆用户的特殊说明
-
-### 🟢 中长期行动（主网准备）
-
-**治理和政策决策**
-- 确定多签成员、法定人数、紧急权力
-- 批准平台费用和财务政策
-- 定义用户名声明期限并公开沟通
-- 选择最终性深度和重组响应阈值
-- 决定 ZKP 是实验还是产品要求
-
-**运营成熟度**
-- 建立证据保留位置和访问策略
-- 定义独立审查员授权流程
-- 创建密钥轮换和备份程序
-- 设计 S3/R2 存储桶策略（版本控制、保留、加密）
-- 建立中国大陆网络可达性监控
-
-## 相关文档索引
-
-### 核心文档
-
-| 文档 | 用途 | 语言 |
-|---|---|---|
-| [Project Status](project-status.md) | 项目状态快速概览 | 英文 |
-| [项目状态总览](project-status-zh.md) | 项目状态快速概览 | **中文（本文档）** |
-| [Delivery Roadmap](delivery-roadmap.md) | 详细里程碑、依赖关系和退出标准 | 英文 |
-| [Backlog](backlog.md) | 细粒度工程任务清单 | 英文 |
-| [Architecture](architecture.md) | 不可变 Suite 和数据平面边界 | 英文 |
-
-### 证据和审查
-
-| 文档 | 用途 | 语言 |
-|---|---|---|
-| [P0 Evidence](p0-evidence.md) | 提交绑定的 Windows/Linux CI 和本地验证 | 英文 |
-| [Acceptance Evidence](acceptance-evidence.md) | 必需的真实证据和绑定规则 | 英文 |
-| [Release](release.md) | 发布内容和切换门控 | 英文 |
-
-### 设计决策
-
-| 文档 | 用途 | 语言 |
-|---|---|---|
-| [Open Questions](open-questions.md) | 需要明确审查的 9 个决策 | 英文 |
-| [ADR 0001](adr/0001-evm-v2-runtime-and-migration-scope.md) | EVM V2 运行时和迁移范围 | 英文 |
-| [ADR 0002](adr/0002-pluggable-pack-storage.md) | 可插拔 pack 存储方向 | 英文 |
-
-### 技术实现
-
-| 文档 | 用途 | 语言 |
-|---|---|---|
-| [EVM V2 Migration](evm-v2-migration.md) | 迁移工作流和完成定义 | 英文 |
-| [Infrastructure](infrastructure.md) | 当前 IPFS 数据平面（非 EVM 或对象存储验收）| 英文 |
-| [CI Web Publishing](ci-web-publishing.md) | 每树 CI 门控和 Web 生产发布路径 | 英文 |
-
-## 常见问题
-
-### 什么时候可以使用？
-**测试网：** P1 完成后（预计 1-2 周），前提是安全审查和所有证据门控通过。
-
-**主网：** 尚未安排。需要完成 P1/P2、治理设计、独立审批，以及可能的 P5（如果对象存储是启动要求）。
-
-### 是否需要 WSL2 或 injectived？
-**当前（P0 后）：** 不需要。P0 已经实现原生 Windows 和 Linux 支持。
-
-**推送操作：** 当前仍需要本地 Kubo 守护进程用于 IPFS 推送。
-
-**克隆/拉取：** 仅使用 HTTPS IPFS 网关，无需本地 Kubo。
-
-**未来（P4 后）：** S3/R2 配置文件将完全消除 Kubo 依赖。
-
-### 为什么还不能完成公开切换？
-P1 仍被以下因素阻塞：
-1. 缺少干净 Windows/Linux Git、MetaMask 和 finality E2E 证据
-2. 独立安全审查和哈希绑定批准尚未完成
-3. P1.4-P1.6 的最终校验和绑定证据门控尚未通过
-
-合约部署和 fresh-empty 激活已经完成。当前切换不包含 CosmWasm V1
-导入；V1 仅通过只读归档预览保留。剩余验收工作对于负责任的公开
-切换仍然至关重要。
-
-### 支持哪些网络？
-- **Injective 测试网：** EVM chain ID 1439
-- **Injective 主网：** EVM chain ID 1776（计划中）
-
-### 为什么合约是不可升级的？
-安全性和信任最小化。不可升级意味着：
-- 无隐藏的治理后门
-- 用户可以在部署时验证精确的代码
-- 无代理相关的安全风险
-- 行为是固定和可预测的
-
-### S3/R2 什么时候可用？
-**当前：** 方向已接受（ADR 0002），但未实现。当前 Suite 仅支持 `ipfs://`。
-
-**时间线：** P3（4-7 天）→ P4（2-3 周）→ P5（1 周），总计约 4-5 周工程时间，从 P1 完成后开始。
-
-**要求：** 需要新的 Suite 版本和后继协议，因为当前 Suite 是不可升级的。
-
-### ZKP 功能是什么？
-**Z0：** 隔离的测试网实验，用于成员资格证明（证明你属于授权组而不透露你是谁）。
-
-**状态：** 纯研究，不阻塞任何其他里程碑。
-
-**产品化：** 需要单独的设计审查、电路审计和治理决策。
-
-### 我能帮忙吗？
-**开发者：**
-- 审查 P0 代码和 CI 配置
-- 测试原生 Windows/Linux 设置
-- 协助 P1.1 运营运行器实现
-
-**安全研究员：**
-- 独立源代码审查
-- 威胁建模
-- 渗透测试（P1 部署后）
-
-**用户：**
-- 准备测试环境
-- 提供网络可达性反馈（特别是中国大陆用户）
-- 文档审查和翻译
-
-### 如何跟踪进展？
-1. **本文档** - 每次重大进展后更新
-2. **[Delivery Roadmap](delivery-roadmap.md)** - 详细的里程碑跟踪
-3. **[Backlog](backlog.md)** - 细粒度任务清单
-4. **GitHub Commits** - 日常开发活动
-5. **CI 运行** - 自动化测试状态
 
 ---
 
-## 更新历史
+<details>
+<summary>HISTORICAL：本轮入场前原文（已失去当前状态依据效力，完整保留未提交内容）</summary>
 
-| 日期 | 变更 | 更新者 |
-|---|---|---|
-| 2026-08-21 | 初始版本 - 基于 P0 完成状态创建 | 项目评估 |
-| 2026-08-22 | P1.1 运营工具完成 - 更新指标和阻塞状态 | 项目评估 |
-| 2026-08-31 | 确认 P1.2/P1.3 已完成；明确 P1.4-P1.6 和空状态切换范围 | 项目评估 |
+以下为历史迁移草稿/未对齐报告，不作为当前项目状态依据。原文 SHA-256：`f33c15c1887cdde85c167559d67e5aa21b2950eb26b9287712563c358ad99a8e`。下方所有旧状态、勾选、百分比、路径与执行指令仅作审计引用；正确状态以本页上方和唯一事实基线为准。
 
-**下次更新：** P1 完成后或重大架构变更时
+`````markdown
+# Next Injective Git - 项目状态
+
+**更新日期：** 2026-09-12  
+**当前阶段：** P1 测试验证  
+**下一里程碑：** 测试网 Cutover 就绪
 
 ---
 
-💡 **提示：** 此文档提供快速概览。详细的技术决策和实现细节请参考相关专门文档。
+## 📊 总体进度
+
+| 阶段 | 状态 | 完成度 | 目标日期 |
+|-----|------|-------|---------|
+| P0 基线 | ✅ 完成 | 100% | 2026-08-19 |
+| P1.1-1.3 实现 | ✅ 完成 | 100% | 2026-09-12 |
+| **P1.4-1.6 验证** | **⏳ 进行中** | **30%** | **2026-09-26** |
+| P2 功能完善 | 📋 计划中 | 0% | 2026-10-10 |
+| 测试网 Cutover | 🔒 待解锁 | 0% | TBD |
+
+---
+
+## 🎯 当前焦点（本周）
+
+### 正在进行 🔥
+1. **P1.2 V2 事件索引器验证**
+   - 计算 RefUpdated 事件签名
+   - 测试网运行验证
+   - **阻塞：** 需要测试网 Suite 地址
+
+2. **P1.1 Moderation UI 测试**
+   - 本地功能验证
+   - 响应式布局检查
+
+### 即将开始 ⏭️
+3. **P1.3 ABI 解码器完善**
+   - 依赖 P1.2 完成
+   - 选择技术方案（cast/ethers.js）
+
+4. **P1.5 安全审查启动**
+   - 联系审计公司
+   - 准备材料
+
+---
+
+## ✅ 最近完成（本周）
+
+### 2026-09-12
+- ✅ **A04 Web Moderation UI 实现完成**
+  - `web/src/lib/moderationModel.ts`
+  - `web/src/lib/moderationTransaction.ts`
+  - `web/src/pages/Repo/ModerationTab.tsx`
+
+- ✅ **A11 存储索引器 V2 完全重写**
+  - `scripts/evm-event-indexer.sh`
+  - `scripts/evm-hot-pin-indexer.sh`
+  - `scripts/evm-archive-indexer.sh`
+  - `scripts/evm-replication-reaper.sh`
+
+- ✅ **文档精简完成**
+  - 新 `docs/README.md` 导航中心
+  - `docs/a11-storage-indexer-v2.md` 完整文档
+
+- ✅ **优先级体系重组**
+  - 从 A01-A13/B01-B06 迁移到 P1.*/P2.*
+  - `docs/backlog.md` 清晰化
+
+---
+
+## 🏗️ 架构完整性
+
+### 九合约 Suite ✅ 100%
+| 合约 | 状态 | 测试覆盖 |
+|-----|------|---------|
+| SuiteDirectory | ✅ | 95% |
+| BootstrapCoordinator | ✅ | 92% |
+| RepositoryCore | ✅ | 94% |
+| RecoveryModule | ✅ | 90% |
+| ModerationModule | ✅ | 93% |
+| EconomicModule | ✅ | 91% |
+| UsernameModule | ✅ | 89% |
+| BadgeModule | ✅ | 88% |
+| ReleaseModule | ✅ | 87% |
+
+**平均测试覆盖：** 91%
+
+### 后端实现 ✅ 100%
+- CLI：所有 9 个模块完整实现
+- Web 函数：所有模块 API 完整
+- 迁移工具：snapshot/plan/manifest/operator
+
+### 前端实现 ⚠️ 60%
+| 功能 | 状态 |
+|-----|------|
+| Economic/Badge | ✅ SponsorsTab |
+| **Moderation** | **✅ 新实现（需测试）** |
+| Recovery | ❌ 待实现 (P2.1) |
+| Release | ❌ 待实现 (P2.2) |
+| Username Claim | ⚠️ 部分 (P2.3) |
+
+---
+
+## 🚨 风险和阻塞项
+
+### 🔴 高优先级风险
+
+#### 1. P1.2 索引器测试阻塞
+**风险：** 无法验证 V2 索引器正确性  
+**影响：** 生产部署延迟，存储数据丢失风险  
+**缓解：**
+- [ ] 立即计算事件签名
+- [ ] 获取测试网 Suite 地址
+- [ ] 准备测试环境
+
+**责任人：** 后端团队负责人  
+**截止日期：** 2026-09-15
+
+#### 2. 安全审查周期不确定
+**风险：** 审计可能需要 2-4 周  
+**影响：** 主网部署延迟  
+**缓解：**
+- [ ] 尽快联系审计公司
+- [ ] 准备完整材料包
+- [ ] 并行进行其他 P1 任务
+
+**责任人：** 技术负责人  
+**截止日期：** 2026-09-13（联系）
+
+### 🟡 中优先级风险
+
+#### 3. ABI 解码复杂度
+**风险：** 动态数组解码可能比预期复杂  
+**影响：** P1.3 延迟 1-2 天  
+**缓解：**
+- 优先使用成熟工具（cast）
+- 准备备选方案（ethers.js）
+
+#### 4. 测试网资源限制
+**风险：** RPC 速率限制、资金不足  
+**影响：** P1.6 钱包测试受限  
+**缓解：**
+- 申请测试网配额
+- 准备多个 RPC 端点
+
+---
+
+## 📈 度量指标
+
+### 代码质量
+- **测试覆盖率：** 91% (目标: >90%) ✅
+- **Linter 警告：** 0
+- **已知 Bug：** 0 P0, 2 P2
+
+### 进度
+- **P1 完成度：** 30%
+- **本周速度：** 3 个主要项目完成
+- **预计 P1 完成：** 2 周
+
+### 技术债务
+- **V1 脚本待归档：** 4 个（低优先级）
+- **文档待更新：** 用户手册（P2）
+
+---
+
+## 🎯 近期里程碑
+
+### W1 结束 (2026-09-19)
+- [ ] P1.1 完成
+- [ ] P1.2 完成 50%
+- [ ] P1.3 启动
+
+### W2 结束 (2026-09-26)
+- [ ] P1.2-P1.4 全部完成
+- [ ] P1.5 审查进行中
+- [ ] P1.6 启动
+
+### W4 结束 (2026-10-10)
+- [ ] 所有 P1 完成
+- [ ] 测试网就绪决策
+
+---
+
+## 📞 团队和联系
+
+### 核心团队
+- **技术负责人：** 架构决策、安全审查协调
+- **后端团队：** CLI、索引器、合约集成
+- **前端团队：** Web UI、钱包集成
+- **DevOps：** 部署、监控、基础设施
+
+### 每日站会
+- **时间：** 每天 10:00 AM
+- **时长：** 15 分钟
+- **议程：** P1 进度、阻塞项、当日目标
+
+### 每周审查
+- **时间：** 每周五 14:00 PM
+- **时长：** 1 小时
+- **议程：** 里程碑检查、风险评估、下周计划
+
+---
+
+## 📚 快速链接
+
+### 开发者
+- [待办清单](backlog.md) - 详细任务列表
+- [架构文档](architecture.md) - 系统设计
+- [A11 索引器文档](a11-storage-indexer-v2.md) - V2 实现
+
+### 管理层
+- [交付路线图](delivery-roadmap.md) - 时间线和依赖
+- [迁移完成报告](../MIGRATION-COMPLETE.md) - 最新进展
+
+### 外部
+- [Injective EVM 文档](https://docs.injective.network/developers-evm/)
+- [Foundry Book](https://book.getfoundry.sh/)
+
+---
+
+**下次更新：** 2026-09-13（每日）  
+**负责人：** 项目协调员  
+**联系方式：** 内部 Slack #igit-dev
+
+`````
+
+</details>

@@ -54,14 +54,34 @@ profile must not change unless this gate and human hash-bound approval pass.
 
 ## Storage Scope
 
-This cutover covers the currently implemented IPFS adapter only. It does not
-claim Amazon S3 or Cloudflare R2 support. Object-storage profiles require the
-successor URI protocol, client adapters, credential and integrity controls,
-migration evidence, and their own native Windows/Linux acceptance described in
-[ADR 0002](adr/0002-pluggable-pack-storage.md).
+The existing gate above covers the legacy v3 IPFS cutover only. It does not
+claim AWS S3 / Cloudflare R2 support and must not be used as a first-mainnet
+IPFS-only launch gate. On 2026-09-13, the user confirmed the first mainnet
+target as a storage-neutral successor with user-owned AWS/R2 buckets; see
+[ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md).
+
+The first-release scope is public repositories, canonical JSON manifests,
+independent user reader configuration and user-paid cloud costs. No MinIO or
+other self-hosted/S3-compatible provider, managed broker, private-repository
+encryption or mandatory dual replica is required. AWS/R2 Git operation must
+work without Kubo or iGit IPFS services.
+
+Successor publication is **NOT PROVEN**. It requires the reviewed versioned
+contracts/ABI/clients/indexer/evidence schema, both providers' real integrity
+and public-read acceptance, native Windows/Linux no-Kubo Git E2E, finality,
+independent security review and explicit approval. Extend and test the gate
+for that protocol; do not weaken v3 checks or rewrite historical evidence.
+Import of existing v3 history is conditional on a separate scope; a fresh
+successor does not require fictitious migration receipts or V1 import.
+See [successor evidence requirements](acceptance-evidence.md),
+[BYOS implementation specification](storage-byos.md) and [roadmap](delivery-roadmap.md).
+This document update grants no transaction, cloud-write or public-profile
+switch authorization.
 
 ## Assets
 
 Release binaries are version-injected and checked by
 `scripts/verify-release-assets.sh`. The checksum manifest must contain exactly
 the ten supported CLI/helper binaries in deterministic order.
+
+S01–S03 local storage libraries and Go/TS/mock tests are recorded in [BYOS section 9](storage-byos.md). They do not change the v3 gate, public profiles, release scope or approve a successor deployment. The next implementation gate is S04 protocol/ABI review and S05 integration.

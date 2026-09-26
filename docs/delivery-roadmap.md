@@ -1,11 +1,15 @@
 # Delivery Roadmap
 
-- Status: Active execution plan
+
+2026-09-13 implementation update: S01–S03 local protocol/storage/provider/config tests are PASS within [BYOS section 9](storage-byos.md). S04–S07, real AWS/R2, successor transactions and full Git/Web acceptance remain NOT PROVEN. Next: reviewed successor ABI/revision CAS/version dispatch, then CLI/Web integration.
+
+- Product acceptance status: NOT PROVEN; this document is an execution plan
 - Initial assessment: 2026-08-15
-- Latest assessment: 2026-08-31
-- Suite evidence baseline: `4fd6a07ad2f45eb4b0b09b58eeed1621ddc8f986`
-- Latest progress: P1.2 deployment evidence and P1.3 fresh-empty activation complete
-- Current public availability: None; checked-in Suite profiles remain intentionally empty
+- Scope update: 2026-09-13 (Asia/Shanghai), user-confirmed AWS S3 / R2 BYOS
+- Current fact baseline: [2026-09-13 audit](reconciliation-baseline-2026-09-12.md), source `0ba06f436558f12d97625b393767440cdd0f9862`
+- Historical Suite evidence anchor: `4fd6a07ad2f45eb4b0b09b58eeed1621ddc8f986` (HISTORICAL, not current product approval)
+- Mainnet target: Storage-neutral successor with user-owned AWS S3 / R2 buckets
+- Public built-in Directory profiles remain empty; local Web overrides are documented in the baseline
 - Quick overview: See [Project Status](project-status.md) for a high-level summary
 
 > [!IMPORTANT]
@@ -28,6 +32,9 @@ The surrounding documents retain their narrower authority:
 | [ADR 0001](adr/0001-evm-v2-runtime-and-migration-scope.md) | Accepted EVM V2 runtime, immutable Suite, migration, and platform decisions |
 | [ADR 0002](adr/0002-pluggable-pack-storage.md) | Accepted direction and required properties for pluggable pack storage |
 | [ADR 0003](adr/0003-fresh-evm-suite-and-v1-archive-preview.md) | Accepted fresh-empty Suite and V1 archive-preview-only cutover scope |
+| [ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md) | Confirmed first mainnet successor, AWS/R2 BYOS and public-repository scope |
+| [BYOS Specification](storage-byos.md) | Candidate manifest schema, canonical JSON, credentials, provider limits and failure contracts |
+| [Next Implementation Prompt](prompts/next-storage-implementation.md) | Direct start for S01–S03 local implementation; no live-resource authorization |
 | [Architecture](architecture.md) | Current immutable Suite and data-plane boundaries |
 | [EVM V2 Migration](evm-v2-migration.md) | Migration workflow, present implementation, and completion definition |
 | [Remaining Work](backlog.md) | Granular engineering and policy task inventory |
@@ -42,60 +49,30 @@ When this roadmap conflicts with an accepted ADR, the ADR wins. When it
 conflicts with real cutover evidence, the evidence wins and this roadmap must
 be corrected.
 
-## Current Delivery Truth (Updated 2026-08-31)
+## Current Delivery Truth (Scope Updated 2026-09-13)
 
-The status below describes the repository at the assessment baseline. Source
-presence, CI configuration, fixtures, and local probes do not establish public
-availability.
+This is a planning summary of the audit, not a new execution of its checks.
+Do not turn old CI, fixtures, source presence or fixed-block observations into
+current deployment approval. The existing R01–R08 findings remain unchanged.
 
-| Area | Current status | Blocking fact | Recent activity |
-|---|---|---|---|
-| Immutable EVM Suite source | Implemented; P0 source and CI evidence retained | Independent security approval and real cutover evidence remain open | 85+ commits since Aug 1 |
-| Testnet Suite deployment | ✅ P1.2 deployment and P1.3 fresh-empty activation complete | Public profiles remain empty until common E2E, security, finality, and approval evidence passes | 17 historical transactions validated, 9/9 Blockscout verified, active fixed-block Suite evidence retained |
-| Migration operator | ✅ Implemented and retained | Not required by the accepted fresh-empty scope; future V1 import needs a separate approval | 15/15 tests passing, 60.5% coverage |
-| Native Windows ordinary use | P0 source gates green; product acceptance blocked | Clean release-asset Git E2E and product acceptance remain open | P0 completed 2026-08-19 |
-| Current IPFS pack storage | Implemented current data path | Native Kubo is still required for push; clone/fetch use gateways | Stable; no changes needed for P1 |
-| Amazon S3 / Cloudflare R2 | Direction accepted; not implemented | Current Suite, CLI, and Web accept only `ipfs://` | P3-P5 planned work |
-| ZKP on Injective testnet | Research only | No circuit, proving pipeline, verifier, deployment, or product authorization integration exists | Z0 can proceed after P0 |
-| Mainnet | Not scheduled for release | Governance, storage scope, security, migration, and acceptance decisions remain open | Dependent on P1/P2 completion |
+| Area | Status | Planning consequence |
+|---|---|---|
+| Local solc/ABI, Go test/vet, Web checks in the audit | PASS | Limited to the commands and source recorded in the baseline |
+| Foundry, native Kubo and ordinary Windows CLI config path in that audit | BLOCKED | Unblock each relevant verification layer; not prerequisites for local storage protocol work |
+| Four EVM indexer scripts and claimed Moderation UI completion | FAIL | Do not use those scripts as a reliable storage/reaper implementation |
+| Existing v3 deployment/activation evidence | HISTORICAL | Keep explicit legacy testnet compatibility; not successor evidence |
+| Real IPFS/replication/Git/write-transaction E2E | NOT PROVEN | Requires corresponding resources, fixes and explicit write scope |
+| AWS S3 / R2 BYOS and successor | NOT PROVEN | Product scope is confirmed; start S01–S03 without waiting for live accounts |
+| Private repositories, other providers and ZKP product integration | NOT PROVEN | Separate future scope, not first-release BYOS gates |
+| Mainnet | NOT PROVEN | Direct successor target; no IPFS-only v3 mainnet intermediate release |
 
-The initial assessment found the following native Windows blockers. They are
-retained here for audit context; the P0 evidence record below shows that the
-source, environment, and CI baseline is now closed:
-
-- `core.autocrlf=true` checks out Suite Solidity and artifact JSON with CRLF,
-  while checked artifacts bind LF source bytes. The Solidity artifact and
-  deployment checks therefore fail.
-- Some tests assert English error text and fail under a Chinese Windows locale
-  even when behavior is correct.
-- Migration evidence tests assert POSIX `0600`, which is not a Windows DACL
-  guarantee.
-- The configured mainnet EVM endpoint uses the retired
-  `k8s.json-rpc.injective.network` hostname rather than the current official
-  endpoint.
-- The native Kubo smoke can spend its full download budget on one slow source
-  without reaching a fallback mirror.
-
-These findings were reproduced and closed by the retained P0 evidence set,
-which combines commit-bound CI with the documented native Windows probes. They
-are not deployment, migration, security, or product-acceptance evidence.
-
-At the current baseline, the retained run covers the LF/materialization,
-artifact/deploy, Foundry, race, and native Kubo gates. Stable coded errors and
-the current-user/`LocalSystem` DACL policy are covered by native Windows tests
-and local probes; host-specific identity details are intentionally summarized
-rather than committed.
-
-The retained CI and local verification ledger is [P0 Evidence
-Record](p0-evidence.md). The reviewed P0 commit
-`f6dcee9aa67255bfdff1867785435022df7ec5e9` is bound to the successful
-[run 32215415044](https://github.com/Hny0305Lin/next-injective-git/actions/runs/32215415044).
-The record separates this completed source/CI baseline from the independent
-security review, testnet deployment, wallet receipts, and product cutover gates
-that remain on the later milestones.
-Later commits may change Web, Monitor, or documentation files without changing
-the reviewed P0 source anchor. Any release assembled from a later commit still
-needs its own release CI and cutover evidence binding before publication.
+The earlier [P0 evidence record](p0-evidence.md) describes a historical
+reviewed commit. It does not close the current DACL/Forge/Kubo
+findings or substitute for current Windows/Linux release-asset acceptance.
+See [Project Status](project-status.md) for the fact summary and
+[ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md) for
+product choices. Do not reuse ambiguous old P1 subtask numbers for R01–R08
+repairs or S01–S07 storage tasks.
 
 ## Non-Negotiable Guardrails
 
@@ -106,7 +83,15 @@ needs its own release CI and cutover evidence binding before publication.
 - Do not claim S3 or R2 support from an endpoint, credential, operations
   script, emulator, or roadmap entry alone.
 - Do not place cloud credentials, bucket secrets, bearer tokens, presigned
-  URLs, or private endpoints on-chain, in Git remotes, or in logs.
+  URLs or private access details on-chain, in manifests, remotes, logs, browser
+  storage or ordinary config. Local credential references are not secrets.
+- Do not enable self-hosted/unknown S3-compatible production endpoints. Only
+  AWS S3 and Cloudflare R2 BYOS are first-release cloud providers.
+- Do not make a managed broker, private repositories, dual replicas or history
+  import an unapproved prerequisite for the first public BYOS implementation.
+- Do not run automatic unpin, object deletion or lifecycle cleanup. A bucket
+  administrator can damage availability; changing bytes requires a new
+  digest-derived object and an authorized ref commitment.
 - Verify pack size and a stable content digest before Git consumes downloaded
   bytes. An ETag is not a portable content digest.
 - Do not use ZKP to replace ordinary content hashing. Storage integrity remains
@@ -121,55 +106,61 @@ needs its own release CI and cutover evidence binding before publication.
 
 ```mermaid
 flowchart TD
-  P0["P0: Windows and EVM baseline"] --> P1["P1: Suite v3 testnet cutover"]
-  P1 --> P2["P2: Native Windows product acceptance"]
-  P0 --> P3["P3: Verified packstore boundary"]
-  P3 --> P4["P4: S3/R2 successor protocol"]
-  P4 --> P5["P5: Storage migration and cutover"]
-  P0 --> Z0["Z0: Isolated ZKP testnet prototype"]
-  P2 --> M0["M0: Mainnet candidate"]
-  P5 -. "if object storage is launch scope" .-> M0
-  Z0 -. "only if product-approved" .-> M0
-  S0["Independent security approval"] --> M0
-  G0["Production governance decision"] --> M0
+  Local[Local protocol and fixtures] --> P3[P3: S01-S02 canonical manifest and packstore]
+  P3 --> P4[P4: S03-S06 AWS/R2 and successor]
+  P4 --> P2[P2: Native release-asset product acceptance]
+  P4 --> M0[M0: Mainnet successor candidate]
+  P2 --> M0
+  P4 -. only if history import approved .-> P5[P5: S07 conditional history import]
+  P5 -. only for selected imported scope .-> M0
+  P0[P0 historical baseline / scoped repairs] --> P1[P1: Existing v3 testnet evidence]
+  P0 -. relevant fixes only .-> P4
+  S0[Independent security and finality approval] --> M0
+  G0[Production governance and release approval] --> M0
+  Z0[Isolated ZKP experiment] -. only if later product-approved .-> M0
 ```
 
-P1 may use the current IPFS data path on testnet. If object storage is a mainnet
-launch requirement, mainnet should target the storage-neutral successor rather
-than deploy Suite v3 and immediately require another mainnet migration.
+**Object storage is a confirmed mainnet launch requirement.** P4 is mandatory,
+not conditional on another product decision. Existing v3 may remain an explicit
+IPFS testnet path; publishing it publicly is not a prerequisite to implementing
+S01–S03 or validating a fresh successor. No existing v3/V1 history is imported
+without a separate approved scope. One verified AWS or R2 location per object
+is sufficient; both adapters must receive their own acceptance.
 
 ## Milestone Summary
 
-Estimates are engineering ranges, not release commitments. They exclude
-external security-review scheduling, funding, governance approval, and third-
-party service delays.
+No new release date is promised. Older engineering estimates are not evidence
+or a current schedule. Scope concrete PRs after S01; account, review and live
+resource delays do not block independent local work.
 
-| ID | Milestone | Initial status | Estimate | Primary exit condition |
-|---|---|---|---:|---|
-| P0 | Windows and EVM baseline repair | Complete for source/CI baseline; security and cutover follow-up | 2-4 days (historical) | `f6dcee9` has green native Windows/Linux/Foundry/race gates and retained local/CI evidence |
-| P1 | Suite v3 testnet deployment and cutover | P1.2/P1.3 complete; blocked by product acceptance and approval | Remaining work depends on external review | Active verified Directory plus complete common cutover evidence |
-| P2 | Native Windows product acceptance | Blocked by P1 | 3-5 days | Clean Windows release-asset Git E2E without WSL2 or `injectived` |
-| P3 | Verified packstore boundary and streaming | Planned; may proceed in parallel with P1 | 4-7 days | IPFS behavior preserved behind the new boundary; all downloads verify digest and size |
-| P4 | S3/R2 successor protocol and adapters | Blocked by design gate | 2-3 weeks | Successor Suite and real AWS/R2 provider workflows pass |
-| P5 | Historical storage migration and cutover | Blocked by P4 | 1 week | Hash-bound CID mapping, dual-read rollback window, and provider E2E pass |
-| Z0 | Isolated ZKP testnet prototype | Can run after P0 | 3-5 days | Useful proof statement verified on testnet with reproducible benchmarks |
-| M0 | Mainnet candidate | Not scheduled | TBD | P1/P2, conditional P5, governance, finality, and independent approval are complete |
+| ID | Milestone | Status | Exit condition |
+|---|---|---|---|
+| P0 | Earlier native source/CI baseline | HISTORICAL | Keep commit-bound evidence; recheck relevant current failures independently |
+| P1 | Existing v3 testnet product acceptance | NOT PROVEN | Complete its own evidence if that legacy publication is pursued; no mainnet v3 launch |
+| P2 | Native Windows/Linux product acceptance | NOT PROVEN | Both BYOS profiles complete clean release-asset Git workflows without Kubo/WSL2/injectived |
+| P3 | S01–S02 manifest and verified packstore | NOT PROVEN | Go/TS canonical vectors, streaming and verification tests; explicit legacy boundary |
+| P4 | S03–S06 AWS/R2 and successor | NOT PROVEN | Local adapters/protocol/clients plus separately authorized real provider and successor E2E |
+| P5 | S07 optional historical import | NOT PROVEN | Only for approved import scope: byte-preserving mapping, reachability and rollback evidence |
+| Z0 | Isolated ZKP experiment | NOT PROVEN | Independent reviewed experiment; not a BYOS prerequisite |
+| M0 | First mainnet successor | NOT PROVEN | P4/P2 and scope-appropriate import evidence, finality, governance, security and approval |
 
 ## P0: Windows And EVM Baseline Repair
 
-**Status: Complete for source, environment, and CI baseline.** Reviewed commit
+**Status: HISTORICAL.** The earlier reviewed commit
 `f6dcee9aa67255bfdff1867785435022df7ec5e9` is bound to the successful [CI run
 32215415044](https://github.com/Hny0305Lin/next-injective-git/actions/runs/32215415044),
 including native Windows, Linux, Foundry, race, Kubo, and Web jobs. The local
 Windows locale and DACL probes are recorded separately in [P0 Evidence
-Record](p0-evidence.md). This completion does not satisfy the independent
+Record](p0-evidence.md). These historical claims were not re-executed by this
+documentation update; the current audit separately records BLOCKED DACL,
+Forge and Kubo checks. This record does not satisfy the independent
 security review, testnet deployment, migration, wallet, or product cutover
 gates.
 
 ### Deliverables
 
-The following P0 controls and evidence are now in place for the reviewed
-commit:
+The following are the historical P0 control requirements and evidence scope,
+not assertions that today's full environment or product acceptance passes:
 
 1. Pin LF for Suite Solidity, ABI JSON, and checked artifact JSON in
    `.gitattributes`. Exercise the artifact gate after a Windows checkout with
@@ -209,24 +200,26 @@ commit:
 
 ## P1: Suite V3 Testnet Deployment And Cutover
 
-**Status:** P1.1, P1.2, and P1.3 complete. The next critical work is P1.4-P1.6 product E2E, finality, security review, approval, and the final checksum-bound gate.
+**Product acceptance status: NOT PROVEN.** Existing operator/deployment/activation
+records are HISTORICAL. This is an explicit legacy v3 testnet track, not the
+first mainnet target or a prerequisite for local BYOS implementation.
 
 ### Deliverables
 
-1. ✅ **P1.1 Complete (2026-08-22):** Implement the reviewed operator runner for the deterministic calldata
+1. **P1.1 / HISTORICAL (2026-08-22):** Retain the operator runner for the deterministic calldata
    manifest. It must use the encrypted EVM keystore, preserve an append-only
    signed journal and receipts, resume safely after uncertain receipts, and
    emit fixed-block imported-state evidence. (15/15 tests passing, 60.5% coverage, go fmt/vet/build passing)
-2. ✅ **P1.2 Complete (2026-08-29):** Revalidate all nine creation transactions and eight
+2. **P1.2 / HISTORICAL (2026-08-29):** Retain evidence for all nine creation transactions and eight
    configuration calls, historical runtime/templates, immutable values, and
    Directory bindings in no-clobber `deployment.json`; verify 9/9 contracts on Blockscout.
-3. ✅ **P1.3 Complete (2026-08-29):** Bind the `fresh-empty-suite` scope, prove zero
+3. **P1.3 / HISTORICAL (2026-08-29):** Retain the `fresh-empty-suite` scope and zero
    import counts and matching empty roots for all modules, attest no username
    escrow liability, atomically activate, and retain fixed-block Suite evidence.
-4. ⏳ **P1.4:** Execute MetaMask writes and clean Linux/Windows Git E2E, including
+4. **P1.4 / NOT PROVEN:** After explicit authorization, execute MetaMask writes and clean Linux/Windows Git E2E, including
    uncertain-receipt handling and V1 archive-preview isolation.
-5. ⏳ **P1.5:** Complete finality evidence and deep source/security review.
-6. ⏳ **P1.6:** Obtain the independent hash-bound cutover approval, bind the complete
+5. **P1.5 / NOT PROVEN:** Complete finality evidence and deep source/security review.
+6. **P1.6 / NOT PROVEN:** Obtain the independent hash-bound cutover approval, bind the complete
    evidence directory, generate `cutover-evidence.sha256`, and pass the release gate.
 
 ### Exit Criteria
@@ -254,140 +247,141 @@ Native Windows has three distinct scopes:
 - Rename any WSL bootstrap as an explicit legacy operator path; it must not be
   presented as normal EVM V2 setup.
 - Add managed native Kubo `start`, `stop`, `status`, and on-demand restart for
-  the current IPFS profile.
+  the explicit legacy IPFS profile only; this is not a dependency for BYOS.
 - From a clean Windows VM and release artifacts only, complete `init`, `push`,
   `clone`, `fetch`, `pull`, incremental push, force push, ref deletion, and
   explicit V1 archive-preview isolation.
-- Record that WSL2 and `injectived` are absent. An accepted future S3/R2 profile
-  must additionally record that Kubo is absent.
+- Record that WSL2 and `injectived` are absent. Both first-release AWS S3 and
+  R2 profiles must additionally run without a Kubo process or iGit IPFS service
+  access. Successor writes initially use self-contained packs even when the
+  Git operation is an incremental push.
 
-## P3: Verified Packstore Boundary And Streaming
+## P3: S01–S02 Canonical Manifest, Packstore Boundary And Streaming
 
-This phase changes client structure while preserving the current IPFS protocol.
-
-### Proposed Client Boundary
-
-```text
-Writer.PutIfAbsent(ctx, source{path, size, sha256}) -> receipt
-Writer.VerifyDurable(ctx, receipt) -> error
-Reader.Open(ctx, packRef) -> stream
-```
+Status: **NOT PROVEN**. Start locally now; no live cloud account, Kubo,
+Foundry installation or transaction approval is required for this slice.
 
 ### Deliverables
 
-- Introduce `cli/internal/packstore`; adapt IPFS through it before adding a new
-  provider.
-- Replace provider-specific `needsKubo` branching with profile capabilities and
-  provider-specific doctor checks.
-- Generate packs into native temporary files and compute size/SHA-256 while
-  streaming. Do not retain unbounded packs in memory.
-- Download to a temporary file, verify exact size and SHA-256, close and reopen
-  it on Windows, and only then run `git index-pack`.
-- Preserve the existing durability saga: durable data first, chain ref second,
-  local cleanup last. A failed chain transaction retains a retryable object.
-- Preserve thin-pack ordering. Migration copies original pack bytes and order;
-  it must not silently repack history.
-- Add explicit browser pack-size limits and Web Crypto digest verification
-  before the Web application ingests bytes.
+- Implement S01 canonical JSON (RFC 8785 JCS baseline), strict schema/types,
+  deterministic keys and Go/TypeScript byte-for-byte digest fixtures. Keep the
+  manifest digest outside its own body. The exact schema/ABI is frozen by
+  those tests, not by inventing a deployed successor version in documentation.
+- Introduce a storage boundary under `cli/internal/packstore` with explicit
+  reader/writer/capability and typed verification results. Adapt existing IPFS
+  first so its behavior remains covered, then implement the cloud adapters.
+- Generate/download into bounded task-owned temporary files; stream raw
+  SHA-256 and size, verify before Git ingestion, close/reopen on Windows.
+- Separate legacy v3 IPFS references from successor commitments. The former
+  do not magically gain a chain-bound raw SHA-256/size; tests must not derive
+  their expected digest from the same downloaded bytes and call it proof.
+- Give successor writers self-contained, non-thin packs first. Never use other
+  refs as undeclared dependencies. Preserve legacy URI order and bytes.
+- Add browser size budgets and canonical/digest checks before isomorphic-git.
 
 ### Exit Criteria
 
-All existing IPFS tests and clean Git E2E remain unchanged from the user's
-perspective, while corrupted, truncated, extended, or substituted content is
-rejected before Git consumption.
+Protocol vectors and local real-Git fixtures pass; malformed, truncated,
+extended or substituted successor content is rejected before ingestion.
+Legacy tests do not regress. Real IPFS/Kubo verification remains R05 and is
+reported separately; its absence does not block S03 AWS/R2 work.
 
-## P4: S3/R2 Successor Protocol And Adapters
+## P4: S03–S06 AWS S3 / R2 BYOS And Successor
 
-ADR 0002 accepts the direction but does not yet freeze the successor ABI. The
-following is the working proposal and must be approved in a detailed successor
-protocol ADR before contract implementation:
+Status: **NOT PROVEN**. [ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md)
+settles the product gate: first mainnet targets this successor, only AWS S3
+and R2, user-owned buckets, public repositories, independent reader config,
+canonical JSON, user-paid costs and no mandatory dual replicas or broker.
 
-```text
-PackRef {
-  kind: LegacyIPFS | ContentSHA256
-  logicalProfileId: bytes32
-  sha256: bytes32
-  size: uint64
-}
+### S03: Local Provider Implementation
 
-object key = packs/v1/sha256/<first-two-hex>/<64-lowercase-hex>.pack
-```
+- Separate AWS and R2 capability profiles over reviewed, pinned SDK versions.
+  Restrict production write endpoints to the selected cloud provider; local
+  test transports must not expose a generic self-hosted production option.
+- Add local writer/reader credential references and repository storage binding.
+  Keep network/Suite trust configuration independent. No secret values in
+  ordinary config, manifests, remotes, logs or Web storage.
+- Implement conditional create, verified duplicate reuse, full-byte read-back,
+  bounded retries, cancellation and resumable local upload records. Treat
+  incomplete multipart, unknown completion and cloud cleanup as explicit
+  states; do not automatically delete remote objects or abort uploads.
+- Test each provider's request/error behavior. Never infer R2 conditional
+  multipart completion from PutObject support. Until proven safe, restrict the
+  path to bounded single PUT and reject larger packs rather than overwrite.
+- Document stable anonymous public GET and browser CORS; authenticated CLI
+  readers use their own read identity. No writer credential sharing or hosted
+  GET broker. Private bucket access is not private-repository support.
 
-`logicalProfileId` names a resolvable storage domain, not AWS or R2. The same
-digest may be mirrored across providers without rewriting every on-chain ref.
-Bucket names, account IDs, credentials, and expiring URLs stay off-chain.
+The [BYOS specification](storage-byos.md) contains the dated official provider
+references, capability distinctions and failure matrix. External documentation
+and local contract tests are not real-provider acceptance.
 
-### Product Decision Gate
+### S04–S05: One Versioned Protocol Across The Stack
 
-The first release should use platform-managed logical profiles. Arbitrary
-bring-your-own private buckets are blocked until endpoint discovery, signed
-profile distribution, authorization, disaster recovery, and private repository
-encryption/key distribution are designed. ZKP does not solve those problems.
+- Implement the reviewed successor ref state/queries/events: manifest digest,
+  size and bootstrap locator, revision/CAS, context validation and versioned
+  bounds. Keep immutable Directory and module responsibility checks.
+- Review same-commit manifest changes, force-with-CAS, delete/recreate, fork
+  manifests, fresh bootstrap and unknown-version rejection together.
+- Align ABI/artifacts, Go chain types/decoders, remote helper, public Web reader,
+  indexer interfaces and evidence schema. Preserve an explicit v3 legacy path;
+  no HTTPS disguised as IPFS and no object payload sent to today's v3 Suite.
+- Drive the entire local publication/read/retry flow with fake chain/provider
+  transports and real Git fixtures. Current indexer scripts marked FAIL are
+  not the basis for live indexing or cleanup.
 
-### Provider Common Denominator
+### S06: Separately Authorized Real Validation
 
-| Capability | Amazon S3 | Cloudflare R2 | Protocol rule |
-|---|---|---|---|
-| API client | AWS SDK Go v2 | AWS SDK Go v2 with `region=auto` and R2 base endpoint | Keep provider options separate |
-| Create-only upload | Conditional `If-None-Match: *` | Conditional `If-None-Match: *` | A duplicate is accepted only after verifying the existing object |
-| Upload integrity | `ChecksumSHA256` plus size | `Content-MD5`, application SHA-256 metadata, and managed re-read | Chain-bound SHA-256 is authoritative |
-| Read consistency | Strong read-after-write | Strong read-after-write | Still verify bytes end to end |
-| Retention | Versioning and Object Lock | Native Bucket Locks | Retention is operational enhancement, not reference syntax |
-| Encryption at rest | Provider-managed options | Automatic AES-256; SSE-C optional | Never assume provider headers are portable |
-
-Never use ETag as SHA-256, especially with multipart uploads or encryption.
-R2 does not implement all S3 checksum, versioning, Object Lock, ACL, tagging,
-or SSE-KMS features, so sending one undifferentiated AWS request shape is not
-accepted.
-
-### Managed Upload Flow
-
-1. The client creates a temporary pack and computes exact digest and size.
-2. The authorization service binds owner, repository, ref, digest, size, key,
-   content type, expiry, and one-time request ID.
-3. It returns a short-lived conditional presigned PUT and required headers.
-4. The client uploads; the managed service independently verifies durable bytes.
-5. Only the verified receipt permits the chain ref update.
-6. Presigned URLs are bearer tokens and must never enter logs or persistent
-   configuration.
+Real bucket resources, cloud write scope and testnet transactions require
+explicit user authorization. Missing accounts do not stop S01–S05. In the
+current task, live integration stays BLOCKED or NOT PROVEN as appropriate.
 
 ### Exit Criteria
 
-- Unit and provider-contract tests cover new upload, duplicate `412`, retryable
-  `409/429/5xx`, authorization expiry, wrong size, wrong digest, truncation,
-  extension, content transformation, early close, and orphan handling.
-- Protected live workflows exercise real S3 and R2 small/multipart objects,
-  CORS, presigned PUT/GET, provider retention configuration, and cleanup.
-- Native Windows and Linux complete the full Git workflow for both accepted
-  providers with no Kubo process and no secret in config, output, or logs.
-- The successor Suite, ABI, CLI, Web, migration schema, and evidence gate agree
-  on one canonical reference encoding.
+- Go/TS canonical and provider tests cover the specification's positive and
+  adversarial cases; byte verification always precedes ref publication/Git
+  ingestion. Config, error, log and journal paths expose no secret values.
+- Real AWS and R2 tests independently exercise supported small/multipart
+  paths, conditional duplicates/conflicts, public GET/CORS and independent
+  reader permissions. Unsupported multipart remains an explicit size limit,
+  not an untested promise. Live canary object scope and costs are recorded.
+- An explicitly deployed successor and matching clients complete no-Kubo
+  Windows/Linux push/clone/fetch/pull/new-ref/force/ref-delete workflows,
+  manifest updates, concurrency and uncertain-receipt/finality recovery.
+- Successor protocol, source/ABI, chain state, receipts and evidence all bind
+  the same reviewed version and commit. Old v3 evidence proves none of this.
 
-## P5: Historical Storage Migration And Cutover
+Managed public profiles, mandatory dual replication, presigned brokers,
+private-repository encryption and generic S3-compatible services are not exit
+criteria for P4.
 
-### Deliverables
+## P5: S07 Conditional Historical Storage Import
 
-- At a fixed finalized view, enumerate every historical pack URI in original
-  order and fetch the original bytes.
-- Build a hash-bound `CID -> sha256, size, object key, provider receipt`
-  manifest. Copy bytes; do not regenerate thin packs.
-- Deduplicate by digest and independently read/verify every destination object.
-- Import successor references while preserving historical aliases and ref pack
-  ordering.
-- Retain IPFS reads for a reviewed rollback window. Do not delete current pins
-  merely because successor writes have started.
-- Implement orphan and unreachable-object GC from finalized chain inventory
-  with a long grace period. Bucket locks and lifecycle rules must not delete
-  reachable packs.
-- Define compaction/self-contained pack policy before the existing per-ref pack
-  limit becomes an operational failure.
+Status: **NOT PROVEN**. This phase applies only if an explicit scope chooses
+existing v3 history import. A fresh successor is the recommended validation
+start; Cosmos V1 stays archive-preview-only under ADR 0003.
+
+### Deliverables For An Approved Import
+
+- At a finalized fixed view, inventory historical pack URIs in original order;
+  preserve source bytes, compute CID-to-raw-SHA-256/size mapping, and verify all
+  destination objects. Do not regenerate historical thin packs silently.
+- Determine the full dependency closure for each ref. Reject or separately
+  repair legacy cross-ref dependencies rather than merely copying broken
+  metadata into an otherwise context-bound successor manifest.
+- Bind source/destination repo/ref mapping, aliases and new manifest contexts;
+  verify all references without assuming source repo IDs remain unchanged.
+- Keep explicit legacy reads and a reviewed rollback period. Do not unpin old
+  content or remove unreachable objects just because successor writes begin.
+- Record retention/compaction/orphan policy for later review; automatic GC,
+  lifecycle deletion and mandatory extra replicas are not enabled by this PR.
 
 ### Exit Criteria
 
-Mixed legacy/object-reference tests, rollback, finality, native Windows/Linux,
-real provider, and mainland-network acceptance all pass. The successor cutover
-requires its own evidence set; the Suite v3 IPFS evidence cannot be reused as
-proof of S3/R2 support.
+Scope-bound inventory, mapping, destination read-back, independent Git
+reachability and rollback tests pass with their own evidence. An import is not
+mandatory merely because AWS/R2 is mandatory for mainnet. If no history import
+is selected, document the fresh scope and do not invent migration receipts.
 
 ## Z0: Isolated ZKP Testnet Prototype
 
@@ -451,15 +445,20 @@ proof transaction test, a gas benchmark, or product acceptance evidence.
 
 Mainnet remains unscheduled until all of the following are explicit:
 
-- Decide whether object storage is a launch requirement. If yes, target the
-  storage-neutral successor rather than Suite v3.
+- Enforce the confirmed scope: launch the storage-neutral successor with
+  AWS S3 / R2 BYOS, not an IPFS-only Suite v3 mainnet. Do not reopen this as an
+  undecided launch option.
 - Define multisig membership, quorum, timelock, emergency powers, and key
   separation.
 - Approve platform fee, treasury, username claim, finality, reorg, evidence
   retention, and independent reviewer policies in
   [Open Decisions](open-questions.md).
-- Complete migration, native Windows/Linux, Web, storage, finality, security,
-  and governance evidence for the exact release commit.
+- Complete successor-native Windows/Linux, public Web, both storage providers,
+  finality, security and governance evidence for the exact release commit.
+  Add history-import evidence only for an explicitly chosen import scope.
+- Extend the current v3-only evidence gate with a separately reviewed
+  successor protocol schema before any public profile switch. A v3 gate PASS
+  cannot authorize a successor deployment.
 - Treat ZKP as optional unless a separately approved product requirement makes
   it part of the successor.
 
@@ -467,11 +466,12 @@ Mainnet remains unscheduled until all of the following are explicit:
 
 | Layer | Every PR | Protected/manual | Release evidence |
 |---|---|---|---|
-| Go/CLI | Unit, race, vet, Windows/Linux build | Native Kubo and failure injection | Clean release-asset Git E2E |
+| Go/CLI | Unit, race, vet, Windows/Linux build | Provider-specific failure injection; Kubo only for legacy IPFS | Clean release-asset no-Kubo BYOS Git E2E |
 | Solidity | Locked solc, ABI/artifact parity, Foundry unit/invariant/gas | Deployment dry run | Nine receipts, source/runtime verification |
 | Web | API tests, typecheck, production build | Wallet/RPC error injection | Real MetaMask receipts |
-| Migration | Deterministic plan/manifest fixtures | Runner resume and uncertain receipt | Signed journal, receipts, fixed-block parity |
-| S3/R2 | Provider contract fixtures on Windows/Linux | Real AWS/R2 small and multipart canaries | No-Kubo full Git E2E and migration evidence |
+| Manifest | Go/TS JCS bytes/digests, strict schema and bounds | Browser public GET/CORS and corruption tests | Chain commitment to verified manifest/pack causality |
+| Migration (conditional) | Deterministic import fixtures | Runner resume and uncertain receipt | Signed journal, receipts, fixed-block parity only for approved import |
+| S3/R2 | Separate provider contract fixtures on Windows/Linux | Authorized real small and supported multipart canaries | Both providers, no-Kubo Git E2E, independent reader and secret checks |
 | ZKP | Circuit tests and verifier vectors | Testnet proof/replay/adversarial cases | Separate audit and approval if productized |
 
 The canonical evidence file set is defined in
@@ -482,7 +482,7 @@ The canonical evidence file set is defined in
 | Risk | Required control |
 |---|---|
 | Source readiness is mistaken for availability | Empty public profiles and evidence-gated release checks |
-| Immediate second immutable migration | Use v3 for testnet; decide storage scope before mainnet |
+| Immediate second immutable migration | Keep v3 explicit/legacy; first mainnet directly targets the confirmed successor |
 | Windows line-ending hash drift | Attribute-pinned LF plus Windows artifact gate |
 | Locale-dependent behavior tests | Stable typed errors; translation tests remain separate |
 | Windows secret exposure | DACL/credential provider; never rely on POSIX modes alone |
@@ -490,7 +490,9 @@ The canonical evidence file set is defined in
 | Mutable or transformed object bytes | Digest-derived keys, no transform, size/SHA-256 verification |
 | Provider API mismatch | Separate AWS/R2 capability profiles and live canaries |
 | Thin-pack history corruption | Preserve original bytes and URI order during migration |
-| Presigned URL leakage/reuse | Short TTL, exact signed headers, one-time authorization state, redaction |
+| BYOS credential exposure | Independent writer/reader identities, local credential references, no browser secret, redaction |
+| Private bucket mistaken for private Git | Public-repository scope; no encryption promise or writer-secret sharing |
+| R2 multipart semantics assumed from AWS | Separate capability tests; bounded single PUT until safe completion is proven |
 | Premature garbage collection | Finalized inventory, long grace, rollback window, retention-aware GC |
 | Mainland provider reachability | Real network sampling and stable read-gateway/failover strategy |
 | ZKP replay or front-running | Chain/contract/protocol/recipient/action/repo binding, spent-nullifier and epoch tests |
@@ -498,7 +500,10 @@ The canonical evidence file set is defined in
 
 ## Implementation References
 
-These references are design input, not project acceptance evidence.
+These references are design input, not project acceptance evidence. The
+AWS/R2/JCS sources rechecked on 2026-09-13 are listed in the
+[BYOS specification](storage-byos.md). Other historical discovery links below
+are not a claim of fresh validation or an instruction to install tools.
 
 ### Injective And EVM
 
@@ -528,7 +533,6 @@ These references are design input, not project acceptance evidence.
 - [Gitea storage abstraction](https://github.com/go-gitea/gitea/blob/5b7b00477a7e6658483be8f6b1cf8325e9adf338/modules/storage/storage.go#L76)
 - [restic S3 backend](https://github.com/restic/restic/blob/a80be1478a4c537f8396e0db2b05120aa78f11e0/internal/backend/s3/s3.go#L284)
 - [rclone R2 guidance](https://github.com/rclone/rclone/blob/6e0c71bd276bd587403fd00e88ef195aa6996789/docs/content/s3.md#L5439)
-- [MinIO Go client](https://github.com/minio/minio-go)
 - [Git LFS](https://github.com/git-lfs/git-lfs) for content-OID and transfer-protocol patterns
 
 ### ZKP
@@ -575,24 +579,31 @@ skill was installed during this assessment.
 
 ## PR Sequence
 
-1. **Completed - PR 1, native baseline:** LF attributes, locale-independent
-   errors, Windows permission abstraction/tests, mainnet RPC, bounded Kubo
-   fallback, and a commit-bound Windows/Linux CI run. See [P0 Evidence
-   Record](p0-evidence.md).
-2. **PR 2 - Operator runner:** append-only journal, safe resume, receipt and
-   fixed-block evidence, with no public profile change.
-3. **PR 3 - Testnet evidence:** deployment and fresh-empty activation evidence
-   are complete; add Git/Web/finality/security evidence, then publish the testnet Directory.
-4. **PR 4 - Windows distribution:** installer, managed Kubo lifecycle, and
-   release-asset clean-VM E2E.
-5. **PR 5 - Packstore boundary:** streaming packs and verified IPFS reads with
-   behavior preserved.
-6. **ADR/PR 6 - Successor storage protocol:** freeze canonical PackRef,
-   profile discovery, managed/BYO scope, retention, GC, and migration.
-7. **PR 7+ - S3/R2 and successor:** provider adapters, managed authorization,
-   successor Suite/clients, historical mapping, provider E2E, and cutover.
-8. **Parallel Z0 PRs:** isolated gnark circuit, verifier, deployment scripts,
-   adversarial tests, and benchmark evidence; no Suite integration.
+Start the next chat with the [implementation prompt](prompts/next-storage-implementation.md).
+These are scoped changes, not instructions to create commits or push branches
+without the user's request.
+
+1. **S01 — Protocol fixtures:** canonical JSON/JCS, manifest types, immutable
+   keys, size/security limits and Go/TS cross-implementation vectors.
+2. **S02 — Storage boundary:** streaming pack generation/verified reads,
+   explicit legacy IPFS adapter and task-owned temporary-file lifecycle.
+3. **S03 — BYOS cloud adapters:** separate AWS/R2 provider/config/credential
+   paths, local contract tests, independent readers and failure recovery.
+4. **S04 — Successor protocol:** reviewed versioned contract state/events,
+   CAS/fork/bootstrap, matching ABI/Go/Web decoders and evidence schema. Keep
+   legacy artifacts and deployed evidence distinct.
+5. **S05 — Local vertical flow:** remote-helper push/fetch and public Web
+   manifest reads against fake cloud/chain transports with real Git fixtures;
+   no cloud account or live transaction needed.
+6. **S06 / P2 — Authorized live acceptance:** real AWS and R2 canaries, public
+   CORS, successor testnet receipts/finality and clean Windows/Linux no-Kubo
+   release-asset Git E2E. Public profile changes remain separately gated.
+7. **Conditional S07:** existing v3 history mapping/import only if approved;
+   no automatic unpin, GC or requirement to migrate V1.
+
+R01–R08 repairs may proceed independently when relevant. Do not require all
+legacy issues, broker design, private encryption or dual replication to finish
+before S01–S03. Z0 remains a separately authorized experiment, not this task.
 
 ## Updating This Roadmap
 

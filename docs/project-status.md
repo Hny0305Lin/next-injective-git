@@ -1,7 +1,75 @@
+# Project status: reconciled evidence entry
+
+复核日期：2026-09-13（Asia/Shanghai）；基线文件名按任务指定保留 2026-09-12。
+源码：`dev` / `0ba06f436558f12d97625b393767440cdd0f9862`。
+
+当前事实只以 [唯一事实基线](reconciliation-baseline-2026-09-12.md) 为准；本页是入口或摘要，不是另一份验收报告。
+状态限定为 PASS、FAIL、BLOCKED、NOT PROVEN、HISTORICAL，定义和原始命令输出见基线。
+
+The single current source of status is the linked baseline. Local checks, live read-only RPC, historical deployment evidence, and unproven product acceptance are explicitly separated.
+
+| 核对对象 | 状态 | 已证实的范围 / 剩余问题 |
+|---|---|---|
+| 九合约源码、solc 0.8.24、ABI/artifact、生产尺寸 | PASS | 九个生产合约均存在；`npm run check` 通过。测试合约 SuiteProtocolParityTest 有 25537 > 24576 字节警告。 |
+| Foundry build / test / gas | BLOCKED | 当前 PATH 无 forge；未执行 Foundry 验收，不能用 solc 代替。 |
+| 测试网 Suite 固定区块只读核对 | PASS | chain 1439；区块 139852506 / 0x855fada；state=1(active)，version=3；七模块地址和 code hash 一致。 |
+| Go 本地测试、vet | PASS | `go test -count=1 ./...`、`go vet ./...` 退出 0；包括单元和 mock/fixture，不能推导真实写入。 |
+| CLI 限定代码只读 RPC | PASS | 既有 evm-demo-inspect 的 code-addresses 模式真实读取九个合约；latest 模式，不能冒充固定区块完整 VerifySuite。 |
+| 普通 igit suite verify | BLOCKED | 隔离无密钥配置遇到 Windows DACL Access is denied；详细 inspect 也在 username progress 处超时。 |
+| Web typecheck / API / build | PASS | 73 tests passed / 0 failed；构建改用全新 ignored 输出目录且关闭 emptyOutDir，有 Vite/PURE warning。 |
+| Web Moderation UI 完成声明 | FAIL | 文档声称 Moderation UI 已实现，但对应文件实际不存在。三个指定文件均未创建；modules.ts API 不等于 UI。 |
+| 四个 EVM 索引脚本 | FAIL | 仍为 untracked；错误 Topic、SHA-256 模块 ID、错误 selector、placeholder ABI、checkpoint/reorg/unpin 缺陷。 |
+| 当前本机真实 Kubo / recursive pin | BLOCKED | PATH 无 ipfs、未观察到节点/监听，127.0.0.1:5001 拒绝连接；生命周期测试 SKIP。 |
+| 真实 replication、gateway pack、Git 完整性、EVM 写入、push/fetch E2E | NOT PROVEN | 本轮没有写交易或真实 Kubo 上传；mock 不作为闭环证据。 |
+| 过去部署、激活、Blockscout 记录 | HISTORICAL | 证据绑定 4fd6a07ad2f45eb4b0b09b58eeed1621ddc8f986；当期收据不等于当前产品验收。 |
+| 九合约完整验收、产品切换、生产部署 | NOT PROVEN | 缺 Foundry、真实 E2E、finality、安全审查、批准及 checksum 门禁。 |
+
+IPFS + EVM + CLI 完整闭环尚未验证。未取得可复现的全项目 91% coverage 证据；撤销该数字作为当前指标的效力。
+
+公开内置 CLI/Web profile 的 Directory 为空；Web `loadConfig()` 在本地 origin 会使用 `0xf8844F90887731FFd607E1f59e39a3918F6eAb35`，并可载入已有 localStorage Suite 设置，因此“所有路径都为空”不成立。该地址不是本轮核对的 Directory，本轮未查询它。
+
+## Confirmed First-Release Scope (2026-09-13, Not New Acceptance Evidence)
+
+First mainnet directly targets a storage-neutral successor with user-owned
+AWS S3 / Cloudflare R2 buckets, not an IPFS-only v3 intermediate launch.
+Self-hosted object stores, MinIO, other clouds and arbitrary S3-compatible
+write endpoints are excluded. Repositories are public; bucket owners pay
+their cloud costs, manifests use canonical JSON, readers use independent
+local configuration and dual replicas are not mandatory. Private repositories,
+E2EE and managed brokers are later scope. The BYOS path must not depend on
+Kubo, the IPFS network or iGit IPFS services; legacy v3 stays explicit.
+Content edits publish new pack/manifest/ref commitments, never different bytes
+at an existing digest-derived key.
+
+Implementation and real AWS/R2/successor acceptance remain **NOT PROVEN**.
+The baseline tests above were not rerun by this documentation change. See
+[ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md),
+[implementation specification](storage-byos.md), [S01–S07 backlog](backlog.md),
+and the [next-window prompt](prompts/next-storage-implementation.md).
+
+以下文件保留原样并统一标记为：**“历史迁移草稿/未对齐报告，不作为当前项目状态依据。”**
+
+- 根目录 MIGRATION-COMPLETE.md、MIGRATION-REPORT-P1P2.md、A01-BXX-MIGRATION-REPORT.md，以及其余 MIGRATION-/PRIORITY- 草稿。
+- docs/a11-storage-indexer-v2.md、docs/PRIORITY-MAPPING.md。
+- docs/evm-v2-handoff.md、docs/liveagent-evm-v2-context.md、docs/project-knowledge-base-zh.md 中的旧状态快照属于 HISTORICAL；架构描述需按当前代码逐条引用。
+
+旧文档中的 P1.1/P1.2/P1.3 分别被用于“operator/部署/激活”和“Moderation/索引/ABI”两套含义，不能互换。旧问题使用 R01–R08；新增存储任务使用 S01–S07。
+
+Current acceptance is NOT PROVEN. Foundry, native Kubo, and the standard CLI configuration path are BLOCKED in this environment. Real transactions and production deployment are outside this audit authorization. See [the independent follow-up task list](backlog.md).
+
+
+---
+
+<details>
+<summary>HISTORICAL：本轮入场前原文（已失去当前状态依据效力，完整保留未提交内容）</summary>
+
+以下为历史迁移草稿/未对齐报告，不作为当前项目状态依据。原文 SHA-256：`d0a5c36f792ca4a8a1487dcc05d3699e58f14c8ceb042eebb5475998f1f7014a`。下方所有旧状态、勾选、百分比、路径与执行指令仅作审计引用；正确状态以本页上方和唯一事实基线为准。
+
+`````markdown
 # Project Status Overview
 
 - Status: P1.2 deployment evidence and P1.3 fresh-empty activation complete; P1.4-P1.6 acceptance in progress
-- Last Updated: 2026-08-31
+- Last Updated: 2026-09-11
 - Current Suite Evidence Baseline: `4fd6a07ad2f45eb4b0b09b58eeed1621ddc8f986`
 - Latest Progress: 17 deployment/configuration transactions revalidated, 9/9 Blockscout verification complete, fresh-empty Suite activated
 - Public Availability: None; checked-in Suite profiles remain intentionally empty
@@ -9,7 +77,9 @@
 > [!IMPORTANT]
 > This document provides a high-level status overview of the project. For detailed
 > technical decisions, delivery sequencing, and evidence requirements, refer to
-> the dedicated documents. For Chinese version, see [项目状态总览 (中文)](project-status-zh.md).
+> the dedicated documents. Start with the [LiveAgent continuation context](liveagent-evm-v2-context.md),
+> [Chinese project knowledge base](project-knowledge-base-zh.md), and [EVM V2 handoff](evm-v2-handoff.md).
+> For Chinese status, see [项目状态总览 (中文)](project-status-zh.md).
 
 ## Project Overview
 
@@ -437,9 +507,15 @@ Security and trust minimization. Non-upgradeable means:
 | 2026-08-21 | Initial version - created based on P0 completion status | Project Assessment |
 | 2026-08-22 | P1.1 operator tooling complete - updated metrics and blocking status | Project Assessment |
 | 2026-08-31 | Confirmed P1.2/P1.3 complete; clarified P1.4-P1.6 and fresh-empty scope | Project Assessment |
+| 2026-09-10 | Added code/evidence knowledge base and explicit EVM V2 continuation handoff; confirmed P1.4-P1.6 remain open | Project Assessment |
+| 2026-09-11 | LiveAgent review reconciled client paths, required evidence gaps, and local gates; public SuiteDirectory remains empty | Project Assessment |
 
 **Next Update:** After P1 completion or significant architectural changes
 
 ---
 
 💡 **Tip:** This document provides a quick overview. For detailed technical decisions and implementation details, refer to the dedicated documents linked above.
+
+`````
+
+</details>

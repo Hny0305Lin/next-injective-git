@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "profiles": {
+    "aws-writer": {
+      "provider": "aws-s3",
+      "bucket": "replace-with-owned-aws-bucket",
+      "region": "us-east-1",
+      "prefix": "igit/project",
+      "publicReadBase": "https://storage.example.com",
+      "credentialRef": { "kind": "env", "accessKeyEnv": "IGIT_AWS_WRITER_ID", "secretKeyEnv": "IGIT_AWS_WRITER_SECRET" }
+    },
+    "aws-reader": {
+      "provider": "aws-s3",
+      "bucket": "replace-with-owned-aws-bucket",
+      "region": "us-east-1",
+      "prefix": "igit/project",
+      "credentialRef": { "kind": "env", "accessKeyEnv": "IGIT_AWS_READER_ID", "secretKeyEnv": "IGIT_AWS_READER_SECRET" }
+    },
+    "r2-writer": {
+      "provider": "cloudflare-r2",
+      "bucket": "replace-with-owned-r2-bucket",
+      "region": "auto",
+      "accountId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "prefix": "igit/project",
+      "publicReadBase": "https://r2-public.example.com",
+      "credentialRef": { "kind": "env", "accessKeyEnv": "IGIT_R2_WRITER_ID", "secretKeyEnv": "IGIT_R2_WRITER_SECRET" }
+    },
+    "r2-reader": {
+      "provider": "cloudflare-r2",
+      "bucket": "replace-with-owned-r2-bucket",
+      "region": "auto",
+      "accountId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "prefix": "igit/project",
+      "publicReadBase": "https://r2-public.example.com"
+    }
+  },
+  "repositories": [
+    {
+      "chainId": "1776",
+      "suiteDirectory": "0x1111111111111111111111111111111111111111",
+      "repoId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+      "writer": "aws-writer",
+      "reader": "aws-reader"
+    },
+    {
+      "chainId": "1776",
+      "suiteDirectory": "0x1111111111111111111111111111111111111111",
+      "repoId": "0x3333333333333333333333333333333333333333333333333333333333333333",
+      "writer": "r2-writer",
+      "reader": "r2-reader"
+    }
+  ]
+}
