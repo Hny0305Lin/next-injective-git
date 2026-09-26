@@ -25,6 +25,7 @@ import (
 const usageEnglish = `igit - Next Injective Git (Injective + IPFS)
 
 Usage:
+  igit storage <doctor|show> <file>    validate/show BYOS references locally
   igit init <name> [description]       create an on-chain repository
   igit init [-b <branch>] [.]          local git init passthrough (flags/no name)
   igit import <github-url> [name]      mirror a GitHub repo onto the chain
@@ -196,6 +197,9 @@ func main() {
 }
 
 func run(args []string) error {
+	if len(args) > 0 && args[0] == "storage" {
+		return cmdStorage(args[1:])
+	}
 	if len(args) == 0 {
 		fmt.Print(usageText())
 		return nil
