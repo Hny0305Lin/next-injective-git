@@ -39,7 +39,11 @@ const LS_KEY = "igit-web-config";
 export const CONFIG_CHANGED_EVENT = "igit-config-changed";
 
 export function isSuiteDirectoryConfigured(value: string): boolean {
-  return /^0x[0-9a-fA-F]{40}$/.test(value.trim());
+  // Accepts a single address or a comma-separated list of addresses.
+  return value.split(",").every((s) => {
+    const t = s.trim();
+    return t === "" || /^0x[0-9a-fA-F]{40}$/.test(t);
+  }) && value.trim() !== "";
 }
 
 /** Parse a comma-separated SuiteDirectory string into validated addresses. */
