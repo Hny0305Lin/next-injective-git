@@ -44,7 +44,7 @@ test("release profile gate rejects a missing default", () => {
 test("release profile gate rejects a Directory before evidence approval", () => {
   assert.throws(
     () => validateReleaseProfileSource(fixture({ directory: "0x1111111111111111111111111111111111111111" })),
-    /must be empty or an approved deployment address/,
+    /must contain only approved deployment addresses/,
   );
 });
 

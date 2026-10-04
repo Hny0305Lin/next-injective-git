@@ -135,7 +135,12 @@ export class RepoStore {
       this.loaded.add(entry.sha256);
     }
   }
-  /**\n   * Storage-neutral dispatch by ref shape (see suite-compat.ts):\n   *   - manifest-commitment (v4+): verified BYOS reader\n   *   - ipfs-pack-uris (v3-): legacy IPFS gateway reader\n   * Unknown future versions with a commitment field also use the verified reader.\n   */
+  /**
+   * Storage-neutral dispatch by ref shape (see suite-compat.ts):
+   *   - manifest-commitment (v4+): verified BYOS reader
+   *   - ipfs-pack-uris (v3-): legacy IPFS gateway reader
+   * Unknown future versions with a commitment field also use the verified reader.
+   */
   async loadRefVerifiedDispatch(cfg: AppConfig, ref: RefInfo, onProgress?: (msg: string) => void) {
     if (ref.commitment) return this.loadVerifiedRef(cfg, ref, onProgress);
     return this.loadRef(cfg, ref, onProgress);
@@ -301,7 +306,7 @@ export interface CidInfo {
 
 /**
  * Fetch a pack URI (ipfs://<cid> or bare cid) through the configured gateway
- * and inspect it: reachability, size, and 閳?if it's a git packfile 閳?the
+ * and inspect it: reachability, size, and — if it's a git packfile — the
  * object count from the 12-byte header ("PACK" + u32 version + u32 count).
  */
 export async function inspectCid(cfg: AppConfig, uri: string): Promise<CidInfo> {
@@ -319,7 +324,7 @@ export async function inspectCid(cfg: AppConfig, uri: string): Promise<CidInfo> 
     info.ok = true;
     info.size = bytes.length;
     if (bytes.length >= 12 && bytes[0] === 0x50 && bytes[1] === 0x41 && bytes[2] === 0x43 && bytes[3] === 0x4b) {
-      // "PACK" magic 閳?read big-endian u32 version (4..8) and count (8..12)
+      // "PACK" magic — read big-endian u32 version (4..8) and count (8..12)
       const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
       info.isPack = true;
       info.version = dv.getUint32(4, false);

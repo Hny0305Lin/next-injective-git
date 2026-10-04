@@ -37,6 +37,8 @@
   --accent-border: #a1a1aa;
   --accent-2: #0f9f6e;
   --accent-2-soft: #ecfdf5;
+  --accent-3: #4f46e5;
+  --accent-3-soft: #eef2ff;
   --danger: #dc2626;
   --danger-soft: #fef2f2;
   --warn: #b45309;
@@ -79,6 +81,8 @@ html.dark {
   --accent-border: #71717a;
   --accent-2: #34d399;
   --accent-2-soft: rgba(16, 185, 129, 0.12);
+  --accent-3: #818cf8;
+  --accent-3-soft: rgba(99, 102, 241, 0.14);
   --danger: #f87171;
   --danger-soft: rgba(239, 68, 68, 0.12);
   --warn: #fbbf24;
@@ -3324,6 +3328,24 @@ html.dark .action-badge.a-award_badge {
   color: var(--warn);
   border-color: color-mix(in srgb, var(--warn) 42%, var(--border));
   background: var(--warn-soft);
+}
+
+/* EVM V4 repositories resolve packs from BYOS buckets instead of IPFS. */
+.contract-type-badge.contract-evm-v4 {
+  color: var(--accent-3);
+  border-color: color-mix(in srgb, var(--accent-3) 40%, var(--border));
+  background: var(--accent-3-soft);
+}
+
+.contract-type-badge .byos-tag {
+  padding: 2px 4px;
+  margin: -1px -2px -1px 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-3) 16%, transparent);
+  font-size: 0.54rem;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.05em;
 }
 
 .legacy-migration-alert {

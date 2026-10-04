@@ -188,7 +188,7 @@ export default function Home() {
                   <div className="repo-list-content">
                     <h3>
                       <Link to={`/${address ?? "demo"}/${repo.name}`}>{repo.name}</Link>
-                      <ContractTypeBadge kind="evm-v2" />
+                      <ContractTypeBadge kind="evm-v2" suiteVersion={repo.suite_version} />
                       <span className={`badge ${repo.moderation_status}`}>{repo.moderation_status}</span>
                       {repo.forked_from && <span className="badge">fork</span>}
                     </h3>

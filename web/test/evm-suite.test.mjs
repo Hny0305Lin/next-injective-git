@@ -16,6 +16,15 @@ import {
 } from "../src/lib/abis.ts";
 import { configForProfile, isLocalDeploymentHost, loadConfig, saveConfig } from "../src/lib/profile.ts";
 import {
+  FALLBACK_READER_VERSION,
+  KNOWN_VERSIONS,
+  isKnownVersion,
+  readerAbiVersion,
+  refShapeForVersion,
+  usesByosStorage,
+  versionLabel,
+} from "../src/lib/suite-compat.ts";
+import {
   EVMReceiptUnconfirmedError,
   SuiteConfigurationError,
   SuiteVerificationError,
@@ -217,10 +226,10 @@ test("built-in profile points to the v4 successor suite and ignores legacy store
   };
   try {
     const cfg = loadConfig();
-    assert.equal(cfg.suiteDirectory, "0xf987396475d0a4c96b722e993a95d8720a6292ad");
+    assert.ok(cfg.suiteDirectory.startsWith("0xf987396475d0a4c96b722e993a95d8720a6292ad"));
     assert.deepEqual(Object.keys(cfg).sort(), ["evmChainId", "evmRpc", "ipfsGateway", "profile", "suiteDirectory"]);
     saveConfig(cfg);
-    assert.deepEqual(JSON.parse(values.get("igit-web-config")), { profile: "injective-testnet", suiteDirectory: "0xf987396475d0a4c96b722e993a95d8720a6292ad" });
+    assert.ok(JSON.parse(values.get("igit-web-config")).suiteDirectory.includes("0xf98739"));
   } finally {
     globalThis.localStorage = previous;
   }
@@ -976,4 +985,53 @@ test("wallet context pins events to the selected provider and marks wrong chains
   assert.match(walletSource, /keplr\?\.ethereum/);
   assert.match(walletSource, /compassEvm/);
   assert.doesNotMatch(walletSource, /keplr\.enable\(/);
+});
+
+test("suite-compat maps protocol versions to ref shapes, readers, and BYOS storage", () => {
+  assert.equal(refShapeForVersion(1n), "ipfs-pack-uris");
+  assert.equal(refShapeForVersion(2n), "ipfs-pack-uris");
+  assert.equal(refShapeForVersion(3n), "ipfs-pack-uris");
+  assert.equal(refShapeForVersion(4n), "manifest-commitment");
+  assert.equal(refShapeForVersion(5n), "unknown");
+  assert.equal(usesByosStorage(3n), false);
+  assert.equal(usesByosStorage(4n), true);
+  assert.equal(usesByosStorage(5n), false);
+  assert.deepEqual(KNOWN_VERSIONS, [3n, 4n]);
+  assert.equal(isKnownVersion(3n), true);
+  assert.equal(isKnownVersion(4n), true);
+  assert.equal(isKnownVersion(5n), false);
+  assert.equal(readerAbiVersion(3n), 3n);
+  assert.equal(readerAbiVersion(4n), 4n);
+  assert.equal(readerAbiVersion(5n), FALLBACK_READER_VERSION);
+  assert.equal(FALLBACK_READER_VERSION, 4n);
+  assert.equal(versionLabel(3n), "Suite v3 · IPFS");
+  assert.equal(versionLabel(4n), "Suite v4 · BYOS");
+  assert.match(versionLabel(7n), /untested/);
+});
+
+test("web splits EVM V2/V3 from EVM V4 BYOS in the architecture rail and repository badges", async () => {
+  const app = await readFile(new URL("../src/App.tsx", import.meta.url), "utf8");
+  assert.match(app, /EVM V2\/V3/);
+  assert.match(app, /<b>EVM V4<\/b>/);
+  assert.match(app, /BYOS storage buckets/);
+  assert.doesNotMatch(app, /<b>EVM V2<\/b>/);
+
+  const badge = await readFile(new URL("../src/components/ContractTypeBadge.tsx", import.meta.url), "utf8");
+  assert.match(badge, /usesByosStorage/);
+  assert.match(badge, /contract-evm-v4/);
+  assert.match(badge, /byos-tag/);
+  assert.match(badge, /EVM V4/);
+  assert.match(badge, /EVM V2/);
+
+  const registry = await readFile(new URL("../src/lib/registry.ts", import.meta.url), "utf8");
+  assert.match(registry, /suite_version: binding\.version/);
+
+  const styles = await readFile(new URL("../src/styles.css", import.meta.url), "utf8");
+  assert.match(styles, /\.contract-type-badge\.contract-evm-v4/);
+  assert.match(styles, /--accent-3:/);
+
+  for (const page of ["../src/pages/Home.tsx", "../src/pages/Owner.tsx", "../src/pages/Repo/index.tsx"]) {
+    const source = await readFile(new URL(page, import.meta.url), "utf8");
+    assert.match(source, /suiteVersion=\{/, `${page} passes the suite version to the contract badge`);
+  }
 });

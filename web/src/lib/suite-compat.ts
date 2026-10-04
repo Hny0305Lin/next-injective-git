@@ -44,6 +44,16 @@ export function refShapeForVersion(version: bigint): RefShape {
   return "unknown";                                       // v5+
 }
 
+/**
+ * True when repositories under this suite protocol version store packs in
+ * BYOS buckets (aws-s3 / cloudflare-r2) behind a verified manifest, instead
+ * of IPFS pack URIs. Used by repo badges to tell EVM V4 repositories apart
+ * from EVM V2/V3 ones.
+ */
+export function usesByosStorage(version: bigint): boolean {
+  return refShapeForVersion(version) === "manifest-commitment";
+}
+
 // ── Future-version policy ──
 
 /**

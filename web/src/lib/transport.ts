@@ -92,8 +92,9 @@ function quantity(value: unknown, label: string): bigint {
 }
 
 function requireDirectory(cfg: AppConfig): Address {
-  if (!isAddress(cfg.suiteDirectory)) throw new SuiteConfigurationError();
-  return getAddress(cfg.suiteDirectory);
+  const first = cfg.suiteDirectory.split(",")[0].trim();
+  if (!isAddress(first)) throw new SuiteConfigurationError();
+  return getAddress(first);
 }
 
 export async function rpcRequest<T>(cfg: AppConfig, method: string, params: unknown[] = []): Promise<T> {
@@ -174,7 +175,7 @@ async function verifySuiteNow(cfg: AppConfig): Promise<SuiteBinding> {
   }
   // Versions 3+ are accepted. Known versions (3, 4) are fully tested.
   // Unknown future versions (5+) pass verification and are readable through
-  // the latest known ABI fallback 閳?see suite-compat.ts for the dispatch.
+  // the latest known ABI fallback — see suite-compat.ts for the dispatch.
   if (BigInt(configuredChainId as bigint) !== BigInt(cfg.evmChainId)) {
     throw new SuiteVerificationError("SuiteDirectory configured chain ID does not match the profile");
   }

@@ -4,7 +4,7 @@ import { readModule, rawModuleRead, verifySuite, writeModule, type Eip1193, type
 import { successorCoreAbi } from "./abis";
 import { refShapeForVersion } from "./suite-compat";
 import { fetchVerifiedManifest } from "./successorReader";
-import type { AppConfig } from "./profile";
+import { parseSuiteDirectories, type AppConfig } from "./profile";
 
 export type ModerationStatus = "active" | "frozen" | "delisted";
 
@@ -17,6 +17,8 @@ export interface RepoInfo {
   updated_at: number;
   moderation_status: ModerationStatus;
   forked_from: string | null;
+  /** Suite protocol version (3n IPFS, 4n BYOS). */
+  suite_version?: bigint;
 }
 
 export interface RefInfo {
@@ -123,6 +125,7 @@ async function mapRepository(cfg: AppConfig, raw: RawRepository, binding: SuiteB
     updated_at: safeNumber(raw.updatedAt, "repository updated timestamp"),
     moderation_status: statusName(moderation),
     forked_from: raw.forkedFrom === zeroHash ? null : raw.forkedFrom,
+    suite_version: binding.version,
   };
 }
 
@@ -138,7 +141,7 @@ export function clearQueryCache(): void {
   queryCache.clear();
 }
 
-export async function resolveRepo(cfg: AppConfig, owner: string, repo: string): Promise<ResolvedRepo> {
+async function resolveRepoSingleDir(cfg: AppConfig, owner: string, repo: string): Promise<ResolvedRepo> {
   const requestedOwner = toEvmAddress(owner);
   return cached(`repo:${cfg.profile}:${cfg.suiteDirectory}:${requestedOwner}:${repo}`, async () => {
     const binding = await verifySuite(cfg);
@@ -175,7 +178,7 @@ export async function repoInfoById(
   return mapRepository(cfg, raw, suite);
 }
 
-export async function listRepos(cfg: AppConfig, owner: string, includeInactive = false): Promise<RepoInfo[]> {
+async function listReposSingleDir(cfg: AppConfig, owner: string, includeInactive = false): Promise<RepoInfo[]> {
   const address = toEvmAddress(owner);
   const binding = await verifySuite(cfg);
   const repositories: RawRepository[] = [];
@@ -193,6 +196,39 @@ export async function listRepos(cfg: AppConfig, owner: string, includeInactive =
   return includeInactive ? mapped : mapped.filter((repository) => repository.moderation_status === "active");
 }
 
+// 鈹€鈹€ Multi-directory helpers (comma-separated SuiteDirectory support) 鈹€鈹€
+
+export async function resolveRepo(cfg: AppConfig, owner: string, repo: string): Promise<ResolvedRepo> {
+  const dirs = parseSuiteDirectories(cfg.suiteDirectory);
+  if (dirs.length <= 1) return resolveRepoSingleDir(cfg, owner, repo);
+  let lastErr: unknown;
+  for (const dir of dirs) {
+    try {
+      return await resolveRepoSingleDir({ ...cfg, suiteDirectory: dir }, owner, repo);
+    } catch (e) {
+      lastErr = e;
+      if (!(e instanceof EVMLocatorNotFoundError)) throw e;
+    }
+  }
+  throw lastErr;
+}
+
+export async function listRepos(cfg: AppConfig, owner: string, includeInactive = false): Promise<RepoInfo[]> {
+  const dirs = parseSuiteDirectories(cfg.suiteDirectory);
+  if (dirs.length <= 1) return listReposSingleDir(cfg, owner, includeInactive);
+  const results = await Promise.allSettled(dirs.map((dir) => listReposSingleDir({ ...cfg, suiteDirectory: dir }, owner, includeInactive)));
+  const seen = new Set<string>();
+  const merged: RepoInfo[] = [];
+  for (const r of results) {
+    if (r.status !== "fulfilled") continue;
+    for (const repo of r.value) {
+      const key = repo.owner + "/" + repo.name;
+      if (!seen.has(key)) { seen.add(key); merged.push(repo); }
+    }
+  }
+  merged.sort((a, b) => b.updated_at - a.updated_at);
+  return merged;
+}
 export async function listRefs(cfg: AppConfig, owner: string, repo: string): Promise<RefInfo[]> {
   const binding = await verifySuite(cfg);
   if (refShapeForVersion(binding.version) === "manifest-commitment") return listSuccessorRefs(cfg, owner, repo);

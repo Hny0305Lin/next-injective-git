@@ -59,10 +59,10 @@ export default function Settings() {
     setSuiteVerified(false);
     try {
       if (suiteDirectory) {
-        if (!isSuiteDirectoryConfigured(suiteDirectory)) {
+        if (suiteDirectory && !suiteDirectory.split(",").every((s: string) => isSuiteDirectoryConfigured(s.trim()) || !s.trim())) {
           throw new Error("Enter a 0x-prefixed, 40-byte EVM contract address.");
         }
-        await verifySuite(next, true);
+        await verifySuite({ ...next, suiteDirectory: suiteDirectory.split(",")[0].trim() }, true);
       }
       saveConfig(next);
       setCfg(next);
@@ -128,7 +128,7 @@ export default function Settings() {
         />
         <p className="muted settings-field-help">
           {suiteEditable
-            ? "The public testnet profile intentionally has no Directory yet. A local override is saved only after the active Suite, all seven modules, code hashes, and bindings verify successfully."
+            ? "Enter one or more comma-separated SuiteDirectory addresses. The first address is the primary read target; repos from all listed suites are merged in listings. A local override is saved only after every listed Suite verifies."
             : "This public deployment pins the Directory from its released profile, so the address is copy-only here. Run igit-web locally to verify and save your own override."}
         </p>
 

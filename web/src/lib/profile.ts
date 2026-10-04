@@ -28,7 +28,7 @@ export const NETWORK_PROFILES: Record<NetworkProfileId, NetworkProfile> = {
     label: "Injective Testnet",
     evmChainId: 1439,
     evmRpc: "https://k8s.testnet.json-rpc.injective.network/",
-    suiteDirectory: "0xf987396475d0a4c96b722e993a95d8720a6292ad",
+    suiteDirectory: "0xf987396475d0a4c96b722e993a95d8720a6292ad,0xf8844F90887731FFd607E1f59e39a3918F6eAb35",
     ipfsGateway: "https://igit-hk.haohanyh.ovh",
     evmExplorer: "https://testnet.blockscout.injective.network",
   },
@@ -40,6 +40,15 @@ export const CONFIG_CHANGED_EVENT = "igit-config-changed";
 
 export function isSuiteDirectoryConfigured(value: string): boolean {
   return /^0x[0-9a-fA-F]{40}$/.test(value.trim());
+}
+
+/** Parse a comma-separated SuiteDirectory string into validated addresses. */
+export function parseSuiteDirectories(value: string): string[] {
+  return value
+    .split(/[;,]/)
+    .map((s) => s.trim())
+    .filter((s) => /^0x[0-9a-fA-F]{40}$/.test(s))
+    .map((s) => s.toLowerCase());
 }
 
 // Loopback, `.localhost`/`.local`, and RFC1918 LAN hosts are the only origins
@@ -106,7 +115,8 @@ export function loadConfig(): AppConfig {
 
 export function saveConfig(cfg: AppConfig): void {
   const suiteDirectory = cfg.suiteDirectory.trim();
-  if (suiteDirectory && !isSuiteDirectoryConfigured(suiteDirectory)) {
+    const addresses = suiteDirectory.split(",").map((s: string) => s.trim()).filter(Boolean);
+    if (addresses.length > 0 && !addresses.every((a: string) => isSuiteDirectoryConfigured(a))) {
     throw new Error("SuiteDirectory must be a 0x-prefixed EVM address");
   }
   localStorage.setItem(LS_KEY, JSON.stringify({

@@ -367,8 +367,8 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
             </Link>
             {" / "}
             <b>{resolvedRepo.canonical.name}</b>
-            <ContractTypeBadge kind={contractKind} />
-            <SuiteVersionBadge cfg={cfg} />
+            <ContractTypeBadge kind={contractKind} suiteVersion={info.suite_version} />
+            {!isLegacy && <SuiteVersionBadge cfg={cfg} />}
             {info.moderation_status !== "active" && (
               <span className={`badge ${info.moderation_status}`}>{info.moderation_status}</span>
             )}
