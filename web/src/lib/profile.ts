@@ -97,7 +97,16 @@ export function loadConfig(): AppConfig {
     if (saved?.profile === "injective-testnet") {
       const cfg = configForProfile(saved.profile);
       if (typeof saved.suiteDirectory === "string" && isSuiteDirectoryConfigured(saved.suiteDirectory)) {
-        cfg.suiteDirectory = saved.suiteDirectory.trim();
+        // Auto-upgrade stale overrides: if the saved address is one of the
+        // built-in addresses (user saved it from a previous release), replace
+        // it with the current built-in list. Custom addresses pass through as-is.
+        const PREVIOUS_DEFAULTS = new Set(["0xf8844F90887731FFd607E1f59e39a3918F6eAb35"]);
+        const savedAddr = saved.suiteDirectory.trim();
+        if (PREVIOUS_DEFAULTS.has(savedAddr)) {
+          cfg.suiteDirectory = cfg.suiteDirectory || savedAddr; // use current built-in
+        } else {
+          cfg.suiteDirectory = savedAddr;
+        }
       } else if (isLocalDeployment() && !cfg.suiteDirectory) {
         cfg.suiteDirectory = "0xf8844F90887731FFd607E1f59e39a3918F6eAb35";
       }
