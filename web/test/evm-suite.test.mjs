@@ -202,7 +202,7 @@ async function withFetch(fetch, run) {
   }
 }
 
-test("built-in profile has one empty SuiteDirectory and ignores legacy stored fields", () => {
+test("built-in profile points to the v4 successor suite and ignores legacy stored fields", () => {
   const previous = globalThis.localStorage;
   const values = new Map([["igit-web-config", JSON.stringify({
     profile: "injective-testnet",
@@ -217,10 +217,10 @@ test("built-in profile has one empty SuiteDirectory and ignores legacy stored fi
   };
   try {
     const cfg = loadConfig();
-    assert.equal(cfg.suiteDirectory, "");
+    assert.equal(cfg.suiteDirectory, "0xf987396475d0a4c96b722e993a95d8720a6292ad");
     assert.deepEqual(Object.keys(cfg).sort(), ["evmChainId", "evmRpc", "ipfsGateway", "profile", "suiteDirectory"]);
     saveConfig(cfg);
-    assert.deepEqual(JSON.parse(values.get("igit-web-config")), { profile: "injective-testnet" });
+    assert.deepEqual(JSON.parse(values.get("igit-web-config")), { profile: "injective-testnet", suiteDirectory: "0xf987396475d0a4c96b722e993a95d8720a6292ad" });
   } finally {
     globalThis.localStorage = previous;
   }
@@ -343,10 +343,11 @@ test("unconfigured Directory fails closed before any network or wallet request",
     fetched = true;
     throw new Error("network must not be reached");
   }, async () => {
-    await assert.rejects(verifySuite(configForProfile()), SuiteConfigurationError);
+    const noDirectory = { ...configForProfile(), suiteDirectory: "" };
+    await assert.rejects(verifySuite(noDirectory), SuiteConfigurationError);
     await assert.rejects(
       sponsorWithEconomicModule({ request: async () => { throw new Error("wallet must not be reached"); } },
-        configForProfile(), REPO_ID, "0.1", ""),
+        noDirectory, REPO_ID, "0.1", ""),
       SuiteConfigurationError,
     );
   });

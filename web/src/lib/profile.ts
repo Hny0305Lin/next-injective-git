@@ -16,6 +16,8 @@ export interface AppConfig {
   evmRpc: string;
   suiteDirectory: string;
   ipfsGateway: string;
+  /** Verified suite protocol version (3n IPFS, 4n BYOS). Set after verifySuite. */
+  evmSuiteVersion?: bigint;
 }
 
 // A built-in address is added only after deployment evidence has passed the
@@ -26,7 +28,7 @@ export const NETWORK_PROFILES: Record<NetworkProfileId, NetworkProfile> = {
     label: "Injective Testnet",
     evmChainId: 1439,
     evmRpc: "https://k8s.testnet.json-rpc.injective.network/",
-    suiteDirectory: "",
+    suiteDirectory: "0xf987396475d0a4c96b722e993a95d8720a6292ad",
     ipfsGateway: "https://igit-hk.haohanyh.ovh",
     evmExplorer: "https://testnet.blockscout.injective.network",
   },

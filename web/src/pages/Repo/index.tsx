@@ -3,6 +3,8 @@ import { Link, useParams } from "react-router-dom";
 import { AlertTriangle, ArrowRightLeft, Check, Copy, FileCode2, GitBranch, GitCommit, Pencil, Save, Users, X } from "lucide-react";
 import { loadConfig } from "../../lib/chain";
 import { ContractTypeBadge, type RepositoryContractKind } from "../../components/ContractTypeBadge";
+import type { AppConfig } from "../../lib/chain";
+import { versionLabel, isKnownVersion } from "../../lib/suite-compat";
 import { showToast } from "../../components/Toast";
 import {
   formatError,
@@ -366,6 +368,7 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
             {" / "}
             <b>{resolvedRepo.canonical.name}</b>
             <ContractTypeBadge kind={contractKind} />
+            <SuiteVersionBadge cfg={cfg} />
             {info.moderation_status !== "active" && (
               <span className={`badge ${info.moderation_status}`}>{info.moderation_status}</span>
             )}
@@ -648,5 +651,30 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
         </div>
       )}
     </div>
+  );
+}
+
+/** Displays the verified suite protocol version alongside the repo title. */
+function SuiteVersionBadge({ cfg }: { cfg: AppConfig }) {
+  const [version, setVersion] = useState<bigint | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { verifySuite } = await import("../../lib/transport");
+        const binding = await verifySuite(cfg);
+        if (!cancelled) setVersion(binding.version);
+      } catch { /* badge is decorative; swallow errors */ }
+    })();
+    return () => { cancelled = true; };
+  }, [cfg]);
+  if (version === null) return null;
+  return (
+    <span
+      className={`badge suite-version ${isKnownVersion(version) ? "" : "untested"}`}
+      title={`SuiteDirectory protocol version: v${version}. ${isKnownVersion(version) ? "Fully supported" : "Untested version — using best-effort reader"}`}
+    >
+      {versionLabel(version)}
+    </span>
   );
 }

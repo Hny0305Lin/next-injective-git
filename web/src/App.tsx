@@ -323,7 +323,7 @@ export default function App() {
             <div className="side-nav-label">Architecture</div>
             <div className="side-nav-meta">
               <span className="side-nav-meta-icon"><IconifyIcon icon="mdi:ethereum" width={14} height={14} aria-hidden="true" /></span>
-              <span><b>EVM V2</b><small>Current repositories</small></span>
+              <span><b>EVM V2/V3</b><small>Current repositories</small></span>
             </div>
             <div className="side-nav-meta">
               <span className="side-nav-meta-icon"><IconifyIcon icon="token:cosmos" width={14} height={14} aria-hidden="true" /></span>

@@ -16,8 +16,6 @@ import {
   MODULE_ABIS,
   MODULE_IDS,
   MODULE_KEYS,
-  SUITE_SUCCESSOR_VERSION,
-  SUITE_VERSION,
   boundModuleAbi,
   directoryAbi,
   type SuiteModuleKey,
@@ -171,9 +169,12 @@ async function verifySuiteNow(cfg: AppConfig): Promise<SuiteBinding> {
   ]);
   if (Number(state) !== 1) throw new SuiteVerificationError("SuiteDirectory is not active");
   const suiteVersion = BigInt(version as bigint);
-  if (suiteVersion !== SUITE_VERSION && suiteVersion !== SUITE_SUCCESSOR_VERSION) {
-    throw new SuiteVerificationError(`unsupported suite version ${String(version)}; expected ${SUITE_VERSION} or ${SUITE_SUCCESSOR_VERSION}`);
+  if (suiteVersion < 3n) {
+    throw new SuiteVerificationError(`suite version ${String(version)} predates the first EVM suite (v3); no EVM read path exists`);
   }
+  // Versions 3+ are accepted. Known versions (3, 4) are fully tested.
+  // Unknown future versions (5+) pass verification and are readable through
+  // the latest known ABI fallback 閳?see suite-compat.ts for the dispatch.
   if (BigInt(configuredChainId as bigint) !== BigInt(cfg.evmChainId)) {
     throw new SuiteVerificationError("SuiteDirectory configured chain ID does not match the profile");
   }

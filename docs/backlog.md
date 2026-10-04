@@ -68,6 +68,13 @@ S04–S07 仍 NOT PROVEN；下一切片为 successor ABI/CAS/version dispatch，
 - **NOT PROVEN（真实层遗留）**：force push 陈旧场景与真实并发双写竞争（CLI 时序无法制造；mock 层已覆盖）；R2 对象外部篡改检测（无覆盖权限且不应执行）；Blockscout 源码验证（该网络环境下 explorer 不可达）；真实浏览器 igit.xyz 浏览（本地 Settings 配 Directory `0xf98739…92ad` 后 commits/files/refs 即走 successor verified reader——待人工浏览确认）；公开 profile 切换未做（内置 profile Directory 仍为空，符合现行策略）。
 - 当前 igit 全局配置已指向 successor Directory；恢复 legacy v3：`igit config set evm_suite_directory_address 0x24124cb60F9EF02F7DeB5BC868c028Fb412F5334`。
 
+### 2026-10-05 路径查询兼容层（web 集中版本分派 + 前向兼容）
+
+- 新增 `web/src/lib/suite-compat.ts`：suite 协议版本的唯一分派入口。`refShapeForVersion()` 按链上版本映射 ref ABI 形态（v3-→ipfs-pack-uris，v4→manifest-commitment，v5+→unknown 回退 v4 ABI 尝试读取）。`transport.ts` 版本检查放宽为 v3+ 均通过验证（v3 以下无 EVM 读路径）；未知版本（v5+）走最新已知 ABI 的 best-effort 读取 + 页面显示 untested 警告标签，不再一刀切拒绝。`registry.ts`/`gitstore.ts` 的分派统一改为 `refShapeForVersion()` 判断，不再散落硬编码版本号比较。
+- Repo 页面新增 SuiteVersionBadge：实时显示当前套件协议版本（如 "Suite v4 · BYOS"），未知版本显示 "(untested)"。
+- 新增 `docs/suite-version-compatibility.md`：版本兼容矩阵，明确各版本路径规则、web/CLI 兼容范围、前向兼容策略与新增版本的扩展方法。
+- CLI/合约零改动（v3 IPFS + v4 BYOS 现有分派已满足要求）。验证：typecheck PASS、test:api 146 PASS、go vet + go test 30 包全绿。
+
 ### 后续依赖（原实施顺序保留）
 
 - S01–S03 本地实现已落盘并验证；后续扩展基于现有代码，不把 mock PASS 扩展为云或主网验收。

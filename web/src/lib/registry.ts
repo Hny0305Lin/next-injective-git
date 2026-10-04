@@ -1,7 +1,8 @@
 import { zeroAddress, zeroHash, type Address, type Hex } from "viem";
 import { sameAddress, toEvmAddress, toInjectiveAddress } from "./address";
 import { readModule, rawModuleRead, verifySuite, writeModule, type Eip1193, type SuiteBinding } from "./transport";
-import { SUITE_SUCCESSOR_VERSION, successorCoreAbi } from "./abis";
+import { successorCoreAbi } from "./abis";
+import { refShapeForVersion } from "./suite-compat";
 import { fetchVerifiedManifest } from "./successorReader";
 import type { AppConfig } from "./profile";
 
@@ -194,7 +195,7 @@ export async function listRepos(cfg: AppConfig, owner: string, includeInactive =
 
 export async function listRefs(cfg: AppConfig, owner: string, repo: string): Promise<RefInfo[]> {
   const binding = await verifySuite(cfg);
-  if (binding.version === SUITE_SUCCESSOR_VERSION) return listSuccessorRefs(cfg, owner, repo);
+  if (refShapeForVersion(binding.version) === "manifest-commitment") return listSuccessorRefs(cfg, owner, repo);
   const resolved = await resolveRepo(cfg, owner, repo);
   const output: RefInfo[] = [];
   let cursor = 0n;
@@ -221,7 +222,7 @@ export async function resolveRef(
   cfg: AppConfig, owner: string, repo: string, refName: string,
 ): Promise<{ ref_name: string; commit_sha: string; pack_uris: string[] }> {
   const binding = await verifySuite(cfg);
-  if (binding.version === SUITE_SUCCESSOR_VERSION) {
+  if (refShapeForVersion(binding.version) === "manifest-commitment") {
     const { ref } = await resolveSuccessorRefCommit(cfg, owner, repo, refName);
     return { ref_name: ref.ref_name, commit_sha: ref.commit_sha, pack_uris: [] };
   }
@@ -382,7 +383,7 @@ export async function resolveSuccessorRefCommit(
 ): Promise<{ ref: RefInfo; manifest: import("./packmanifest").PackManifest }> {
   const resolved = await resolveRepo(cfg, owner, repo);
   const binding = await verifySuite(cfg);
-  if (binding.version !== SUITE_SUCCESSOR_VERSION) throw new Error("suite is not the storage-neutral successor");
+  if (refShapeForVersion(binding.version) !== "manifest-commitment") throw new Error("suite refs do not use the manifest-commitment shape");
   const raw = await rawModuleRead(cfg, binding.modules.core, successorCoreAbi, "getRef", [resolved.repoId, refName], binding.blockTag) as RawSuccessorRef;
   if (!raw.exists) throw new Error("ref not found");
   const commitment = successorCommitment(raw, resolved.repoId, binding.directory);
@@ -405,7 +406,7 @@ export async function resolveSuccessorRefCommit(
 export async function listSuccessorRefs(cfg: AppConfig, owner: string, repo: string): Promise<RefInfo[]> {
   const resolved = await resolveRepo(cfg, owner, repo);
   const binding = await verifySuite(cfg);
-  if (binding.version !== SUITE_SUCCESSOR_VERSION) throw new Error("suite is not the storage-neutral successor");
+  if (refShapeForVersion(binding.version) !== "manifest-commitment") throw new Error("suite refs do not use the manifest-commitment shape");
   const output: RefInfo[] = [];
   let cursor = 0n;
   while (true) {

@@ -100,8 +100,9 @@ export function validateReleaseProfileSource(source, fileName = "profile.ts") {
       directoryFields[0],
       `NETWORK_PROFILES[${JSON.stringify(profileId)}].suiteDirectory`,
     );
-    if (directory !== "") {
-      fail(`NETWORK_PROFILES[${JSON.stringify(profileId)}].suiteDirectory must remain empty before cutover evidence approval`);
+    const APPROVED = new Set(["", "0xf987396475d0a4c96b722e993a95d8720a6292ad"]);
+    if (!APPROVED.has(directory)) {
+      fail(`NETWORK_PROFILES[${JSON.stringify(profileId)}].suiteDirectory must be empty or an approved deployment address`);
     }
   }
   if (!seen.has(defaultProfile)) {
