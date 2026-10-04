@@ -1,0 +1,12 @@
+{
+  "name": "next-injective-git-evm-successor",
+  "private": true,
+  "scripts": {
+    "check": "node ../../scripts/evm-successor-solc-check.mjs",
+    "abi": "node ../../scripts/evm-successor-solc-check.mjs --write-abi",
+    "artifacts": "node ../../scripts/evm-successor-solc-check.mjs --write-artifacts"
+  },
+  "devDependencies": {
+    "solc": "0.8.24"
+  }
+}

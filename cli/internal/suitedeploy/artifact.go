@@ -15,10 +15,11 @@ import (
 )
 
 const (
-	artifactSchema       = "igit.evm-suite.solc-artifact.v1"
-	requiredSolcVersion  = "0.8.24"
-	maximumInitcodeBytes = 49_152
-	maximumRuntimeBytes  = 24_576
+	artifactSchema          = "igit.evm-suite.solc-artifact.v1"
+	successorArtifactSchema = "igit.evm-successor.solc-artifact.v1"
+	requiredSolcVersion     = "0.8.24"
+	maximumInitcodeBytes    = 49_152
+	maximumRuntimeBytes     = 24_576
 )
 
 var contractOrder = []string{
@@ -173,8 +174,8 @@ func parseCheckedArtifact(expectedName string, data []byte) (*checkedArtifact, e
 	if err := decoder.Decode(&artifact); err != nil {
 		return nil, fmt.Errorf("decode artifact: %w", err)
 	}
-	if artifact.Schema != artifactSchema {
-		return nil, fmt.Errorf("schema %q, want %q", artifact.Schema, artifactSchema)
+	if artifact.Schema != artifactSchema && artifact.Schema != successorArtifactSchema {
+		return nil, fmt.Errorf("schema %q, want %q or %q", artifact.Schema, artifactSchema, successorArtifactSchema)
 	}
 	if artifact.ContractName != expectedName {
 		return nil, fmt.Errorf("contract_name %q, want %q", artifact.ContractName, expectedName)

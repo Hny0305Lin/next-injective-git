@@ -16,6 +16,7 @@ import {
   MODULE_ABIS,
   MODULE_IDS,
   MODULE_KEYS,
+  SUITE_SUCCESSOR_VERSION,
   SUITE_VERSION,
   boundModuleAbi,
   directoryAbi,
@@ -52,6 +53,8 @@ export interface SuiteBinding {
   coordinator: Address;
   snapshotRoot: Hex;
   blockTag: Hex;
+  /** Verified suite protocol version: 3n legacy IPFS refs, 4n successor commitments. */
+  version: bigint;
   modules: Record<SuiteModuleKey, Address>;
   codeHashes: Record<SuiteModuleKey, Hex>;
 }
@@ -167,8 +170,9 @@ async function verifySuiteNow(cfg: AppConfig): Promise<SuiteBinding> {
     rawRead(cfg, directory, directoryAbi, "registeredModuleCount", [], blockTag),
   ]);
   if (Number(state) !== 1) throw new SuiteVerificationError("SuiteDirectory is not active");
-  if (BigInt(version as bigint) !== SUITE_VERSION) {
-    throw new SuiteVerificationError(`unsupported suite version ${String(version)}; expected ${SUITE_VERSION}`);
+  const suiteVersion = BigInt(version as bigint);
+  if (suiteVersion !== SUITE_VERSION && suiteVersion !== SUITE_SUCCESSOR_VERSION) {
+    throw new SuiteVerificationError(`unsupported suite version ${String(version)}; expected ${SUITE_VERSION} or ${SUITE_SUCCESSOR_VERSION}`);
   }
   if (BigInt(configuredChainId as bigint) !== BigInt(cfg.evmChainId)) {
     throw new SuiteVerificationError("SuiteDirectory configured chain ID does not match the profile");
@@ -223,6 +227,7 @@ async function verifySuiteNow(cfg: AppConfig): Promise<SuiteBinding> {
     coordinator: normalizedCoordinator,
     snapshotRoot: snapshotRoot as Hex,
     blockTag,
+    version: suiteVersion,
     modules: Object.fromEntries(moduleEntries.map(([key, address]) => [key, address])) as Record<SuiteModuleKey, Address>,
     codeHashes: Object.fromEntries(moduleEntries.map(([key, , hash]) => [key, hash])) as Record<SuiteModuleKey, Hex>,
   };
@@ -391,4 +396,17 @@ export async function writeModule(
 
 export async function nativeBalance(cfg: AppConfig, address: Address): Promise<bigint> {
   return quantity(await rpcRequest<Hex>(cfg, "eth_getBalance", [address, "latest"]), "balance");
+}
+
+/** Raw read with an explicit ABI, used by the successor-core dispatcher. */
+export async function rawModuleRead(
+  cfg: AppConfig,
+  address: Address,
+  abi: Abi,
+  functionName: string,
+  args: readonly unknown[] = [],
+  blockTag?: Hex,
+): Promise<unknown> {
+  const tag = blockTag ?? (await verifySuite(cfg)).blockTag;
+  return rawRead(cfg, address, abi, functionName, args, tag);
 }

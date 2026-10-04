@@ -16,6 +16,11 @@ import (
 
 const SupportedSuiteVersion uint64 = 3
 
+// SuccessorSuiteVersion is the reviewed suiteVersion of the storage-neutral
+// successor suite (contracts/evm-v2-successor). It is dispatched, never mixed:
+// clients either speak the legacy v3 ABI or the successor ABI for one suite.
+const SuccessorSuiteVersion uint64 = 4
+
 type SuiteModuleID struct {
 	Name string
 	ID   common.Hash
@@ -96,6 +101,31 @@ func suiteVerificationError(check, module string, err error) error {
 // VerifySuite pins all reads to one block and validates the complete trust
 // chain rooted at a profile's single SuiteDirectory address.
 func VerifySuite(ctx context.Context, rpc *EVMRPC, directoryAddress string, expectedChainID uint64) (*SuiteInfo, error) {
+	return verifySuite(ctx, rpc, directoryAddress, expectedChainID, SupportedSuiteVersion)
+}
+
+// VerifySuccessorSuite runs the identical pinned trust-chain verification but
+// requires suiteVersion 4 (storage-neutral successor).
+func VerifySuccessorSuite(ctx context.Context, rpc *EVMRPC, directoryAddress string, expectedChainID uint64) (*SuiteInfo, error) {
+	return verifySuite(ctx, rpc, directoryAddress, expectedChainID, SuccessorSuiteVersion)
+}
+
+// VerifyAnyKnownSuite accepts suiteVersion 3 or 4 so callers can dispatch on
+// info.Version without weakening any other check. Any other version fails.
+func VerifyAnyKnownSuite(ctx context.Context, rpc *EVMRPC, directoryAddress string, expectedChainID uint64) (*SuiteInfo, error) {
+	info, err := verifySuite(ctx, rpc, directoryAddress, expectedChainID, 0)
+	if err != nil {
+		return nil, err
+	}
+	if info.Version != SupportedSuiteVersion && info.Version != SuccessorSuiteVersion {
+		return nil, suiteVerificationError("suite version", "", fmt.Errorf("got %d, supported versions are 3 and 4", info.Version))
+	}
+	return info, nil
+}
+
+// verifySuite validates the whole pinned trust chain; requiredVersion 0 accepts
+// any version so the dispatcher can inspect the actual value.
+func verifySuite(ctx context.Context, rpc *EVMRPC, directoryAddress string, expectedChainID, requiredVersion uint64) (*SuiteInfo, error) {
 	if rpc == nil {
 		return nil, suiteVerificationError("rpc", "", errors.New("EVM RPC transport is nil"))
 	}
@@ -136,9 +166,9 @@ func VerifySuite(ctx context.Context, rpc *EVMRPC, directoryAddress string, expe
 	if err != nil {
 		return nil, suiteVerificationError("suite version", "", err)
 	}
-	if version != SupportedSuiteVersion {
+	if requiredVersion != 0 && version != requiredVersion {
 		return nil, suiteVerificationError(
-			"suite version", "", fmt.Errorf("got %d, supported version is %d", version, SupportedSuiteVersion),
+			"suite version", "", fmt.Errorf("got %d, supported version is %d", version, requiredVersion),
 		)
 	}
 	configuredChainID, err := suiteBigIntCall(ctx, rpc, directory, blockTag, directoryABI, "configuredChainId")

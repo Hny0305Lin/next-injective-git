@@ -25,6 +25,10 @@ type Config struct {
 	// CLI and Git runtime paths. Core and module addresses are discovered and
 	// verified from this immutable directory before use.
 	EVMSuiteDirectoryAddress string `json:"evm_suite_directory_address,omitempty"`
+
+	// StorageConfig references an explicit BYOS storage profile file. Only the
+	// path is stored; credential values never enter this config.
+	StorageConfig string `json:"storage_config,omitempty"`
 	// Deprecated compatibility fields are decoded only by Load, then cleared
 	// during the one-time upgrade to the immutable EVM suite profile.
 	ContractBackend string `json:"-"`

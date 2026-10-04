@@ -136,3 +136,16 @@ export const MODULE_ABIS: Record<SuiteModuleKey, Abi> = {
 };
 
 export const activityAbis = [coreAbi, moderationAbi, economicAbi, badgeAbi] as const;
+
+// The storage-neutral successor suite (contracts/evm-v2-successor) speaks a
+// commitment-shaped ref ABI. It is dispatched by suite version, never mixed
+// with the legacy v3 core ABI.
+export const SUITE_SUCCESSOR_VERSION = 4n;
+
+export const successorCoreAbi = parseAbi([
+  "function resolveRepository(address owner, string name) view returns ((bytes32 id,address owner,string name,string description,string defaultBranch,bytes32 forkedFrom,uint64 createdAt,uint64 updatedAt,bool exists) repository,bool canonical)",
+  "function getRef(bytes32 repoId,string refName) view returns ((bytes32 manifestDigest,uint96 manifestSize,string bootstrapLocator,uint64 revision,uint64 updatedAt,address updatedBy,bool exists))",
+  "function listRefsPage(bytes32 repoId,uint256 cursor,uint256 limit) view returns (string[] names,(bytes32 manifestDigest,uint96 manifestSize,string bootstrapLocator,uint64 revision,uint64 updatedAt,address updatedBy,bool exists)[] refs,uint256 nextCursor)",
+  "function updateRef(bytes32 repoId,string refName,string commitSha,bytes32 manifestDigest,uint96 manifestSize,string bootstrapLocator,uint64 expectedRevision,bytes32 expectedManifestDigest,bool force)",
+  "function deleteRef(bytes32 repoId,string refName)",
+]);

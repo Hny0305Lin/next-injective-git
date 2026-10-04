@@ -46,6 +46,28 @@ S01–S03 的 PASS 限定为 [BYOS 规格第 9 节](storage-byos.md#9-s01s03-本
 R2 限单 PUT 16 MiB；AWS multipart 仅本地测试。现有 helper 保留 v3；storage doctor/show 仅本地，不解析密钥。
 S04–S07 仍 NOT PROVEN；下一切片为 successor ABI/CAS/version dispatch，再接 CLI/Web。真实云、真实 IPFS 和链上 Git E2E 未执行。
 
+### 2026-10-04 S04 本地切片进展（合约+Go/mock 链；S05 CLI/Web 接入仍未开始）
+
+- 新增 `contracts/evm-v2-successor/`：fresh successor 套件候选（suiteVersion=4）。`RepositoryCore` 为承诺形态（manifestDigest/manifestSize/bootstrapLocator/revision），revision CAS（force 不豁免）、delete 保 revision 的 tombstone（防 delete/recreate ABA）、fork 不复制 ref 承诺、RefUpdated/RefDeleted 事件 v2 携带完整 refName 与全部承诺字段；其余八模块与 v3 逐字节一致（检查脚本强制），SuiteDirectory 仅 suiteVersion 常量不同。v3 源码/ABI/artifacts/历史证据未改动。
+- `scripts/evm-successor-solc-check.mjs`：锁定 solc 0.8.24（optimizer runs=1, viaIR）编译、EIP-170 限额、unchanged-from-v3 文件集校验、版本化 abi/artifacts（schema `igit.evm-successor.solc-artifact.v1`）。实测 successor RepositoryCore runtime **22637B**（v3 为 23504B），EIP-170 余量 **1939B**。
+- 新增 `cli/internal/chain/successor`：checked-in ABI 加载、CAS 客户端（CommitmentMismatch/RefNotFound 类型化 revert 解码）、契约语义一致的 FakeChain（含 uncertain receipt 注入）；测试覆盖 create/update/CAS 冲突/force 不豁免/tombstone+ABA 重放拒绝/fork 无承诺/事件完整字段/无效承诺 fail closed，以及 fake cloud + 真实本地 Git 的 publish→CAS→冷克隆（manifest digest/size 预检→JCS Parse→逐包 ReadVerified→IndexVerified→fsck）、上传成功后 CAS 冲突的对象保留与定向恢复、uncertain receipt 解析、fork 上下文绑定拒绝复制源 manifest。
+- 验证：`go vet ./...` PASS、`go test -count=1 ./...` 29 包全绿（含新包）；`npm run check --prefix contracts/evm-v2-successor` PASS（含幂等重跑）。Foundry unit/invariant/gas 仍 **BLOCKED**（无 forge，R04 口径不变）；真实测试网部署/交易、真实云写入、Web 解码器与 CLI helper 接入仍 **NOT PROVEN**（S05/S06 范围）。
+### 2026-10-04 S05 本地切片进展（CLI/Web 接入；真实链/云待凭据注入）
+
+- CLI 存储中立分派：`git-remote-igit` 经 `chain.ProbeSuiteInfo` 验证套件版本——v3 走原 IPFS 路径（行为不变），v4 走 `internal/byos`（push=Prepare+CAS、fetch=manifest+ReadVerified+IndexVerified、list=manifest 取 commit OID），BYOS 路径不初始化 Kubo/网关/replication。`chain.SuccessorRegistry` 复用 VerifySuite 信任链与 EVMTransactor 语义；`packmanifest.ParseRefManifest` 提供无预知 commit 的冷读取入口。`igit storage add` 登记 profile 路径（仅引用，不含凭据）。
+- Web：`transport` 版本容错（3/4）+ successor core ABI；`registry` 按 suiteVersion 分派（`listSuccessorRefs`/`resolveSuccessorRefCommit`，commit OID 来自已验证 manifest）；`successorReader.ts` 受限 fetch+承诺对账+单包/总量内存上限+CORS 可操作提示（不索取 secret）；`gitstore.loadVerifiedRef` 先验证后 isomorphic-git 摄取；`useRepoViews` 自动分派。
+- 本地验证：`go vet ./...` PASS、`go test -count=1 ./...` 30 包全绿（新增 byos 5 测试 + remote BYOS 全协议会话测试：push→list→冷 fetch→fsck）；`npm run test:api` PASS（新增 successor-reader 6 测试：验证/篡改/跨仓库替换/CORS 提示/超限/包预算）；`npm run typecheck` PASS；`npm run test:storage-cross` PASS；双套件 solc check 均 PASS。修复并回归：push 批在 BYOS 下误走 v3 resolveRepo 的缺口、delete-only push 的 Kubo preflight 语义回归。
+- 测试网部署准备：`evm-successor-deploy` 命令（复用 suitedeploy no-clobber 证据流，schema 双白名单）；artifacts `--check` PASS（set sha256 d58df75b…）；operator key 0x3753…43b 余额约 0.63 INJ；storage profile 模板已备（R2 桶/prefix/publicBase 为已验证 canary 参数）。**BLOCKED（等待用户）**：`IGIT_EVM_KEY_PASSWORD` 与 `IGIT_CANARY_R2_WRITER/READER_KEY/SECRET` 需由用户通过环境变量注入（值不得经聊天/文件明文传递）；真实链/真实云读写与公开 profile 切换仍 NOT PROVEN。
+
+### 2026-10-04 深夜 S06 真实层进展（successor 测试网部署 + 真实 R2 端到端）
+
+- **fresh successor 套件已部署并激活于 Injective 测试网**（chainId 1439）：Directory `0xf987396475d0a4c96b722e993a95d8720a6292ad`，Coordinator `0x0360f499fda8d4cf8fba2d3f3c1e28871b8a76fc`，operator `0x85ea…4fa8`（igit-dev/successor-op key）。9/9 合约 + 8/8 配置交易全部确认，绑定验证 suiteVersion=4/state=active/7 模块 code hash 匹配；证据（no-clobber）：`local-only/successor-deploy/deployment5.json`（另有 deployment/2/3/attempt1/successor* 为失败与恢复尝试记录，保留不删）。激活 tx `0x8048fc61…`。
+- **真实端到端全链路 PASS**：`git push`（自包含 pack → R2 条件 PUT+全量回读 → JCS manifest → CAS 上链）、匿名公开 GET+ACAO 验证（pub-…r2.dev，SHA-256 与链上承诺一致）、干净 Windows 冷 `git clone`（全程无 Kubo/WSL2/injectived，fsck --strict 通过）、增量 push（revision 2）、tag push（新 manifest 绑定 refs/tags）、`git ls-remote`（含 HEAD symref）、`git fetch`、删除 ref（tombstone，getRef 回退 RefNotFound）、tombstone 重建（revision 3 单调）。
+- **真实链缺陷修复**：① RPC Client.Timeout 超时原被排除在重试外（evm_rpc.go 现按 "Client.Timeout exceeded" 语义重试）；② getRef/updateRef 的 revert payload 未解码为类型化错误（successorEVMBackend 读/写路径现接 DecodeRevert）；③ tombstone 重建期望 (0,0) 被 CAS 正确拒绝后客户端现按 mismatch.actualRevision 定向重试一次；④ suitedeploy 绑定验证硬编码 v3（Options.SuiteVersion 参数化，默认 3 不变）；⑤ evm-activate-suite 硬编码 v3 snapshot root（新增 --snapshot-root）；⑥ 测试网历史状态修剪窗口短于整套部署时长（Options.VerifyAtLatest 仅 successor 路径启用）。
+- 全量回归：`go vet ./...` PASS、`go test -count=1 ./...` 30 包全绿。
+- **NOT PROVEN（真实层遗留）**：force push 陈旧场景与真实并发双写竞争（CLI 时序无法制造；mock 层已覆盖）；R2 对象外部篡改检测（无覆盖权限且不应执行）；Blockscout 源码验证（该网络环境下 explorer 不可达）；真实浏览器 igit.xyz 浏览（本地 Settings 配 Directory `0xf98739…92ad` 后 commits/files/refs 即走 successor verified reader——待人工浏览确认）；公开 profile 切换未做（内置 profile Directory 仍为空，符合现行策略）。
+- 当前 igit 全局配置已指向 successor Directory；恢复 legacy v3：`igit config set evm_suite_directory_address 0x24124cb60F9EF02F7DeB5BC868c028Fb412F5334`。
+
 ### 后续依赖（原实施顺序保留）
 
 - S01–S03 本地实现已落盘并验证；后续扩展基于现有代码，不把 mock PASS 扩展为云或主网验收。

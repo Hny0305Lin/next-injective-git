@@ -1,6 +1,8 @@
 import { zeroAddress, zeroHash, type Address, type Hex } from "viem";
 import { sameAddress, toEvmAddress, toInjectiveAddress } from "./address";
-import { readModule, verifySuite, writeModule, type Eip1193, type SuiteBinding } from "./transport";
+import { readModule, rawModuleRead, verifySuite, writeModule, type Eip1193, type SuiteBinding } from "./transport";
+import { SUITE_SUCCESSOR_VERSION, successorCoreAbi } from "./abis";
+import { fetchVerifiedManifest } from "./successorReader";
 import type { AppConfig } from "./profile";
 
 export type ModerationStatus = "active" | "frozen" | "delisted";
@@ -22,6 +24,8 @@ export interface RefInfo {
   pack_uris: string[];
   updated_at: number;
   updated_by: string;
+  /** Present when the ref carries a successor on-chain manifest commitment. */
+  commitment?: SuccessorCommitment;
 }
 
 export interface CollaboratorInfo {
@@ -189,8 +193,9 @@ export async function listRepos(cfg: AppConfig, owner: string, includeInactive =
 }
 
 export async function listRefs(cfg: AppConfig, owner: string, repo: string): Promise<RefInfo[]> {
-  const resolved = await resolveRepo(cfg, owner, repo);
   const binding = await verifySuite(cfg);
+  if (binding.version === SUITE_SUCCESSOR_VERSION) return listSuccessorRefs(cfg, owner, repo);
+  const resolved = await resolveRepo(cfg, owner, repo);
   const output: RefInfo[] = [];
   let cursor = 0n;
   while (true) {
@@ -215,6 +220,11 @@ export async function listRefs(cfg: AppConfig, owner: string, repo: string): Pro
 export async function resolveRef(
   cfg: AppConfig, owner: string, repo: string, refName: string,
 ): Promise<{ ref_name: string; commit_sha: string; pack_uris: string[] }> {
+  const binding = await verifySuite(cfg);
+  if (binding.version === SUITE_SUCCESSOR_VERSION) {
+    const { ref } = await resolveSuccessorRefCommit(cfg, owner, repo, refName);
+    return { ref_name: ref.ref_name, commit_sha: ref.commit_sha, pack_uris: [] };
+  }
   const resolved = await resolveRepo(cfg, owner, repo);
   const raw = await readModule(cfg, "core", "getRef", [resolved.repoId, refName]) as RawRef;
   return { ref_name: refName, commit_sha: raw.commitSha, pack_uris: [...raw.packUris] };
@@ -321,4 +331,114 @@ export async function updateRepoInfoWithEvm(
   ]);
   clearQueryCache();
   return hash;
+}
+
+
+// ---- Storage-neutral successor (suiteVersion 4) ref reads ----
+// Refs carry an on-chain manifest commitment; the commit OID is learned from
+// the verified manifest, never from a guessed field.
+
+export interface SuccessorCommitment {
+  manifest_digest: string;
+  manifest_size: number;
+  bootstrap_locator: string;
+  revision: number;
+  repo_id: string;
+  suite_directory: string;
+}
+
+interface RawSuccessorRef {
+  manifestDigest: string;
+  manifestSize: bigint;
+  bootstrapLocator: string;
+  revision: bigint;
+  updatedAt: bigint;
+  updatedBy: string;
+  exists: boolean;
+}
+
+export function successorCommitment(
+  raw: RawSuccessorRef,
+  repoId: string,
+  suiteDirectory: string,
+): SuccessorCommitment {
+  return {
+    // Strip the 0x prefix: PackManifest commitment digests are bare 64-hex.
+    manifest_digest: (raw.manifestDigest ?? "").toLowerCase().replace(/^0x/, ""),
+    manifest_size: Number(raw.manifestSize),
+    bootstrap_locator: raw.bootstrapLocator,
+    revision: Number(raw.revision),
+    repo_id: repoId.toLowerCase(),
+    suite_directory: suiteDirectory.toLowerCase(),
+  };
+}
+
+/** Resolve a successor ref to a verified manifest and its commit OID. */
+export async function resolveSuccessorRefCommit(
+  cfg: AppConfig,
+  owner: string,
+  repo: string,
+  refName: string,
+): Promise<{ ref: RefInfo; manifest: import("./packmanifest").PackManifest }> {
+  const resolved = await resolveRepo(cfg, owner, repo);
+  const binding = await verifySuite(cfg);
+  if (binding.version !== SUITE_SUCCESSOR_VERSION) throw new Error("suite is not the storage-neutral successor");
+  const raw = await rawModuleRead(cfg, binding.modules.core, successorCoreAbi, "getRef", [resolved.repoId, refName], binding.blockTag) as RawSuccessorRef;
+  if (!raw.exists) throw new Error("ref not found");
+  const commitment = successorCommitment(raw, resolved.repoId, binding.directory);
+  const manifest = await fetchVerifiedManifest(
+    { chainId: String(cfg.evmChainId), suiteDirectory: commitment.suite_directory, repoId: commitment.repo_id, refName },
+    { sha256: commitment.manifest_digest, size: String(commitment.manifest_size), bootstrapLocator: commitment.bootstrap_locator },
+  );
+  const ref: RefInfo = {
+    ref_name: refName,
+    commit_sha: manifest.commit.oid,
+    pack_uris: [],
+    updated_at: Number(raw.updatedAt),
+    updated_by: toInjectiveAddress(raw.updatedBy),
+    commitment,
+  };
+  return { ref, manifest };
+}
+
+/** List refs of a successor suite; commit OIDs come from verified manifests. */
+export async function listSuccessorRefs(cfg: AppConfig, owner: string, repo: string): Promise<RefInfo[]> {
+  const resolved = await resolveRepo(cfg, owner, repo);
+  const binding = await verifySuite(cfg);
+  if (binding.version !== SUITE_SUCCESSOR_VERSION) throw new Error("suite is not the storage-neutral successor");
+  const output: RefInfo[] = [];
+  let cursor = 0n;
+  while (true) {
+    const [names, refs, next] = await rawModuleRead(
+      cfg, binding.modules.core, successorCoreAbi, "listRefsPage", [resolved.repoId, cursor, PAGE_SIZE], binding.blockTag,
+    ) as [string[], RawSuccessorRef[], bigint];
+    if (names.length !== refs.length) throw new Error("successor ref page has mismatched names and records");
+    for (let index = 0; index < names.length; index++) {
+      const raw = refs[index];
+      if (!raw.exists) continue;
+      const commitment = successorCommitment(raw, resolved.repoId, binding.directory);
+      let commitSha = "";
+      try {
+        const manifest = await fetchVerifiedManifest(
+          { chainId: String(cfg.evmChainId), suiteDirectory: commitment.suite_directory, repoId: commitment.repo_id, refName: names[index] },
+          { sha256: commitment.manifest_digest, size: String(commitment.manifest_size), bootstrapLocator: commitment.bootstrap_locator },
+        );
+        commitSha = manifest.commit.oid;
+      } catch {
+        // keep the commitment advertised; the commit column resolves lazily
+      }
+      output.push({
+        ref_name: names[index],
+        commit_sha: commitSha,
+        pack_uris: [],
+        updated_at: Number(raw.updatedAt),
+        updated_by: toInjectiveAddress(raw.updatedBy),
+        commitment,
+      });
+    }
+    if (next === cursor && refs.length !== 0) throw new Error("ref page cursor did not advance");
+    if (refs.length < Number(PAGE_SIZE)) break;
+    cursor = next;
+  }
+  return output;
 }

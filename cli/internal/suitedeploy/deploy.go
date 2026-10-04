@@ -407,7 +407,11 @@ func (deployment *deploymentContext) verifyRuntime(name string, address common.A
 	if !equalHash(block.Hash, receipt.BlockHash) || !strings.EqualFold(block.Number, receipt.BlockNumber) {
 		return nil, [32]byte{}, fmt.Errorf("receipt block changed before runtime verification")
 	}
-	observed, err := deployment.rpc.CodeAt(deployment.ctx, lowerAddress(address), receipt.BlockNumber)
+	codeBlock := receipt.BlockNumber
+	if deployment.options.VerifyAtLatest {
+		codeBlock = "latest"
+	}
+	observed, err := deployment.rpc.CodeAt(deployment.ctx, lowerAddress(address), codeBlock)
 	if err != nil {
 		return nil, [32]byte{}, err
 	}

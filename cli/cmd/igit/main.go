@@ -1741,6 +1741,8 @@ func setConfigField(cfg *config.Config, key, value string) error {
 		cfg.EVMExplorer = value
 	case "evm_keystore_dir":
 		cfg.EVMKeystoreDir = value
+	case "storage_config":
+		cfg.StorageConfig = value
 	case "key_name":
 		cfg.KeyName = value
 	case "ipfs_api":

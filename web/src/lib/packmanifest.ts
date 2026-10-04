@@ -124,3 +124,19 @@ export async function parseManifest(bytes: Uint8Array, expected: ManifestContext
   obj(expected, ['chainId','suiteDirectory','repoId','refName','commit']); context(expected);
   if (canonicalize(ctx) !== canonicalize(expected)) invalid(); return m;
 }
+
+export type ManifestBaseContext = { chainId: string; suiteDirectory: string; repoId: string; refName: string };
+
+/**
+ * Cold-reader entry: identical to parseManifest except the commit OID is not
+ * known in advance; every other context field and the whole commitment check
+ * stay enforced, and the commit is learned from the verified body.
+ */
+export async function parseRefManifest(bytes: Uint8Array, base: ManifestBaseContext, c: ManifestCommitment): Promise<PackManifest> {
+  obj(c, ['sha256','size','bootstrapLocator']);
+  if (size(c.size, BigInt(MAX_MANIFEST_BYTES)) !== BigInt(bytes.length) || !match(c.sha256, /^[0-9a-f]{64}$/) || !validPublicURL(c.bootstrapLocator) || await digest(bytes) !== c.sha256) invalid();
+  const m = validateManifest(strictJSON(bytes)); const encoded = encodeManifest(m);
+  if (encoded.length !== bytes.length || !encoded.every((b,i) => bytes[i] === b)) invalid();
+  if (m.chainId !== base.chainId || m.suiteDirectory !== base.suiteDirectory || m.repoId !== base.repoId || m.refName !== base.refName) invalid();
+  return m;
+}

@@ -10,14 +10,20 @@ import (
 )
 
 func (deployment *deploymentContext) verifyBindings(blockNumber, expectedBlockHash string) (*DirectoryBindingEvidence, error) {
-	if _, err := parseHexQuantity(blockNumber); err != nil {
-		return nil, fmt.Errorf("invalid binding verification block %q", blockNumber)
+	latest := deployment.options.VerifyAtLatest
+	if latest {
+		blockNumber = "latest"
+	}
+	if !latest {
+		if _, err := parseHexQuantity(blockNumber); err != nil {
+			return nil, fmt.Errorf("invalid binding verification block %q", blockNumber)
+		}
 	}
 	before, err := deployment.rpc.BlockByNumber(deployment.ctx, blockNumber)
 	if err != nil {
 		return nil, err
 	}
-	if !equalHash(before.Hash, expectedBlockHash) || !strings.EqualFold(before.Number, blockNumber) {
+	if !latest && (!equalHash(before.Hash, expectedBlockHash) || !strings.EqualFold(before.Number, blockNumber)) {
 		return nil, fmt.Errorf("binding verification block does not match final configuration receipt")
 	}
 	directoryAddress := deployment.addresses["SuiteDirectory"]
@@ -78,7 +84,11 @@ func (deployment *deploymentContext) verifyBindings(blockNumber, expectedBlockHa
 		return nil, err
 	}
 
-	if suiteVersion != 3 || state != 0 || configuredChainID.Cmp(new(big.Int).SetUint64(deployment.options.ChainID)) != 0 || snapshotRoot != deployment.snapshot {
+	expectedSuiteVersion := deployment.options.SuiteVersion
+	if expectedSuiteVersion == 0 {
+		expectedSuiteVersion = 3
+	}
+	if suiteVersion != expectedSuiteVersion || state != 0 || configuredChainID.Cmp(new(big.Int).SetUint64(deployment.options.ChainID)) != 0 || snapshotRoot != deployment.snapshot {
 		return nil, fmt.Errorf("directory chain/version/state/snapshot binding is inconsistent")
 	}
 	if bootstrapAuthority != (common.Address{}) || configuredCoordinator != coordinatorAddress ||
@@ -194,7 +204,7 @@ func (deployment *deploymentContext) verifyBindings(blockNumber, expectedBlockHa
 	if err != nil {
 		return nil, err
 	}
-	if !equalHash(after.Hash, expectedBlockHash) || !equalHash(after.Hash, before.Hash) || !strings.EqualFold(after.Number, blockNumber) {
+	if !latest && (!equalHash(after.Hash, expectedBlockHash) || !equalHash(after.Hash, before.Hash) || !strings.EqualFold(after.Number, blockNumber)) {
 		return nil, fmt.Errorf("binding verification block changed during fixed-block reads")
 	}
 	return binding, nil

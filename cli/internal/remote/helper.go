@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Hny0305Lin/next-injective-git/cli/internal/byos"
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/chain"
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/i18n"
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/replication"
@@ -26,6 +27,8 @@ type Helper struct {
 	uploadPeers []string
 	git         gitRepo
 	preflight   func(needsKubo bool) error
+	byos        *byos.Service
+	tmp         string
 
 	in  *bufio.Scanner
 	out io.Writer
@@ -93,10 +96,22 @@ func (h *Helper) Run() error {
 			// accept-and-ignore keeps git happy (verbosity, progress, ...)
 			h.printf("ok\n")
 		case line == "list":
+			if h.byos != nil {
+				if err := h.byosList(); err != nil {
+					return err
+				}
+				continue
+			}
 			if err := h.cmdList(false); err != nil {
 				return err
 			}
 		case line == "list for-push":
+			if h.byos != nil {
+				if err := h.byosList(); err != nil {
+					return err
+				}
+				continue
+			}
 			if err := h.cmdList(true); err != nil {
 				return err
 			}
@@ -189,6 +204,10 @@ func (h *Helper) cmdFetchBatch(first string) error {
 		}
 	}
 
+	if h.byos != nil {
+		return h.byosFetch(wanted)
+	}
+
 	// collect the pack URI set across all requested refs, preserving order
 	seen := map[string]bool{}
 	var uris []string
@@ -262,23 +281,27 @@ func (h *Helper) cmdPushBatch(first string) error {
 			specs = append(specs, parsePushSpec(line))
 		}
 	}
-	resolved, resolveErr := h.resolveRepo()
-	if resolveErr == nil {
-		resolveErr = movedError(resolved)
-	}
-	if resolveErr != nil {
-		for _, spec := range specs {
-			h.printf("error %s %s\n", spec.dst, sanitizeErr(resolveErr))
+	if h.byos == nil {
+		resolved, resolveErr := h.resolveRepo()
+		if resolveErr == nil {
+			resolveErr = movedError(resolved)
 		}
-		h.printf("\n")
-		return nil
+		if resolveErr != nil {
+			for _, spec := range specs {
+				h.printf("error %s %s\n", spec.dst, sanitizeErr(resolveErr))
+			}
+			h.printf("\n")
+			return nil
+		}
 	}
 	if h.preflight != nil {
 		needsKubo := false
-		for _, spec := range specs {
-			if spec.src != "" {
-				needsKubo = true
-				break
+		if h.byos == nil {
+			for _, spec := range specs {
+				if spec.src != "" {
+					needsKubo = true
+					break
+				}
 			}
 		}
 		if err := h.preflight(needsKubo); err != nil {
@@ -310,6 +333,10 @@ func parsePushSpec(line string) pushSpec {
 }
 
 func (h *Helper) pushOne(spec pushSpec) error {
+	if h.byos != nil {
+		return h.pushOneByos(spec)
+	}
+
 	// empty src means delete the remote ref
 	if spec.src == "" {
 		h.progress("deleting %s on chain", "正在从链上删除 %s", spec.dst)

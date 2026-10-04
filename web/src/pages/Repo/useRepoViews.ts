@@ -88,7 +88,7 @@ export function useLoadedRef(cfg: AppConfig, store: RepoStore, current: RefInfo)
     setReady(false);
     setErr("");
     store
-      .loadRef(cfg, current, setStatus)
+      .loadRefVerifiedDispatch(cfg, current, setStatus)
       .then(() => setReady(true))
       .catch((e: unknown) => setErr(String(e)));
   }, [current.ref_name, current.commit_sha, cfg, store]);

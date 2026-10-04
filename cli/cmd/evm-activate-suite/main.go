@@ -52,10 +52,21 @@ func main() {
 	flag.StringVar(&rpcURL, "rpc", "", "EVM JSON-RPC endpoint")
 	flag.Uint64Var(&chainID, "chain-id", 1439, "EVM chain ID")
 	flag.StringVar(&artifacts, "artifacts", "contracts/evm-v2/artifacts", "artifact directory")
+	// snapshot-root-flag: defaults to the v3 historical root; successor suites pass their own deployment root.
+	var snapshotRootOverride string
+	flag.StringVar(&snapshotRootOverride, "snapshot-root", "", "suite snapshot root (defaults to the v3 historical root)")
 	flag.StringVar(&usernameEscrowEvidence, "username-escrow-evidence-hash", "", "non-zero bytes32 evidence hash required before finalizing the username module")
 	flag.BoolVar(&dryRun, "dry-run", false, "check readiness without sending transaction")
 	flag.BoolVar(&skipFinalize, "skip-finalize", false, "skip finalize step (if already done)")
 	flag.Parse()
+	if v := strings.TrimSpace(snapshotRootOverride); v != "" {
+		parsed, perr := parseRequiredHash(v)
+		if perr != nil || parsed == (common.Hash{}) {
+			fmt.Fprintln(os.Stderr, "invalid -snapshot-root")
+			os.Exit(2)
+		}
+		snapshotRoot = parsed
+	}
 
 	if strings.TrimSpace(coordinator) == "" {
 		fatal("-coordinator is required")
@@ -110,7 +121,7 @@ func main() {
 	}
 	fmt.Printf("coordinator.activated=%v\n", activated)
 	if activated {
-		fmt.Println("✅ Suite is already activated; nothing to do.")
+		fmt.Println("鉁?Suite is already activated; nothing to do.")
 		return
 	}
 
@@ -159,9 +170,9 @@ func main() {
 
 	if dryRun {
 		if ready {
-			fmt.Println("✅ Dry-run: suite is ready for activation. Re-run without -dry-run to activate.")
+			fmt.Println("鉁?Dry-run: suite is ready for activation. Re-run without -dry-run to activate.")
 		} else {
-			fmt.Println("⚠️  Dry-run: suite is NOT ready. Modules need to be finalized first.")
+			fmt.Println("鈿狅笍  Dry-run: suite is NOT ready. Modules need to be finalized first.")
 			fmt.Printf("    Resume will start at module index %d.\n", nextModuleIndex)
 		}
 		return
@@ -271,7 +282,7 @@ func main() {
 			printTransactionConfirmation(fmt.Sprintf("%s finalize", mod.name), finalizeResult)
 		}
 
-		fmt.Println("\n✅ All modules finalized!")
+		fmt.Println("\n鉁?All modules finalized!")
 	}
 	if !ready {
 		ready, err = callBool(ctx, rpc, coordABI, coordinator, "readyForActivation")
@@ -298,7 +309,7 @@ func main() {
 		fatal(fmt.Sprintf("send activateSuite transaction: %v", err))
 	}
 	printTransactionConfirmation("Suite activation", result)
-	fmt.Printf("\n🎉 Suite activated successfully!\n")
+	fmt.Printf("\n馃帀 Suite activated successfully!\n")
 	fmt.Printf("\nYou can now configure igit CLI:\n")
 	fmt.Printf("  igit config set evm.suite_directory %s\n", directory)
 }
@@ -467,10 +478,10 @@ func sendAndConfirmState(
 func printTransactionConfirmation(label string, result *chain.EVMTransactionResult) {
 	fmt.Printf("  %s tx: %s\n", label, result.Hash)
 	if result.Receipt != nil {
-		fmt.Printf("  ✅ %s confirmed (block %s, gas %s)\n", label, result.Receipt.BlockNumber, result.Receipt.GasUsed)
+		fmt.Printf("  鉁?%s confirmed (block %s, gas %s)\n", label, result.Receipt.BlockNumber, result.Receipt.GasUsed)
 		return
 	}
-	fmt.Printf("  ✅ %s confirmed from contract state\n", label)
+	fmt.Printf("  鉁?%s confirmed from contract state\n", label)
 }
 
 func loadABI(artifactDir, contractName string) (*abi.ABI, error) {

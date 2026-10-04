@@ -60,3 +60,5 @@ web/.vercel/
 .zcode/
 .vercel
 .env*
+
+contracts/evm-v2-successor/node_modules/

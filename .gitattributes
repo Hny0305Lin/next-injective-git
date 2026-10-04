@@ -15,3 +15,8 @@ contracts/evm-v2/**/*.sol text eol=lf
 contracts/evm-v2/abi/*.json text eol=lf
 contracts/evm-v2/artifacts/*.json text eol=lf
 cli/internal/chain/abi/*.json text eol=lf
+
+contracts/evm-v2-successor/**/*.sol text eol=lf
+contracts/evm-v2-successor/abi/*.json text eol=lf
+contracts/evm-v2-successor/artifacts/*.json text eol=lf
+contracts/evm-v2-successor/package-lock.json text eol=lf

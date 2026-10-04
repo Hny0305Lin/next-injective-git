@@ -531,3 +531,9 @@ func (s *EVMKeystoreSigner) SignTransaction(ctx context.Context, tx EVMTransacti
 func evmKeyAddress(key *ecdsa.PrivateKey) common.Address {
 	return ethcrypto.PubkeyToAddress(key.PublicKey)
 }
+
+// ImportKeyBytes imports an existing hex private key under the given keystore
+// name. It exists for scripted recovery; interactive users get igit key import.
+func (s *EVMKeystoreSigner) ImportKeyBytes(name string, secret []byte) error {
+	return s.importKey(name, secret)
+}

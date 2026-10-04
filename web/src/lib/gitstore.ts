@@ -4,6 +4,7 @@
 import LightningFS from "@isomorphic-git/lightning-fs";
 import * as git from "isomorphic-git";
 import type { AppConfig, RefInfo } from "./chain";
+import { fetchVerifiedManifest, fetchVerifiedPack } from "./successorReader";
 
 export interface TreeItem {
   name: string;
@@ -108,6 +109,37 @@ export class RepoStore {
     }
   }
 
+  /**
+   * Verified BYOS load path for successor refs: the manifest commitment is
+   * fetched with a bounded length, checked against the on-chain digest/size,
+   * parsed against the repo/ref context, and each pack is downloaded, hashed
+   * and size-checked before isomorphic-git ingests it. Memory budgets reject
+   * oversized repositories instead of exhausting the tab.
+   */
+  async loadVerifiedRef(cfg: AppConfig, ref: RefInfo, onProgress?: (msg: string) => void) {
+    await this.ensureInit();
+    if (!ref.commitment) throw new Error("ref has no on-chain commitment");
+    const commitment = ref.commitment;
+    const manifest = await fetchVerifiedManifest(
+      { chainId: String(cfg.evmChainId), suiteDirectory: commitment.suite_directory, repoId: commitment.repo_id, refName: ref.ref_name },
+      { sha256: commitment.manifest_digest, size: String(commitment.manifest_size), bootstrapLocator: commitment.bootstrap_locator },
+    );
+    const budget = { total: 0 };
+    for (let i = 0; i < manifest.packs.length; i++) {
+      const entry = manifest.packs[i];
+      if (this.loaded.has(entry.sha256)) continue;
+      onProgress?.(`downloading verified pack ${i + 1}/${manifest.packs.length}`);
+      const bytes = await fetchVerifiedPack(entry, budget);
+      onProgress?.(`indexing verified pack ${i + 1}/${manifest.packs.length}`);
+      await this.ingestPack(bytes, i);
+      this.loaded.add(entry.sha256);
+    }
+  }
+  /** Storage-neutral dispatch: successor commitments go through the verified reader. */
+  async loadRefVerifiedDispatch(cfg: AppConfig, ref: RefInfo, onProgress?: (msg: string) => void) {
+    if (ref.commitment) return this.loadVerifiedRef(cfg, ref, onProgress);
+    return this.loadRef(cfg, ref, onProgress);
+  }
   /** List a directory at a commit; path "" = repo root. */
   async listTree(commit: string, path: string): Promise<TreeItem[]> {
     const oid = await this.treeOidAtPath(commit, path);

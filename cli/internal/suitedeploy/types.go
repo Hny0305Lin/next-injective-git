@@ -186,14 +186,22 @@ type Manifest struct {
 type Options struct {
 	ArtifactDirectory string
 	SourceCommit      string
-	Network           string
-	ChainID           uint64
-	RPCEndpoint       string
-	BlockExplorer     string
-	SnapshotRoot      string
-	Operator          string
-	PlatformFeeBPS    uint16
-	Clock             func() time.Time
+	// SuiteVersion selects the deployed protocol generation: 0 (default) keeps
+	// the legacy v3 check, 4 targets the storage-neutral successor suite.
+	SuiteVersion uint64
+
+	// VerifyAtLatest reads pinned verification calls at the chain head instead of
+	// the receipt block: testnet nodes prune historical state faster than a
+	// full deployment runs. The default (false) keeps v3 fixed-block semantics.
+	VerifyAtLatest bool
+	Network        string
+	ChainID        uint64
+	RPCEndpoint    string
+	BlockExplorer  string
+	SnapshotRoot   string
+	Operator       string
+	PlatformFeeBPS uint16
+	Clock          func() time.Time
 }
 
 // MarshalCanonical renders a stable indented representation suitable for the

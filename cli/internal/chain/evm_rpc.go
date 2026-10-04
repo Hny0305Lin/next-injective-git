@@ -234,8 +234,16 @@ func retryableRPCError(err error) bool {
 	}
 	var transportErr *rpcTransportError
 	if errors.As(err, &transportErr) {
-		return !errors.Is(transportErr.Err, context.Canceled) &&
-			!errors.Is(transportErr.Err, context.DeadlineExceeded)
+		if errors.Is(transportErr.Err, context.Canceled) {
+			return false
+		}
+		if errors.Is(transportErr.Err, context.DeadlineExceeded) {
+			// The client-wide timeout is a per-attempt transport failure (slow
+			// or overloaded endpoint) and is safe to retry; a caller-owned
+			// context deadline must not be retried.
+			return strings.Contains(transportErr.Err.Error(), "Client.Timeout exceeded")
+		}
+		return true
 	}
 	return false
 }
