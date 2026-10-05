@@ -108,7 +108,7 @@ S04–S07 仍 NOT PROVEN；下一切片为 successor ABI/CAS/version dispatch，
 - **现象**：schema 2 manifest（rev 4）上链后，打开 `www.igit.xyz/.../demo-showcase-byos` 报 "Invalid manifest JSON, schema, context, commitment or limits"。
 - **根因（取证）**：线上 bundle（`index-C8HlQA3X.js`）为 S08 之前的构建，反编译确认校验器含 `schemaVersion!==1` 与 `dependsOn.length!==0` 硬检查——遇到 schema 2 链式 manifest **按 ADR 0005 第 4 条设计 fail-closed**。manifest 本身经新版校验器对真实字节+链上承诺验证完全有效（schema=2 packs=2 deps=1，digest-match=true）。非 manifest 损坏，属部署滞后。
 - **应急恢复（同日执行）**：`git commit --amend` + force push（非 ff）→ 客户端自动回退全量自包含包：main → **revision 5**（`ded55a8`，schema 1 单包 2237 B，digest-match=true，dependsOn=[]）。浏览器实测页面恢复：文件列表与 README（含 S08 段落）完整渲染，无报错。rev 4 的 schema 2 状态与 R2 对象保留为历史证据。
-- **根修待办**：部署含 schema 2 解析的 web bundle 到生产。本机 vercel CLI 已 link 项目（`web/.vercel`，prj_Vkvzh…）但 token 失效需 `vercel login`；CI 的 `web Vercel production deploy` 自 2026-08-21 记录起从未成功（缺 VERCEL_TOKEN secrets）。部署方式须为 prebuilt（`vercel build` + `vercel deploy --prebuilt --prod`），因 schema 2 改动尚未提交，云端 git 构建拿不到源码。部署后该仓库下次正常 push 会自然回到增量链。
+- **根修（同日完成，CI 自动部署）**：`721228e` 的 `web Vercel production deploy` CI job **SUCCESS**（secrets 已由用户配好），www.igit.xyz bundle 更新为 `index-_26HIkFf.js`，反编译确认校验器已接受 `schemaVersion 1|2`。随后对 demo 仓库做一次正常 fast-forward push（`ded55a8..c9a76b6`，rev 6），浏览器实测新前端渲染 schema 2 增量链完整（文件列表与 README 全部显示，无报错）。同轮推送暴露 `suite-readiness.sh --source-only` 的休眠缺陷：不可变审计基线 `reconciliation-baseline-2026-09-12.md` 记录 "RepoRegistryV2 已移除" 被 V1 路径 grep 扫中（该 gate 自基线入库起即休眠失败，`da6c148` 首次触发），`96c8be9` 以 `--exclude='reconciliation-baseline-*.md'` 修复并本地复验 PASS。
 
 ### 后续依赖（原实施顺序保留）
 
