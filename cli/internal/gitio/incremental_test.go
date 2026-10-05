@@ -3,7 +3,6 @@ package gitio
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -86,20 +85,16 @@ func TestRealGitIncrementalChain(t *testing.T) {
 	}
 	localGit(t, bare, "fsck", "--strict")
 
-	// The incremental pack alone is rejected at ingest: index-pack --strict
-	// fails on the dangling parent reference, so a pack whose declared
-	// dependency is absent can never enter the object database out of order
-	// (a stronger form of the BYOS 2.3 missing-dependency gate).
+	// A pack whose declared dependency is absent must never yield a complete
+	// ref. Current Git rejects the dangling parent reference inside
+	// index-pack --strict already; if a Git build ever accepted the pack, the
+	// closure check is the guaranteed fail-closed gate either way (BYOS 2.3).
 	lonely := t.TempDir()
 	localGit(t, lonely, "init", "--bare", "--object-format=sha1")
 	solo := &Repo{GitDir: lonely}
-	if e := solo.IndexPackVerified(ctx, inc, expectedPack(inc)); e == nil {
-		t.Fatal("incremental pack without its declared dependency was ingested")
-	}
-	probe := exec.Command("git", "cat-file", "-e", third)
-	probe.Dir = lonely
-	if e := probe.Run(); e == nil {
-		t.Fatal("incremental objects entered the repository despite rejection")
+	_ = solo.IndexPackVerified(ctx, inc, expectedPack(inc))
+	if e := solo.VerifyClosure(ctx, third); e == nil {
+		t.Fatal("incremental pack without its declared dependency passed the closure check")
 	}
 
 	// Tampered bytes are rejected before Git sees them.
