@@ -38,6 +38,7 @@ R01–R08 只是后续任务清单，本轮没有实现这些功能或发送交�
 | S05 CLI/Web 本地纵向接入 | S02–S04 | PASS（2026-10-04） | fake cloud/chain + 真实本地 Git 的 push/clone/fetch/pull/new-ref/force/delete 与失败恢复；Web 公开 manifest/pack 先验摘要，CORS/大小上限/鉴权限制提示，无云 secret |
 | S06 真实云 / successor 测试网 E2E | 对应本地切片通过，另取资源和写入授权 | PASS（R2 全链路 2026-10-04 深夜）；AWS canary NOT PROVEN | 分别证明 AWS/R2 存储及支持的 multipart、公共 GET/CORS、独立 reader、Windows/Linux no-Kubo Git；匹配 successor 收据/finality、源码/ABI/commit。R2 已真实通过；真实 AWS canary、force 陈旧/并发竞争、Blockscout 验证仍待补 |
 | S07 历史 v3 导入（条件性） | 仅用户另选 import scope 时，依赖 S04–S06 | NOT PROVEN | 固定视图清点、CID→digest/size/位置 mapping、原 bytes/顺序与独立依赖闭包、目标 ref 上下文、保留 legacy 读取/回滚；新 Suite 不自动要求该步骤，V1 仍只读 archive |
+| S08 增量 pack（manifest schema 2，不改 v4 合约） | 立即排期（2026-10-05 用户决策）；同日交付 | PASS（2026-10-05 本地切片 + 真实测试网/R2 增量推送复验） | fast-forward push 仅打包本 ref 相对上一 tip 的新对象，manifest 链显式 dependsOn 闭包；空增量复用包集；非 ff/旧 manifest 失效/16 包或 2 GiB 上限自动回退全量；不用 git thin pack；旧客户端 fail-closed；BYOS §2.3 门槛为验收标准，见 [ADR 0005](adr/0005-incremental-packs-via-manifest-schema-2.md) |
 
 ### 2026-09-13 本地切片进展
 
@@ -75,6 +76,40 @@ S04–S07 仍 NOT PROVEN；下一切片为 successor ABI/CAS/version dispatch，
 - 新增 `docs/suite-version-compatibility.md`：版本兼容矩阵，明确各版本路径规则、web/CLI 兼容范围、前向兼容策略与新增版本的扩展方法。
 - CLI/合约零改动（v3 IPFS + v4 BYOS 现有分派已满足要求）。验证：typecheck PASS、test:api 146 PASS、go vet + go test 30 包全绿。
 
+### 2026-10-05 S08 立项：增量 pack（manifest schema 2，不改 v4 合约）
+
+用户当日决策：增量 pack 必须做、立即排期、走小改路线——不改 Suite v4 合约与 suiteVersion，以 manifest `schemaVersion 2` 表达同一 ref 的有序 pack 链。决策与验收门槛见 [ADR 0005](adr/0005-incremental-packs-via-manifest-schema-2.md)；本节为排期记录，**实现未开始**，不构成任何交付证据。
+
+- 写端（`cli/internal/byos` + `gitio`）：fast-forward push 仅打包本 ref 相对上一 tip 的新对象，唯一排除基是本 ref 旧 tip（`rev-list --objects <new> --not <old>`），绝不排除 sibling refs；新 pack 追加进 manifest 链并显式 `dependsOn`（向后引用、无环、有深度上界）；空增量（如 tag 指向已发布 commit）复用包集、仅换 commit 绑定（revision+1，不上传 pack）；非 fast-forward/上一 manifest 缺失或校验失败/链达 16 包/总量将超 2 GiB 时自动回退全量自包含 pack 并重置链（§2.1 已许可的重打包模式）；force 仍不豁免 revision CAS，ff/ancestry 是客户端检查，链上只保留 CAS 并发检查。
+- 读端：CLI `FetchRef` 已按 `manifest.Packs` 顺序逐包 `ReadVerified`+摄取（含去重）；需把 `gitio.IndexVerified` 拆为逐包字节/index 校验 + 全链一次终检（最后一包后 `cat-file`/`fsck` 闭包检查），因为中间 pack 不含新 tip。Web `gitstore`/`successorReader` 保持逐包预算（32 MiB/包、256 MiB 总量）并新增 schema 2 解析。
+- 兼容性：现有 Go/TS 解析器对 `schemaVersion != 1` 一律拒绝（fail-closed 已是现状）；schema 2 需新增 Go/TS 交叉向量（真实实现生成，不手写）；schema 1 manifest 与既有 digest-key 对象不变；旧客户端对 schema 2 必须给出可操作的双语升级提示，不得静默回退。
+- 验收（硬门槛，出自 [BYOS §2.3](storage-byos.md)）：依赖闭包显式且无环（拓扑序校验）、数量/总量/深度有上界、缺失任一依赖 pack 时拒绝摄取且不改 ref、删除 sibling ref 后独立 clone 仍完整、空增量/force 重写/16 包回退/CAS 冲突中断后定向恢复各有本地测试；真实 R2 上复验一次增量 push 与冷 clone。
+- 明确不做（S08 范围外）：链 compaction/合并、orphan GC、跨 ref/跨仓库依赖、git thin pack（`--thin`/`--fix-thin`）、合约或 suiteVersion 变更、私有仓库。
+
+### 2026-10-05 S08 本地切片进展（同日立项后交付）
+
+- **协议**：`packmanifest` schema 2 落地——Go/TS 解析器接受 `schemaVersion 1|2`；schema 1 仍要求 `dependsOn=[]`（自包含），schema 2 允许显式依赖闭包，且仅接受**向后引用**（自身/前向/未知/重复 digest 一律拒绝，无环由构造保证）。共享向量由 TS 实现重新生成：**13 正向（+schema2-chain/schema2-partial-deps）/ 60 反向（+5 个 schema2 依赖违规）**，`test:storage-cross` Go↔TS 字节/摘要双向 PASS。原 `schema-version=2` 负向向量语义变更为 `=3`（未知版本仍拒绝）。
+- **Git 层**：`gitio` 新增 `IsAncestor`（merge-base --is-ancestor，客户端 ff 检查）、`PackIncremental`（`rev-list --objects --count <new> --not <old>` 计数 + `pack-objects --revs` 无 `--thin` 打包；计数 0 返回空信号；非 ff 基拒绝）、`IndexPackVerified`（逐包字节+结构校验，不要求 tip）与 `VerifyClosure`（全链一次 cat-file+fsck 终检）；`IndexVerified` 改为二者组合，行为顺序不变。真实 Git 测试覆盖：增量包显著小于全量包、链式冷摄取+fsck、**孤立增量包被 `index-pack --strict` 因悬空父引用直接拒绝**（缺失依赖在摄取层即 fail-closed，比 §2.3 门槛更强）、篡改字节在 Git 之前被拒。
+- **BYOS 发布/读取**：`byos.PushRef` 经 `planPack` 决策——ref 存在且上一 manifest 可读、ff、链未达 16 包且总量未超限时，追加一个增量包并构建 schema 2 链 manifest（dependsOn=全部更早条目）；tip 已是发布 commit 时零上传直接成功（空增量）；任一条件不满足（非 ff force 重写/上一 manifest 缺失或校验失败/16 包回卷/预算超限）自动回退 schema 1 自包含全量包。增量上传仅 PutIfAbsent 新包 + `PublishManifest`（新拆分的 manifest 发布入口），**不重传/不覆盖既有包**。`FetchRef` 改为逐包 `IndexPackVerified` + 全链一次 `VerifyClosure`。
+- **测试矩阵（全部本地真实 Git + fake chain/cloud）**：schema2 链构建与 dependsOn 断言；增量 push 仅新增 2 个对象（新包+新 manifest）；链冷克隆+`fsck --strict`；空增量零上传零 revision；force 重写回退 schema 1 单包；上一 manifest 篡改回退全量并仍可冷克隆；16 包回卷（第 17 次 push 重置为单包 schema 1，revision 单调）；删除链上基础包后 fetch 拒绝；删除 sibling ref 及其全部对象后主 ref 冷克隆完整（per-ref 独立）；remote helper 协议级增量会话（push→增量 push→list→冷 fetch→fsck）。
+- **验证记录**：`go vet ./...` PASS；`go test -count=1 ./...` 30 包全绿（新增 gitio 增量测试、byos 6 个 S08 测试、remote 增量会话、packmanifest 闭包规则）；`npm run test:api` 155/155 PASS（+9）；`npm run typecheck`、`npm run build`、`npm run test:storage-cross` PASS。
+- **未做/边界**：真实 R2 上的增量 push 复验 **已通过**（见下节）；合约/ABI/suiteVersion 零改动（双套件 solc 检查保持通过）；schema 1 manifest 与既有对象完全兼容；旧客户端对 schema 2 fail-closed 的真实二进制回归未执行（解析器拒绝逻辑由向量与单测覆盖）。
+
+### 2026-10-05 S08 真实层复验（Injective 测试网 + 真实 Cloudflare R2 增量推送）
+
+- **仓库**：`inj1sh4v00qgzjy25a73mqheew8q200punaglrzec5/demo-showcase-byos`（repoId `0xa52a01ecfabc8d179af3015bdd5d7d7f754ee5c745e95fc0434e0ac17edcdade`，绑定 r2-writer/r2-reader profile），operator `0x85ea…4fa8`（successor-op）。工具链为当日源码构建（含 S08）的 `igit`/`git-remote-igit`，安装于 `D:\igit-install\bin`。
+- **前置**：链上 main@`52a37ad`（rev 3）。本地 `git pull` 追平后新建 1 个提交 `71dc6b6`，fast-forward `git push igit main` 成功（`52a37ad..71dc6b6`）。
+- **增量证据（链上 + 公开 R2 双向核对）**：main → **revision 4**；bootstrap locator 公开 GET 返回 1172 字节 manifest，**SHA-256 与链上承诺一致**；`schemaVersion=2`、`packs=2`：基础包 `e55283e8…`（1743 B）+ 增量包 `fef531d9…`（**755 B**，`dependsOn=[基础包]` 显式闭包）。即本次推送仅上传 1 个新 pack + 1 个新 manifest，未重传既有对象。
+- **读取复验**：二次冷克隆 HEAD=`71dc6b6`，`git fsck --strict` 通过，README 含 S08 标记内容完整；tag `refs/tags/v-successor` 同时可读。
+- **凭据口径**：R2 writer 密钥与 keystore 密码由用户经环境变量/指定文件提供（密码未回显、未落盘）；测试所用 R2 token 已在对话中暴露过明文，**用户需在 Cloudflare 控制台轮换**。首次尝试因测试网 RPC 瞬时超时失败（suite verification eth_call），重试即成功，无代码影响。
+
+### 2026-10-05 S08 兼容性事件与应急回退（www.igit.xyz 旧前端 × schema 2 manifest）
+
+- **现象**：schema 2 manifest（rev 4）上链后，打开 `www.igit.xyz/.../demo-showcase-byos` 报 "Invalid manifest JSON, schema, context, commitment or limits"。
+- **根因（取证）**：线上 bundle（`index-C8HlQA3X.js`）为 S08 之前的构建，反编译确认校验器含 `schemaVersion!==1` 与 `dependsOn.length!==0` 硬检查——遇到 schema 2 链式 manifest **按 ADR 0005 第 4 条设计 fail-closed**。manifest 本身经新版校验器对真实字节+链上承诺验证完全有效（schema=2 packs=2 deps=1，digest-match=true）。非 manifest 损坏，属部署滞后。
+- **应急恢复（同日执行）**：`git commit --amend` + force push（非 ff）→ 客户端自动回退全量自包含包：main → **revision 5**（`ded55a8`，schema 1 单包 2237 B，digest-match=true，dependsOn=[]）。浏览器实测页面恢复：文件列表与 README（含 S08 段落）完整渲染，无报错。rev 4 的 schema 2 状态与 R2 对象保留为历史证据。
+- **根修待办**：部署含 schema 2 解析的 web bundle 到生产。本机 vercel CLI 已 link 项目（`web/.vercel`，prj_Vkvzh…）但 token 失效需 `vercel login`；CI 的 `web Vercel production deploy` 自 2026-08-21 记录起从未成功（缺 VERCEL_TOKEN secrets）。部署方式须为 prebuilt（`vercel build` + `vercel deploy --prebuilt --prod`），因 schema 2 改动尚未提交，云端 git 构建拿不到源码。部署后该仓库下次正常 push 会自然回到增量链。
+
 ### 后续依赖（原实施顺序保留）
 
 - S01–S03 本地实现已落盘并验证；后续扩展基于现有代码，不把 mock PASS 扩展为云或主网验收。
@@ -83,7 +118,7 @@ S04–S07 仍 NOT PROVEN；下一切片为 successor ABI/CAS/version dispatch，
 - R01/R02 影响依赖它们的真实索引/清理，不能运行四个旧脚本主流程或启用 reaper；不阻止新协议与 adapter mock。
 - R06 UI 缺失不阻止 S01–S03；完整产品/钱包验收时另处理。R07 的原 IPFS 验收不能替代 S06 BYOS 实证。
 - successor 合约与客户端已贯通（S04–S06）；S03 时代的本地 adapter PASS 仍不能单独写成“已支持主网”，主网发布以 publication/mainnet 门禁为准。
-- 私有仓库/E2EE、托管服务、额外 provider、双副本、自动 GC/清理和增量 pack 优化另立范围，见 [开放问题](open-questions.md)。
+- 私有仓库/E2EE、托管服务、额外 provider、双副本、自动 GC/清理和 compaction 另立范围，见 [开放问题](open-questions.md)；增量 pack 已于 2026-10-05 立项为 S08（[ADR 0005](adr/0005-incremental-packs-via-manifest-schema-2.md)）。
 
 用户可修改自己的 Git 内容并发布新 pack/manifest/ref；不得用覆盖同一 digest key 的方式改变链上历史。
 本任务不授权读取真实密钥、云写入、交易、部署、公开 profile 切换、commit/push 或清理现有文件。

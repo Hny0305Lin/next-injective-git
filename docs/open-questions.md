@@ -31,7 +31,7 @@ The specification's recommended defaults were applied, local fixtures were
 implemented, and justified deviations were recorded before freezing the wire
 protocol.
 
-- Manifest schema 1/canonical bytes/context binding and local limits are now tested and frozen in [BYOS section 9](storage-byos.md): SHA-1, pack v2, full non-thin history. Other Git formats and incremental dependency optimization remain separate work.
+- Manifest schema 1/canonical bytes/context binding and local limits are now tested and frozen in [BYOS section 9](storage-byos.md): SHA-1, pack v2, full non-thin history. Other Git formats and incremental dependency optimization remain separate work. Incremental dependency packs were approved by the user on 2026-10-05 and scheduled as [S08](adr/0005-incremental-packs-via-manifest-schema-2.md): manifest schemaVersion 2 on the existing Suite v4, no contract change; schema 1 manifests stay valid.
 - Successor version, bounded bootstrap locator/state layout, same-commit
   manifest changes, CAS revision/tombstones, ref deletion/recreation, fork and
   import semantics, event ABI and backwards-compatible client dispatch.
@@ -90,7 +90,10 @@ protocol.
   itself solve those problems.
 - Additional cloud providers or self-hosted services, each with independent
   capability/security acceptance.
-- Incremental pack dependencies/compaction and safe inventory-based orphan
+- Incremental pack dependencies moved to scheduled work on 2026-10-05
+  ([S08](adr/0005-incremental-packs-via-manifest-schema-2.md), user decision:
+  manifest schemaVersion 2 on the existing Suite v4, no contract change).
+  Still later work: chain compaction/merging, safe inventory-based orphan
   cleanup, retention/disaster-recovery service commitments.
 - Whether ZKP remains an isolated testnet experiment or becomes a separately
   reviewed successor requirement, with root governance, setup, verifier/circuit

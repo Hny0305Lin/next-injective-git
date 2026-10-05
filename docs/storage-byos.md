@@ -115,6 +115,7 @@ legacy reader 必须标明验证边界；successor manifest 内的 IPFS location
 
 legacy v3 的 packUris 顺序保持不变；它是多个 pack，而不是多个副本。
 未来增量方案需要显式依赖闭包、无环拓扑排序、上界、缺失依赖拒绝和跨 ref 删除测试，不能悄悄开启。
+2026-10-05 用户决策：增量 pack 立即排期为 S08——manifest schema 2、显式 dependsOn 闭包、不改 Suite v4 合约与 suiteVersion，仍不使用 git thin pack；本段准入门槛即 S08 的硬验收标准，见 [ADR 0005](adr/0005-incremental-packs-via-manifest-schema-2.md)。
 Git 的 [thin pack](https://git-scm.com/docs/git-pack-objects) 可能引用 pack 外对象；
 [index-pack --fix-thin](https://git-scm.com/docs/git-index-pack) 后的本地字节不再必然与上传 raw pack 相同。
 验证上传 digest 必须在 Git 修复或摄取之前。
@@ -288,7 +289,7 @@ R01/R02 仍为 FAIL，四个现有脚本不能作为真实索引或清理基础�
 - 双副本/IPFS+云镜像、平台托管 public profile、费用补贴与可用性服务承诺。
 - 私有仓库、E2EE、撤权/密钥轮换、浏览器私有读取与元数据泄露模型。
 - MinIO/其他云/任意兼容 endpoint；每种新增 provider 重新做能力与安全验收。
-- 增量 thin pack、压缩/compaction、受保护 multipart 发布优化、自动 orphan/GC。
+- 增量依赖 pack 已于 2026-10-05 立项为 S08（[ADR 0005](adr/0005-incremental-packs-via-manifest-schema-2.md)：manifest schema 2，非 git thin pack，不改 v4 合约）；压缩/compaction、受保护 multipart 发布优化、自动 orphan/GC 仍为本节后续范围。
 - 可选 versioning/retention/disaster-recovery 运维规范；不得自动启用会删除可达对象的策略。
 
 这些选择保留在 [开放问题](open-questions.md)。不要为等待它们而推迟首期本地 AWS/R2 BYOS 实现。

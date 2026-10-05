@@ -12,7 +12,11 @@ legacy fallback, proxy, diamond, or `delegatecall` path.
 dispatch by on-chain suite version, and real R2 end-to-end Git flows plus Web
 browsing work without Kubo/WSL2/`injectived`. Remaining open items: real AWS
 canary, Foundry gates, successor publication evidence, security review, and
-mainnet governance approval. See [docs/project-status.md](docs/project-status.md)
+mainnet governance approval. Incremental packs (S08) are delivered and
+verified with a real testnet/R2 incremental push
+([ADR 0005](docs/adr/0005-incremental-packs-via-manifest-schema-2.md);
+manifest schema 2 on Suite v4, no contract change). See
+[docs/project-status.md](docs/project-status.md)
 (English) or [docs/project-status-zh.md](docs/project-status-zh.md) (中文) for
 a comprehensive status overview.
 
