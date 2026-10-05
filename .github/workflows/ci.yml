@@ -326,10 +326,14 @@ jobs:
           $log = go test -count=1 ./... 2>&1 | Out-String
           $code = $LASTEXITCODE
           if ($code -ne 0) {
-            # Surface the failing tests in the step summary: anonymous readers
-            # (and the check-run API) can then see what broke without log access.
-            $hits = ($log -split "`n") | Select-String -Pattern 'FAIL|panic|\.go:\d+:' | Select-Object -First 80
-            $hits | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+            # Failures also surface as step annotations (::error::) so that
+            # anonymous readers and the check-run API can see what broke.
+            $hits = ($log -split "`n") | Select-String -Pattern 'FAIL|panic|\.go:\d+:' | Select-Object -First 20
+            foreach ($h in $hits) {
+              $line = $h.ToString() -replace '%', '%25' -replace '\r', '' -replace '\n', ' '
+              Write-Output "::error::$line"
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $line
+            }
           }
           $log
           exit $code
