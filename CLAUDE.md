@@ -1,12 +1,18 @@
 # Repository Guidance
 
-Next Injective Git stores packfiles on IPFS and control-plane state in a
-non-upgradeable Injective EVM Suite. Ordinary clients trust only one configured
+Next Injective Git stores control-plane state in a non-upgradeable Injective EVM
+Suite and stores packfiles through version-dispatched data planes: Suite v3
+uses the legacy IPFS/Kubo adapter, and Suite v4 uses BYOS object storage
+(Amazon S3 / Cloudflare R2 only). Ordinary clients trust only one configured
 `SuiteDirectory`; never add a direct module address, compatibility backend,
 legacy fallback, proxy, diamond, or `delegatecall` path.
 
-**Current Project Status:** P0 baseline complete (2026-08-19), P1 testnet
-deployment preparation in progress. See [docs/project-status.md](docs/project-status.md)
+**Current Project Status:** V4 BYOS delivered (2026-10-05): the successor Suite
+(suiteVersion 4) is deployed and active on Injective testnet, the CLI and Web
+dispatch by on-chain suite version, and real R2 end-to-end Git flows plus Web
+browsing work without Kubo/WSL2/`injectived`. Remaining open items: real AWS
+canary, Foundry gates, successor publication evidence, security review, and
+mainnet governance approval. See [docs/project-status.md](docs/project-status.md)
 (English) or [docs/project-status-zh.md](docs/project-status-zh.md) (中文) for
 a comprehensive status overview.
 
@@ -20,23 +26,30 @@ encrypted EVM keystore, JSON-RPC, and native storage tooling. WSL2 and
 `injectived` are not prerequisites for the EVM V2 product path.
 
 The EVM V2 product-generation name is distinct from the on-chain Suite protocol
-version, which is currently 3. Completion requires clean native Windows and
-Linux acceptance; source code or CI configuration alone is not evidence. See
+version. Suite v3 (IPFS) and Suite v4 (BYOS successor) coexist; clients select
+the reader/writer path from the on-chain `suiteVersion()`. Completion requires
+clean native Windows and Linux acceptance; source code or CI configuration
+alone is not evidence. See
 [ADR 0001](docs/adr/0001-evm-v2-runtime-and-migration-scope.md).
 
-IPFS/Kubo is the currently implemented pack-storage adapter, not the permanent
-product core. Amazon S3 and Cloudflare R2 adapters are a planned direction, not
-current functionality. The existing immutable Suite accepts only `ipfs://`
-pack URIs, so storage neutrality requires a reviewed successor protocol and
-migration rather than a documentation-only endpoint switch. See
-[ADR 0002](docs/adr/0002-pluggable-pack-storage.md).
+Storage is split by suite version and must stay split: v3 is the frozen
+IPFS/Kubo legacy path, and v4 is the delivered BYOS successor whose cloud
+providers are limited to Amazon S3 and Cloudflare R2 (see
+[ADR 0002](docs/adr/0002-pluggable-pack-storage.md) and
+[ADR 0004](docs/adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md)).
+MinIO, other clouds, arbitrary S3-compatible endpoints, and self-hosted object
+stores are out of scope for v4 production configuration. Do not retrofit bucket
+storage onto v3 or IPFS onto v4.
 
 ## Source Boundaries
 
 - `contracts/evm-v2`: nine Solidity contracts, fixed `solc 0.8.24`, checked ABI
-  and deployment artifacts.
-- `cli`: Go CLI, Git remote helper, EVM transactor, deployment tooling, and
-  deterministic offline migration tooling.
+  and deployment artifacts (Suite v3, IPFS `packUris`).
+- `contracts/evm-v2-successor`: Suite v4 (BYOS) — commitment-shaped
+  `RepositoryCore` (manifest digest/size/bootstrap locator + revision CAS) and
+  a `suiteVersion = 4` Directory; all other modules are byte-identical to v3.
+- `cli`: Go CLI, Git remote helper (v3 IPFS / v4 BYOS dispatch), EVM
+  transactor, deployment tooling, and deterministic offline migration tooling.
 - `web`: React/Vite and viem. Wallet sends must specify legacy type, estimated
   gas, and gas price at least `160000000 wei`, then verify receipt status.
 - `archive/cosmwasm-v1`: isolated read-only historical source and evidence
@@ -63,13 +76,15 @@ required gates rather than become a passing skip.
 
 ## Safety Properties
 
-- The client verifies chain ID, suite version 3, active state, every module code
-  hash, and every module binding before reads or writes.
+- The client verifies chain ID, suite version (3 or 4), active state, every
+  module code hash, and every module binding before reads or writes.
 - One `EVMTransactor` owns nonce lookup, gas estimation, legacy signing,
   broadcast, and bounded receipt polling. An uncertain receipt returns the tx
   hash and invalidates cached nonce state.
-- Push pins the pack durably before updating the ref. A failed transaction must
-  retain retryable content. A force push publishes a self-contained pack.
+- Push pins the pack durably before updating the ref: v3 pins via Kubo, v4
+  uploads to the user's S3/R2 bucket and verifies a full read-back before the
+  CAS ref update. A failed transaction must retain retryable content. A force
+  push publishes a self-contained pack; on v4, force never waives revision CAS.
 - Moderation hooks are mandatory for Core ref mutation and Economic sponsor
   mutation. Recovery is the only ownership-recovery capability.
 - Snapshot imports are ordered, bounded, payload-hashed, rolling-committed, and
@@ -86,9 +101,10 @@ contract-only validation and must not require a key. Git-compatible unknown
 commands may be forwarded to Git; inspect command dispatch before adding names.
 
 Use checked-in ABIs through go-ethereum or viem. Do not hand-code selectors or
-word decoders. Preserve the established Git pack and current IPFS gateway
-behavior until a separately reviewed storage protocol is implemented. Do not
-claim S3 or R2 support from roadmap documentation alone.
+word decoders. Preserve the v3 IPFS gateway behavior and the v4 BYOS path
+exactly as dispatched by suite version. V4 BYOS supports only Amazon S3 and
+Cloudflare R2; do not add or claim MinIO, other clouds, or generic
+S3-compatible/self-hosted endpoints from roadmap documentation alone.
 
 Deployment is restricted to rotated encrypted testnet keys. Production needs a
 separate multisig/timelock governance design. Never deploy or broadcast merely

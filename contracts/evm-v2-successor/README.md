@@ -1,13 +1,19 @@
-# EVM Successor Suite (storage-neutral, candidate suiteVersion 4)
+# EVM Successor Suite (storage-neutral, suiteVersion 4)
 
-Status: **local compile/ABI gate PASS**. Foundry unit/invariant/gas: **BLOCKED**
-(no forge on this machine, R04). Deployment, transactions, testnet binding and
-public profiles: **NOT PROVEN** — nothing here authorizes a deployment.
+Status: **deployed and active on Injective testnet (2026-10-04)** — Directory
+`0xf987396475d0a4c96b722e993a95d8720a6292ad`, evidence
+`local-only/successor-deploy/deployment5.json` (no-clobber); local
+compile/ABI gate PASS. Foundry unit/invariant/gas: **BLOCKED** (no forge on
+this machine, R04). Blockscout verification, real AWS S3 canary, public
+built-in profiles, and mainnet: **NOT PROVEN** — nothing here authorizes a
+publication switch.
 
-This directory holds the fresh successor suite required by S04
+This directory holds the delivered successor suite required by S04
 ([ADR 0004](../../docs/adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md)).
 The legacy v3 sources, ABIs, artifacts and deployment evidence under
-`contracts/evm-v2` are untouched and remain the only deployed protocol.
+`contracts/evm-v2` are untouched; v3 remains the frozen IPFS protocol and both
+suites coexist behind on-chain version dispatch (see
+[suite version compatibility](../../docs/suite-version-compatibility.md)).
 
 ## Relationship to contracts/evm-v2
 

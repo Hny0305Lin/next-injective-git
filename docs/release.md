@@ -66,11 +66,14 @@ other self-hosted/S3-compatible provider, managed broker, private-repository
 encryption or mandatory dual replica is required. AWS/R2 Git operation must
 work without Kubo or iGit IPFS services.
 
-Successor publication is **NOT PROVEN**. It requires the reviewed versioned
-contracts/ABI/clients/indexer/evidence schema, both providers' real integrity
-and public-read acceptance, native Windows/Linux no-Kubo Git E2E, finality,
-independent security review and explicit approval. Extend and test the gate
-for that protocol; do not weaken v3 checks or rewrite historical evidence.
+Successor (Suite v4) publication remains **NOT PROVEN**. The v4 contracts,
+ABI/clients, testnet deployment, and a real R2 end-to-end Git flow are
+delivered, but publishing a successor public profile still requires: the real
+AWS S3 canary and remaining real-layer residuals, both providers' real
+integrity and public-read acceptance on the release commit, native
+Windows/Linux no-Kubo Git E2E, finality, independent security review, and an
+extended v4-aware release gate with explicit approval. Do not weaken v3
+checks or rewrite historical evidence.
 Import of existing v3 history is conditional on a separate scope; a fresh
 successor does not require fictitious migration receipts or V1 import.
 See [successor evidence requirements](acceptance-evidence.md),
@@ -84,4 +87,8 @@ Release binaries are version-injected and checked by
 `scripts/verify-release-assets.sh`. The checksum manifest must contain exactly
 the ten supported CLI/helper binaries in deterministic order.
 
-S01–S03 local storage libraries and Go/TS/mock tests are recorded in [BYOS section 9](storage-byos.md). They do not change the v3 gate, public profiles, release scope or approve a successor deployment. The next implementation gate is S04 protocol/ABI review and S05 integration.
+S01–S06 delivery is recorded in [backlog](backlog.md) (successor suite deployed
+on Injective testnet; real R2 end-to-end PASS). It does not change the v3 gate,
+public profiles, or release scope by itself. The next release gate work is the
+v4-aware evidence extension plus the remaining real-layer residuals (real AWS
+canary, Blockscout verification, publication approval).

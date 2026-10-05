@@ -1,11 +1,16 @@
 # Acceptance Evidence
 
-Scope note (2026-09-13): the existing schema/gate described below targets
-**legacy Suite v3 IPFS**, not the first mainnet successor.
+Scope note (updated 2026-10-05): the existing schema/gate described below
+targets **legacy Suite v3 IPFS**, not the first mainnet successor.
 [ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md) confirms
 AWS S3 / R2 BYOS on a storage-neutral successor as the first mainnet scope.
-S01–S03 local protocol/provider tests are recorded separately in [BYOS section 9](storage-byos.md); successor implementation and real acceptance remain **NOT PROVEN**. This document
-does not upgrade the gate or authorize a deployment.
+Suite v4 is now implemented, deployed and active on Injective testnet, and a
+real Cloudflare R2 end-to-end Git flow has passed (see the
+[delivery record](backlog.md)); the successor evidence extension below is
+therefore partially satisfied. Still NOT PROVEN: the real AWS S3 canary, the
+remaining real-layer residuals, an extended v4-aware release gate, and the
+security/approval gates. This document does not upgrade the gate or authorize
+a deployment or public profile switch.
 
 Repository tests demonstrate source behavior only. They are not deployment,
 migration, finality, wallet, or operational evidence.
@@ -43,7 +48,12 @@ no evidence for AWS S3 / R2 support. Preserve that schema and historical
 evidence; do not change old receipts, ABI, suite version or checksums to make
 them appear to verify a successor.
 
-## Required Successor Evidence Extension (Not Yet Implemented)
+## Required Successor Evidence Extension (Partially Delivered 2026-10-05)
+
+Delivered so far: frozen manifest schema 1 with Go/TS golden vectors; the v4
+contracts/ABI/Go/Web decoders bound to one reviewed source set; a deployed
+testnet successor with binding verification; and a real R2 end-to-end Git flow
+with verified public GET/CORS. Still required before successor publication:
 
 - Freeze the manifest encoding/schema and Go/TypeScript golden vectors;
   attest exact manifest digest/size, pack raw SHA-256/size and context binding.

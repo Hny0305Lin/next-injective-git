@@ -1,5 +1,10 @@
 # 下一聊天窗口：AWS S3 / Cloudflare R2 BYOS 本地实施提示词
 
+> **状态（2026-10-05）：已执行完毕，本文为历史任务书。** S01–S03 已于 2026-09-13
+> 交付（见 [storage-byos.md 第 9 节](../storage-byos.md)）；其后的 S04–S06 也已交付
+> （successor Suite v4 部署于 Injective 测试网、真实 R2 端到端 PASS，见
+> [backlog](../backlog.md) 各日期小节）。不要再按本文启动新实施窗口。
+
 本文件可整份复制到新的聊天窗口。编写日期：2026-09-13（Asia/Shanghai）。
 这是实施任务，不是完成报告；工作区状态需在新窗口重新核对。
 

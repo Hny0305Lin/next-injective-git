@@ -1,13 +1,20 @@
 # AWS S3 / Cloudflare R2 BYOS：首期实施规格
 
 决策日期及官方资料查询日期：**2026-09-13（Asia/Shanghai）**。
-S01–S03 本地源码、协议/mock 和 Windows 本地 Git fixture：**PASS**（验证范围见第 9 节）。
-真实 AWS、真实 R2、successor 链路与主网验收：**NOT PROVEN**。普通 Git remote 仍走 legacy v3。
+交付状态（2026-10-05 更新）：**已按本规格交付为 Suite v4（BYOS）**——successor 套件
+（suiteVersion=4）已部署并激活于 Injective 测试网（Directory
+`0xf987396475d0a4c96b722e993a95d8720a6292ad`）；CLI/Web 按链上版本分派，v4 走本规格的
+BYOS 路径；真实 Cloudflare R2 端到端 Git 流程（push/clone/fetch/ls-remote/tag/删除/重建）
+与匿名公开 GET+CORS 验证 PASS，全程无 Kubo/WSL2/injectived；Web 浏览可用。
+**仍 NOT PROVEN**：真实 AWS S3 canary、force-push 陈旧/真实并发竞争、R2 外部篡改检测、
+Blockscout 源码验证、Foundry 门禁、successor 公开发布与主网验收。交付记录见
+[backlog](backlog.md) 2026-10-04/05 各节。云 provider 仍**仅限 AWS S3 / Cloudflare R2**。
 
 产品范围以 [ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md) 为准；
-原审计事实保留在 [事实基线](reconciliation-baseline-2026-09-12.md)；本轮新增源码与验证记录见第 9 节，未改写原基线。
-第 9 节冻结已测试的 manifest schema 1 和本地 API/限额；successor ABI、版本号与地址仍待 S04 审查；
-**AWS/R2 BYOS、主网直接 successor、公开仓库、canonical JSON、用户独立 reader、不强制双副本不再是开放产品选项。**
+原审计事实保留在 [事实基线](reconciliation-baseline-2026-09-12.md)；第 9 节记录 2026-09-13 的
+S01–S03 本地切片（历史快照），其后的交付以上述状态为准。第 9 节冻结了已测试的 manifest
+schema 1 和本地 API/限额；successor 已定为 suiteVersion 4 并已部署测试网；
+**AWS/R2 BYOS、公开仓库、canonical JSON、用户独立 reader、不强制双副本不再是开放产品选项。**
 
 ## 1. 用户获得什么
 
@@ -121,7 +128,7 @@ fork/跨 ref 复制必须重新生成绑定目标 repo/ref 的 manifest；不能
 
 将 network/Suite 信任配置与 storage profile 分开，storage 选择不得改变 Directory 或 chainId。
 每仓库以 chainId + Directory + repoId 绑定本地 writer/reader，避免 rename/transfer 后按名字误选桶。
-已实现 `igit storage show/doctor <file>`，只读取显式的独立配置文件；`storage add` 尚未实现。show 仅显示无秘密引用，doctor 仅本地配置校验。
+已实现 `igit storage <add|doctor|show>`：`add` 登记配置文件路径（仅引用，不含凭据），`show/doctor` 只读取显式的独立配置文件；show 仅显示无秘密引用，doctor 仅本地配置校验。
 上传探针需单独显式开启并获资源授权，不能借 doctor 自动建桶、开放桶或写对象。
 
 | 配置项 | AWS S3 | Cloudflare R2 |
@@ -288,6 +295,11 @@ R01/R02 仍为 FAIL，四个现有脚本不能作为真实索引或清理基础�
 
 
 ## 9. S01–S03 本地实现与可重复验证（2026-09-13）
+
+> **2026-10-05 注**：本节是 2026-09-13 S01–S03 切片的历史快照，保留原记录不作改写。
+> 其后 S04（successor 套件/ABI）、S05（CLI/Web 接入）与 S06（测试网部署 + 真实 R2 E2E）
+> 已交付，当前状态以本文件头部和 [backlog](backlog.md) 各日期小节为准；
+> 本节中“下一步/尚未实现”的表述仅反映当时的进度。
 
 工作树基线：Windows amd64；分支 `dev`；HEAD `0ba06f436558f12d97625b393767440cdd0f9862`，
 加本轮未提交源码与既有未提交文档。此记录不绑定新提交，不作为云端/部署证据。

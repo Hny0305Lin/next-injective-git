@@ -1,5 +1,11 @@
 # AWS S3 / Cloudflare R2 BYOS：陪同用户实测提示词
 
+> **状态（2026-10-05）：核心实测已完成，本文为历史任务书。** 真实 Cloudflare R2
+> 全链路（条件 PUT + 回读、JCS manifest、CAS 上链、匿名公开 GET+CORS、冷 clone）
+> 已于 2026-10-04 通过（记录见 `local-only/byos-canary/r2-01`、`r2-02` 与
+> [backlog](../backlog.md) 2026-10-04 小节）；**真实 AWS S3 canary 仍未执行**。
+> 不要再按本文重新启动 R2 实测；AWS canary 可参考本文的分层授权流程。
+
 编写日期：2026-09-14（Asia/Shanghai）。本文件可以整份发送给接手模型。
 这是实测协作任务，不是新的完成报告，也不是云资源、公开策略、删除或链上交易授权。
 

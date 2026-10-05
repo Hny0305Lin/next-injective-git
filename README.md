@@ -1,26 +1,32 @@
 # Next Injective Git (`igit`)
 
-Next Injective Git currently stores Git packfiles through an IPFS/Kubo data
-plane and stores repository identity, refs, permissions, recovery, moderation,
-sponsorship, usernames, badges, and release checksums in a non-upgradeable
-Injective EVM Suite.
+Next Injective Git stores Git packfiles through two version-dispatched data
+planes — Suite v3 uses the legacy IPFS/Kubo adapter, and Suite v4 uses BYOS
+object storage limited to Amazon S3 and Cloudflare R2 — and stores repository
+identity, refs, permissions, recovery, moderation, sponsorship, usernames,
+badges, and release checksums in a non-upgradeable Injective EVM Suite.
 
 The ordinary CLI, Git remote helper, and Web app have one chain trust root: a
-`SuiteDirectory` address. Clients verify the EVM chain ID, suite version,
-`Active` state, module runtime code hashes, and module-to-directory bindings
-before use. There is no proxy, diamond, `delegatecall`, legacy write fallback,
-or mixed backend mode.
+`SuiteDirectory` address. Clients verify the EVM chain ID, suite version (3 or
+4), `Active` state, module runtime code hashes, and module-to-directory
+bindings before use, then dispatch to the IPFS path (v3) or the verified
+manifest/BYOS path (v4). There is no proxy, diamond, `delegatecall`, legacy
+write fallback, or mixed backend mode.
 
 > The checked-in public profiles intentionally contain no SuiteDirectory yet.
 > Commands that need the chain fail closed until reviewed deployment, migration,
-> fixed-block verification, and cutover evidence have passed. No deployment or
-> public testnet availability is claimed by this repository state.
+> fixed-block verification, and cutover evidence have passed. A testnet
+> successor Suite (v4) is deployed and active on Injective testnet
+> (`0xf987396475d0a4c96b722e993a95d8720a6292ad`); it is not yet a published
+> public profile. See [suite version compatibility](docs/suite-version-compatibility.md).
 
-**Current Status:** P0 baseline complete (2026-08-19), P1 testnet deployment 
-preparation in progress. See [Project Status](docs/project-status.md) for a 
-quick overview or [Delivery Roadmap](docs/delivery-roadmap.md) for detailed 
-sequencing. Architecture decisions and acceptance evidence remain authoritative 
-in their dedicated documents.
+**Current Status:** V4 BYOS delivered (2026-10-05) — successor Suite deployed
+on Injective testnet, CLI/Web version dispatch, real Cloudflare R2 end-to-end
+Git flows and Web browsing working without Kubo/WSL2/`injectived`; mainnet and
+successor publication gates remain open. See [Project Status](docs/project-status.md)
+for a quick overview or [Delivery Roadmap](docs/delivery-roadmap.md) for
+detailed sequencing. Architecture decisions and acceptance evidence remain
+authoritative in their dedicated documents.
 
 ## Why EVM V2
 
@@ -37,19 +43,20 @@ Windows machine must complete `init`, `push`, `clone`, `fetch`, `pull`, and ref
 deletion without WSL2, and clean Linux must do the same without `injectived`.
 See [the runtime and migration ADR](docs/adr/0001-evm-v2-runtime-and-migration-scope.md).
 
-Kubo/IPFS is the current storage adapter, not the long-term product core. The
-roadmap calls for pluggable pack storage, including Amazon S3 and Cloudflare R2,
-so an object-storage profile can operate without a local Kubo daemon. That
-support is not implemented in this repository state: the current Suite and
-clients accept only `ipfs://` pack URIs. See
-[the storage ADR](docs/adr/0002-pluggable-pack-storage.md).
+Kubo/IPFS is the Suite v3 storage adapter, not the long-term product core.
+Suite v4 (BYOS) delivers pack storage on user-owned Amazon S3 and Cloudflare R2
+buckets only, so an object-storage profile operates without a local Kubo
+daemon; MinIO, other clouds, and generic S3-compatible endpoints are out of
+scope. See [the storage ADR](docs/adr/0002-pluggable-pack-storage.md) and
+[ADR 0004](docs/adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md).
 
 ## Components
 
 | Path | Purpose |
 |---|---|
-| `contracts/evm-v2/` | Immutable Solidity Suite, checked ABIs/artifacts, and Foundry tests |
-| `cli/` | `igit`, `git-remote-igit`, deployment and offline migration tools |
+| `contracts/evm-v2/` | Immutable Solidity Suite v3 (IPFS), checked ABIs/artifacts, and Foundry tests |
+| `contracts/evm-v2-successor/` | Immutable Solidity Suite v4 (BYOS), commitment refs + revision CAS, checked ABIs/artifacts |
+| `cli/` | `igit`, `git-remote-igit` (v3 IPFS / v4 BYOS dispatch), deployment and offline migration tools |
 | `web/` | React/Vite browser UI using viem for Suite reads and legacy EVM transactions |
 | `scripts/` | Source, release, migration evidence, IPFS replication, and operations gates |
 | `archive/cosmwasm-v1/` | Isolated read-only V1 source, protocol material, and evidence tools |
@@ -61,11 +68,12 @@ The Suite consists of `SuiteDirectory`, `BootstrapCoordinator`,
 
 ## User Setup
 
-The currently implemented IPFS profile requires Git and native Kubo for push.
-It does not require WSL2 or `injectived`. Clone and fetch use configured HTTPS
-IPFS gateways and do not require a local Kubo daemon. Planned S3/R2 profiles
-will require separate implementation and acceptance before they can replace
-this setup.
+Suite v3 (IPFS profile) requires Git and native Kubo for push; clone and fetch
+use configured HTTPS IPFS gateways without a local daemon. Suite v4 (BYOS
+profile) requires no Kubo at all: register a storage profile with
+`igit storage add <storage-config.json>` pointing at your own AWS S3 or
+Cloudflare R2 bucket (see the [BYOS spec](docs/storage-byos.md)). Neither
+profile requires WSL2 or `injectived`.
 
 ```sh
 cd cli

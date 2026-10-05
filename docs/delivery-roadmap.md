@@ -1,7 +1,13 @@
 # Delivery Roadmap
 
 
-2026-09-13 implementation update: S01–S03 local protocol/storage/provider/config tests are PASS within [BYOS section 9](storage-byos.md). S04–S07, real AWS/R2, successor transactions and full Git/Web acceptance remain NOT PROVEN. Next: reviewed successor ABI/revision CAS/version dispatch, then CLI/Web integration.
+2026-10-05 delivery update: Suite v4 (BYOS) is delivered. S01–S06 are recorded
+in [backlog](backlog.md) — successor suite deployed and active on Injective
+testnet (`0xf987396475d0a4c96b722e993a95d8720a6292ad`), CLI/Web version
+dispatch, real Cloudflare R2 end-to-end Git flows and Web reads PASS without
+Kubo/WSL2/`injectived`. Remaining NOT PROVEN: real AWS S3 canary, force-push
+stale/concurrent real-world races, Blockscout verification, Foundry gates
+(R04), successor publication evidence, security review, and mainnet approval.
 
 - Product acceptance status: NOT PROVEN; this document is an execution plan
 - Initial assessment: 2026-08-15
@@ -33,8 +39,8 @@ The surrounding documents retain their narrower authority:
 | [ADR 0002](adr/0002-pluggable-pack-storage.md) | Accepted direction and required properties for pluggable pack storage |
 | [ADR 0003](adr/0003-fresh-evm-suite-and-v1-archive-preview.md) | Accepted fresh-empty Suite and V1 archive-preview-only cutover scope |
 | [ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md) | Confirmed first mainnet successor, AWS/R2 BYOS and public-repository scope |
-| [BYOS Specification](storage-byos.md) | Candidate manifest schema, canonical JSON, credentials, provider limits and failure contracts |
-| [Next Implementation Prompt](prompts/next-storage-implementation.md) | Direct start for S01–S03 local implementation; no live-resource authorization |
+| [BYOS Specification](storage-byos.md) | Frozen manifest schema, canonical JSON, credentials, provider limits and failure contracts |
+| [Suite Version Compatibility](suite-version-compatibility.md) | Authoritative v1–v5+ version dispatch policy for CLI and Web |
 | [Architecture](architecture.md) | Current immutable Suite and data-plane boundaries |
 | [EVM V2 Migration](evm-v2-migration.md) | Migration workflow, present implementation, and completion definition |
 | [Remaining Work](backlog.md) | Granular engineering and policy task inventory |
@@ -62,7 +68,7 @@ current deployment approval. The existing R01–R08 findings remain unchanged.
 | Four EVM indexer scripts and claimed Moderation UI completion | FAIL | Do not use those scripts as a reliable storage/reaper implementation |
 | Existing v3 deployment/activation evidence | HISTORICAL | Keep explicit legacy testnet compatibility; not successor evidence |
 | Real IPFS/replication/Git/write-transaction E2E | NOT PROVEN | Requires corresponding resources, fixes and explicit write scope |
-| AWS S3 / R2 BYOS and successor | NOT PROVEN | Product scope is confirmed; start S01–S03 without waiting for live accounts |
+| AWS S3 / R2 BYOS and successor | DELIVERED (testnet scope) | Suite v4 deployed on testnet with version-dispatching CLI/Web; real R2 E2E PASS; finish the real AWS canary and publication/mainnet evidence before any public profile switch |
 | Private repositories, other providers and ZKP product integration | NOT PROVEN | Separate future scope, not first-release BYOS gates |
 | Mainnet | NOT PROVEN | Direct successor target; no IPFS-only v3 mainnet intermediate release |
 
@@ -138,8 +144,8 @@ resource delays do not block independent local work.
 | P0 | Earlier native source/CI baseline | HISTORICAL | Keep commit-bound evidence; recheck relevant current failures independently |
 | P1 | Existing v3 testnet product acceptance | NOT PROVEN | Complete its own evidence if that legacy publication is pursued; no mainnet v3 launch |
 | P2 | Native Windows/Linux product acceptance | NOT PROVEN | Both BYOS profiles complete clean release-asset Git workflows without Kubo/WSL2/injectived |
-| P3 | S01–S02 manifest and verified packstore | NOT PROVEN | Go/TS canonical vectors, streaming and verification tests; explicit legacy boundary |
-| P4 | S03–S06 AWS/R2 and successor | NOT PROVEN | Local adapters/protocol/clients plus separately authorized real provider and successor E2E |
+| P3 | S01–S02 manifest and verified packstore | PASS (2026-09-13) | Go/TS canonical vectors, streaming and verification tests; explicit legacy boundary — recorded in [BYOS section 9](storage-byos.md) |
+| P4 | S03–S06 AWS/R2 and successor | DELIVERED (testnet scope) | Local adapters/protocol/clients delivered; testnet successor + real R2 E2E PASS; finish real AWS canary and publication evidence |
 | P5 | S07 optional historical import | NOT PROVEN | Only for approved import scope: byte-preserving mapping, reachability and rollback evidence |
 | Z0 | Isolated ZKP experiment | NOT PROVEN | Independent reviewed experiment; not a BYOS prerequisite |
 | M0 | First mainnet successor | NOT PROVEN | P4/P2 and scope-appropriate import evidence, finality, governance, security and approval |
@@ -258,8 +264,8 @@ Native Windows has three distinct scopes:
 
 ## P3: S01–S02 Canonical Manifest, Packstore Boundary And Streaming
 
-Status: **NOT PROVEN**. Start locally now; no live cloud account, Kubo,
-Foundry installation or transaction approval is required for this slice.
+Status: **PASS (delivered 2026-09-13)**. Scope and repeatable verification are
+recorded in [BYOS section 9](storage-byos.md).
 
 ### Deliverables
 
@@ -288,10 +294,15 @@ reported separately; its absence does not block S03 AWS/R2 work.
 
 ## P4: S03–S06 AWS S3 / R2 BYOS And Successor
 
-Status: **NOT PROVEN**. [ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md)
-settles the product gate: first mainnet targets this successor, only AWS S3
+Status: **DELIVERED (testnet scope, 2026-10-05)**. [ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md)
+settled the product gate: first mainnet targets this successor, only AWS S3
 and R2, user-owned buckets, public repositories, independent reader config,
 canonical JSON, user-paid costs and no mandatory dual replicas or broker.
+Delivered: local adapters and protocol slices, the v4 successor suite
+deployed and active on Injective testnet, CLI/Web version dispatch, and a
+real R2 end-to-end Git flow (see [backlog](backlog.md) 2026-10-04/05
+sections). Remaining in this milestone: the real AWS S3 canary and the
+real-layer residuals listed there.
 
 ### S03: Local Provider Implementation
 
@@ -579,9 +590,10 @@ skill was installed during this assessment.
 
 ## PR Sequence
 
-Start the next chat with the [implementation prompt](prompts/next-storage-implementation.md).
-These are scoped changes, not instructions to create commits or push branches
-without the user's request.
+S01–S06 have been executed and recorded in [backlog](backlog.md); the prompts
+under `docs/prompts/` are retained as historical task briefs. These are scoped
+changes, not instructions to create commits or push branches without the
+user's request.
 
 1. **S01 — Protocol fixtures:** canonical JSON/JCS, manifest types, immutable
    keys, size/security limits and Go/TS cross-implementation vectors.

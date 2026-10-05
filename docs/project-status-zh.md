@@ -1,5 +1,19 @@
 # 项目状态：事实核对入口
 
+当前状态（2026-10-05）：**Suite v4（BYOS）已交付。** successor 套件
+（`contracts/evm-v2-successor`，suiteVersion 4）已部署并激活于 Injective 测试网
+（Directory `0xf987396475d0a4c96b722e993a95d8720a6292ad`，证据
+`local-only/successor-deploy/deployment5.json`）；CLI/Web 按链上套件版本分派
+（v3 → legacy IPFS，v4 → 验证式 BYOS 路径）；真实 Cloudflare R2 端到端 Git 流程
+（push/clone/fetch/ls-remote/tag/删除 ref/tombstone 重建，匿名公开 GET+CORS，
+全程无 Kubo/WSL2/injectived）与 Web 仓库浏览已可用。BYOS 云 provider 仅限
+AWS S3 与 Cloudflare R2。仍未完成：真实 AWS S3 canary、真实 force-push/并发竞争、
+Blockscout 验证、Foundry 门禁（R04）、successor 公开发布证据、安全审查与主网批准——
+见 [backlog](backlog.md) 2026-10-04/05 各节与
+[套件版本兼容矩阵](suite-version-compatibility.md)。
+
+以下为 2026-09-13 审计的摘要入口（历史快照，反映当时的检查结果）。
+
 复核日期：2026-09-13（Asia/Shanghai）；基线文件名按任务指定保留 2026-09-12。
 源码：`dev` / `0ba06f436558f12d97625b393767440cdd0f9862`。
 
@@ -34,9 +48,11 @@ IPFS + EVM + CLI 完整闭环尚未验证。未取得可复现的全项目 91% c
 对象存储用户不依赖 Kubo/IPFS 主网/iGit IPFS 服务，legacy v3 仍单独保留。
 数据修改发布新的 pack/manifest/ref，不允许通过覆盖摘要 key 改变已承诺历史。
 
-实现和真实 AWS/R2/successor 验收仍为 **NOT PROVEN**，上述基线检查没有在本次文档更新中重跑。
+实现状态（2026-10-05 更新）：上述方向已交付为 Suite v4——successor 套件部署于 Injective 测试网，
+真实 R2 端到端 Git 流程 PASS，Web 读取可用（见 [backlog](backlog.md)）。仍为 NOT PROVEN 的项：
+真实 AWS S3 canary、真实层遗留项、successor 公开发布证据、安全审查与主网验收。
 见 [ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md)、[实施规格](storage-byos.md)、
-[S01–S07 待办](backlog.md) 和 [下一窗口提示词](prompts/next-storage-implementation.md)。
+[S01–S07 待办](backlog.md) 和 [套件版本兼容矩阵](suite-version-compatibility.md)。
 
 以下文件保留原样并统一标记为：**“历史迁移草稿/未对齐报告，不作为当前项目状态依据。”**
 

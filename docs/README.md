@@ -1,22 +1,22 @@
 # 项目文档入口
 
-复核日期：2026-09-13（Asia/Shanghai）；基线文件名按任务指定保留 2026-09-12。
-源码：`dev` / `0ba06f436558f12d97625b393767440cdd0f9862`。
-
-原审计记录以 [事实基线](reconciliation-baseline-2026-09-12.md) 为准；其后 S01–S03 的新增源码与本地验证见 [BYOS 规格第 9 节](storage-byos.md)。本页仅作入口，不覆盖历史审计。
+文档同步日期：2026-10-05（Asia/Shanghai）。历史审计记录以
+[事实基线](reconciliation-baseline-2026-09-12.md)（2026-09-13）为准；其后 S01–S06 的交付记录见
+[backlog](backlog.md) 各日期小节与 [BYOS 规格](storage-byos.md)。本页仅作入口，不覆盖历史审计。
 状态限定为 PASS、FAIL、BLOCKED、NOT PROVEN、HISTORICAL，定义和原始命令输出见基线。
 
 | 入口 | 用途 | 状态边界 |
 |---|---|---|
-| [LiveAgent 接续入口 2026-09-20](liveagent-continuation-2026-09-20.md) | 新客户端接手时的当前上下文：权威顺序、R/S 状态、2026-09-20 本机复核、未提交清单与下一步 | 复核记录，不构成云/链上/E2E 验收 |
-| [事实基线](reconciliation-baseline-2026-09-12.md) | 当前唯一状态依据；含命令、文件清单、RPC、冲突表和缺口 | 只按具体检查项赋予状态 |
-| [中文状态入口](project-status-zh.md) / [English status](project-status.md) | 基线摘要 | 不维护第二套完成度 |
+| [套件版本兼容矩阵](suite-version-compatibility.md) | v1–v5+ 各版本职责、读取路径、CLI/Web 支持范围与前向兼容策略（单一事实来源） | 2026-10-05 生效；v3=IPFS、v4=BYOS(S3/R2) |
+| [事实基线](reconciliation-baseline-2026-09-12.md) | 2026-09-13 审计的状态依据；含命令、文件清单、RPC、冲突表和缺口 | 只按具体检查项赋予状态 |
+| [中文状态入口](project-status-zh.md) / [English status](project-status.md) | 状态摘要 | 不维护第二套完成度 |
 | [后续待办](backlog.md) | R01–R08 旧问题、S01–S07 新存储任务及退出条件 | 计划不代表实现或授权 |
 | [架构](architecture.md)、[ADR](adr/) | 设计约束 | 不是实时验收证据 |
-| [ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md) | 2026-09-13 用户确认的主网 successor / AWS S3 / R2 BYOS 范围 | 产品选择已确定；S01–S03 本地 PASS，真实云/successor NOT PROVEN |
-| [BYOS 实施规格](storage-byos.md) | canonical JSON、manifest、credentials、provider 能力与失败恢复 | 已测试 schema 1、本地 API/限额、命令与未验证边界 |
-| [下一窗口实施提示词](prompts/next-storage-implementation.md) | 本轮已执行的 S01–S03 范围与后续约束 | 不含真实凭据/云写入/交易/部署授权 |
-| [BYOS 陪同实测提示词](prompts/storage-byos-hands-on-validation.md) | 交给其他模型：本地复验、最小 canary、用户资源准备及真实 AWS/R2 分层测试 | 2026-09-14；真实云操作逐阶段授权，不冒充 successor E2E |
+| [ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md) | 2026-09-13 用户确认的主网 successor / AWS S3 / R2 BYOS 范围 | 产品选择已落地：S01–S06 已交付（v4 测试网部署 + 真实 R2 E2E PASS）；真实 AWS canary 与主网发布门禁未过 |
+| [BYOS 实施规格](storage-byos.md) | canonical JSON、manifest、credentials、provider 能力与失败恢复 | schema 1 已冻结；`storage add/doctor/show` 与 v4 Git 远程 BYOS 已实现 |
+| [S04/S05 实施提示词](prompts/s04-s05-successor-integration.md) | 已执行（2026-10-04）：successor 合约 + CLI/Web 接入 | 历史任务书，不含部署/交易/云写入授权 |
+| [S01–S03 实施提示词](prompts/next-storage-implementation.md) | 已执行（2026-09-13）：本地协议/adapter 切片 | 历史任务书，不含真实凭据/云写入/交易/部署授权 |
+| [BYOS 陪同实测提示词](prompts/storage-byos-hands-on-validation.md) | 已执行（真实 R2 canary 完成；见 backlog 与 local-only/byos-canary） | 历史任务书；真实云操作逐阶段授权 |
 | [交付路线图](delivery-roadmap.md)、[开放问题](open-questions.md) | 首期依赖与真正未决事项 | 不再把 BYOS/successor/canonical JSON 列作待选方向 |
 | [验收规则](acceptance-evidence.md)、[发布规则](release.md) | 将来验收和发布条件 | 本轮未通过最终 gate |
 | [历史部署证据](../evidence/testnet-deployment-2026-08-25/) | 旧部署/激活资料 | HISTORICAL；本轮 RPC 记录位于基线 |
@@ -31,12 +31,14 @@
 
 原审计关键结论（不覆盖 BYOS 第 9 节新增记录）：九合约 solc、Go test/vet、Web 本地检查 PASS；Foundry/Kubo/普通 CLI 配置读取 BLOCKED；Moderation UI 完成声明及 EVM 索引器 FAIL；真实产品 E2E 和生产部署 NOT PROVEN。
 
-### 2026-09-13 首期产品决策
+### 2026-09-13 首期产品决策（2026-10-05 已按此交付 V4）
 
 主网直接采用存储中立 successor，支持用户自有 **AWS S3 / Cloudflare R2 云桶**，不先发布 IPFS-only v3 主网。
 首期不接 MinIO/其他云/自建对象存储服务；仓库公开，用户承担费用，采用 canonical JSON，reader 由用户独立配置，双副本后续考虑。
-AWS/R2 路径不应依赖 Kubo 或 iGit IPFS 服务；现有 v3 仍是独立 legacy IPFS 路径。
-这些是已确认的实现目标，不是已部署功能。正常修改生成新 pack/manifest/ref，而不是覆盖既有摘要 key。
+AWS/R2 路径不依赖 Kubo 或 iGit IPFS 服务；现有 v3 仍是独立 legacy IPFS 路径。
+该决策已交付：successor Suite v4 已部署激活于 Injective 测试网，CLI/Web 按链上版本分派，
+真实 R2 端到端 Git 流程与 Web 浏览可用（详见 [backlog](backlog.md) 2026-10-04/05 小节）。
+正常修改生成新 pack/manifest/ref，而不是覆盖既有摘要 key。
 
 `D:/inj/next-injective-git/cli/README.md` 和 `D:/inj/next-injective-git/web/README.md` 文件不存在，旧入口不再作为有效文档链接。目录源码请直接查看 [CLI](../cli/)、[Web](../web/) 和 [九合约说明](../contracts/evm-v2/README.md)。
 

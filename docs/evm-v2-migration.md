@@ -10,10 +10,9 @@ on-chain Suite protocol version, which is currently 3.
 
 The platform objective is a native Windows path with no WSL2 or `injectived`
 prerequisite and a native Linux path with no `injectived` prerequisite. Kubo is
-native when the current IPFS adapter is selected. Longer term, pack storage is
-intended to be pluggable so Amazon S3 or Cloudflare R2 profiles do not require
-Kubo at all. Those object-storage adapters are planned and are not supported by
-the current immutable Suite.
+native when the Suite v3 IPFS adapter is selected. Pack storage is dispatched
+by suite version: Suite v4 (BYOS) is delivered and uses user-owned Amazon S3 /
+Cloudflare R2 buckets with no Kubo at all; other providers are out of scope.
 
 ## Accepted Scope Changes
 
@@ -50,7 +49,7 @@ fresh-Suite and V1 archive-preview decision is recorded in
 | Operator broadcast and import | ✅ P1.1 tool complete and retained | Not used by the accepted fresh-empty cutover; future migration requires a separate decision |
 | Testnet deployment | ✅ P1.2 complete: 9 deployments, 8 configuration calls, 17 historical transactions revalidated, 9/9 Blockscout verified | Common product-acceptance evidence remains open |
 | Activation and cutover | ✅ P1.3 fresh-empty activation complete at fixed block with zero counts and matching empty roots | Linux/Windows Git E2E, Web receipts, finality, security review, and approval |
-| Pluggable object storage | Planned only | Successor URI protocol plus S3/R2 upload, fetch, integrity, credential and E2E support |
+| Pluggable object storage | ✅ Delivered as Suite v4 (BYOS): successor commitment refs, S3/R2 upload+fetch+integrity+credentials, testnet deployment, real R2 E2E PASS | Real AWS canary, publication evidence, mainnet acceptance |
 
 ## Current Fresh-Suite Cutover Workflow
 

@@ -1,9 +1,13 @@
 # ADR 0002: Make Git Pack Storage Pluggable
 
-- S01–S03 local library/mock status: PASS ([implementation scope](../storage-byos.md)); real integration: NOT PROVEN
+- Status update (2026-10-05): delivered as Suite v4 — successor contracts, CLI/Web
+  version dispatch, and real Cloudflare R2 end-to-end Git flows are PASS; the
+  real AWS S3 canary and mainnet publication gates remain NOT PROVEN
+  ([delivery record](../backlog.md))
 - Decision date: 2026-08-14
 - First-release scope confirmed: 2026-09-13, [ADR 0004](0004-mainnet-storage-neutral-successor-and-byos-scope.md)
-- Ordinary Git runtime remains IPFS-only; new storage libraries are local-tested and not deployed
+- Suite v3 runtime stays IPFS-only by design (frozen legacy path); Suite v4 is the
+  delivered BYOS path and is limited to Amazon S3 / Cloudflare R2
 
 ## Context
 
@@ -77,5 +81,7 @@ be enabled safely by changing documentation, a gateway URL, or credentials.
   administrator may delete or corrupt cloud objects, but clients must reject
   those bytes rather than silently alter the chain-committed history.
 - The detailed first-release contract is in [ADR 0004](0004-mainnet-storage-neutral-successor-and-byos-scope.md)
-  and the [BYOS implementation specification](../storage-byos.md). These are
-  design requirements; the BYOS specification now separately records the implemented local adapter tests and remaining real integration work.
+  and the [BYOS implementation specification](../storage-byos.md). The design is
+  delivered as Suite v4; remaining open work is limited to the real AWS canary,
+  publication evidence, and mainnet gates recorded in the
+  [delivery status](../backlog.md).

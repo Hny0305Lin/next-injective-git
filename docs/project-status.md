@@ -1,5 +1,21 @@
 # Project status: reconciled evidence entry
 
+Current status (2026-10-05): **Suite v4 (BYOS) delivered.** The successor
+suite (`contracts/evm-v2-successor`, suiteVersion 4) is deployed and active on
+Injective testnet (Directory `0xf987396475d0a4c96b722e993a95d8720a6292ad`,
+evidence `local-only/successor-deploy/deployment5.json`); CLI and Web dispatch
+by on-chain suite version (v3 → IPFS legacy, v4 → verified BYOS path); a real
+Cloudflare R2 end-to-end Git flow (push/clone/fetch/ls-remote/tag/ref-delete/
+tombstone rebuild, anonymous public GET+CORS, no Kubo/WSL2/`injectived`) and
+Web repository browsing are working. BYOS cloud providers are limited to
+AWS S3 and Cloudflare R2. Still open: real AWS S3 canary, real force-push/
+concurrency races, Blockscout verification, Foundry gates (R04), successor
+publication evidence, security review, and mainnet approval — see
+[backlog](backlog.md) 2026-10-04/05 sections and
+[suite version compatibility](suite-version-compatibility.md).
+
+以下为 2026-09-13 审计的摘要入口（历史快照，反映当时的检查结果）。
+
 复核日期：2026-09-13（Asia/Shanghai）；基线文件名按任务指定保留 2026-09-12。
 源码：`dev` / `0ba06f436558f12d97625b393767440cdd0f9862`。
 
@@ -41,11 +57,14 @@ Kubo, the IPFS network or iGit IPFS services; legacy v3 stays explicit.
 Content edits publish new pack/manifest/ref commitments, never different bytes
 at an existing digest-derived key.
 
-Implementation and real AWS/R2/successor acceptance remain **NOT PROVEN**.
-The baseline tests above were not rerun by this documentation change. See
-[ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md),
+Implementation status (updated 2026-10-05): the decision above is delivered as
+Suite v4 — successor suite deployed on Injective testnet, real R2 end-to-end
+Git flows PASS, Web reads working (see [backlog](backlog.md)). Still NOT
+PROVEN: the real AWS S3 canary, remaining real-layer residuals, successor
+publication evidence, security review, and mainnet acceptance.
+See [ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md),
 [implementation specification](storage-byos.md), [S01–S07 backlog](backlog.md),
-and the [next-window prompt](prompts/next-storage-implementation.md).
+and [suite version compatibility](suite-version-compatibility.md).
 
 以下文件保留原样并统一标记为：**“历史迁移草稿/未对齐报告，不作为当前项目状态依据。”**
 

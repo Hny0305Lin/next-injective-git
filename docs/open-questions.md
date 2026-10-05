@@ -1,8 +1,11 @@
 # Open Decisions
 
-Updated: 2026-09-13 (Asia/Shanghai). Product decisions below come from the
-user; they are not deployment approval. Implementation and real provider
-acceptance remain **NOT PROVEN**. See [ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md)
+Updated: 2026-10-05 (Asia/Shanghai). The first-release product decisions below
+were confirmed by the user on 2026-09-13 and are now delivered as Suite v4
+(BYOS): the successor suite is deployed on Injective testnet, CLI/Web dispatch
+by version, and real R2 end-to-end flows pass. What remains open is listed
+below (real AWS canary, successor publication evidence, mainnet governance).
+See [ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md)
 and the [BYOS specification](storage-byos.md).
 
 ## Already Decided — Do Not Reopen For The First Release
@@ -20,11 +23,13 @@ and the [BYOS specification](storage-byos.md).
   read configuration/CORS and cannot be inferred from authenticated CLI tests.
 - Canonical JSON, using RFC 8785 JCS as the implementation baseline, not CBOR.
 
-## Engineering Decisions To Freeze Through S01–S05
+## Engineering Decisions Frozen Through S01–S05 (Delivered As Suite v4)
 
-These do not require repeating the product questions. Use the specification's
-recommended defaults, implement local fixtures, and record justified deviations
-before freezing the wire protocol.
+These decisions were frozen during S01–S05 and are now implemented and tested
+in the delivered v4 suite; do not reopen them without a new successor version.
+The specification's recommended defaults were applied, local fixtures were
+implemented, and justified deviations were recorded before freezing the wire
+protocol.
 
 - Manifest schema 1/canonical bytes/context binding and local limits are now tested and frozen in [BYOS section 9](storage-byos.md): SHA-1, pack v2, full non-thin history. Other Git formats and incremental dependency optimization remain separate work.
 - Successor version, bounded bootstrap locator/state layout, same-commit
@@ -33,7 +38,10 @@ before freezing the wire protocol.
 - Provider/credential reference UX and safe endpoint validation; exact cloud
   region/account constraints and public read domain rules. No generic endpoint
   escape hatch to make local mocks easier.
-- Local provider limits are tested: 16 MiB single PUT for AWS/R2, AWS-only 8 MiB multipart parts up to 512 MiB, full readback and directed recovery. Real-cloud conditional completion, cost and interruption evidence remain NOT PROVEN.
+- Local provider limits are frozen: 16 MiB single PUT for AWS/R2, AWS-only 8 MiB
+  multipart parts up to 512 MiB, full readback and directed recovery. Real R2
+  conditional completion and full-chain Git evidence are now PASS; the real
+  AWS S3 canary and its cost/interruption evidence remain NOT PROVEN.
   Missing real evidence results in explicit feature/size limits, not an
   assumed compatibility claim.
 - Resource policy documentation: least-privilege writer/reader identities,

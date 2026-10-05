@@ -6,12 +6,14 @@ CLI, Web, and the remote helper resolve contracts from `SuiteDirectory` and
 share the same verification rules. Kubo is push-only on the client; replicated
 pins and HTTPS gateways serve clone/fetch. The chain never stores Git objects.
 
-IPFS/Kubo is the current adapter rather than the permanent product core. The
-planned topology allows storage profiles such as Amazon S3 and Cloudflare R2 so
-users of those profiles do not install Kubo. This is not implemented by the
-current Suite, which accepts only `ipfs://`; it requires a successor URI
-contract and migration described in
-[ADR 0002](adr/0002-pluggable-pack-storage.md).
+IPFS/Kubo is the Suite v3 adapter rather than the permanent product core. The
+supported topology now dispatches by suite version: v3 repositories use the
+IPFS data plane (Kubo push-only, replicated pins and HTTPS gateways for
+clone/fetch), while v4 repositories use user-owned Amazon S3 / Cloudflare R2
+buckets (BYOS, delivered — no Kubo) through the successor URI commitment
+contract described in
+[ADR 0002](adr/0002-pluggable-pack-storage.md) and
+[ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md).
 
 The old chain is outside this runtime topology. Its source and operational
 material live under `archive/cosmwasm-v1`; `igit archive` exposes fixed-height

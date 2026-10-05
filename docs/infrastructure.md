@@ -6,9 +6,11 @@
 > `update_ref` 和交易轮询描述属于 V1 历史控制面，不代表 EVM Suite 已部署、
 > 已迁移或已切流。EVM V2 的公开 `SuiteDirectory` 仍须等待完整 cutover 证据。
 
-本文是当前 IPFS 适配器的建成记录，不是永久产品架构。Kubo/IPFS 不再被定义
-为项目核心；Amazon S3 和 Cloudflare R2 是计划中的可插拔 pack 存储方向，尚未
-实现。当前不可变 Suite 只接受 `ipfs://`，因此该方向需要后续协议和迁移，见
+本文是 **Suite v3（legacy IPFS 路径）数据面**的建成记录，不是 v4 BYOS 路径的依赖：
+v4 用户使用自有 AWS S3 / Cloudflare R2 桶（已交付，仅限这两个 provider），不经过
+本文的任何组件。Amazon S3 和 Cloudflare R2 BYOS 已按 [ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md)
+与 [BYOS 实施规格](storage-byos.md) 交付为 successor Suite（suiteVersion 4，测试网已部署）；
+v3 合约仍只接受 `ipfs://`，其 IPFS 行为冻结不变，见
 [ADR 0002](adr/0002-pluggable-pack-storage.md)。选型过程见
 [pinning-infrastructure.md](./pinning-infrastructure.md)。
 
@@ -152,16 +154,17 @@ HK 直连地址（默认已内置）：
 /ip4/45.202.249.80/tcp/4001/p2p/12D3KooWRfRoRqEyC4Qsb4ow2yfGsSAAymTFSxj6vr2SYQnxk55W
 ```
 
-## 7. 产品方向：可插拔 Pack 存储
+## 7. 可插拔 Pack 存储的现状
 
-- 当前实现只支持 `ipfs://`，Push 使用本地 Kubo 和受控复制，Clone/Fetch 使用
-  HTTPS IPFS 网关。
-- 目标是把 pack 上传、持久化和读取放在存储适配器后面；选择 Amazon S3 或
-  Cloudflare R2 的用户不需要安装 Kubo。
-- S3/R2 适配器必须验证稳定内容摘要，先确认对象持久化再提交链上 ref，并且
-  不能把 access key、secret、临时 token 或预签名 URL 写到链上或 Git remote。
-- 由于当前 Suite 不可升级且只接受 `ipfs://`，该方向需要 successor Suite、
-  明确的 URI/摘要格式、历史 pack 映射和 Linux/Windows E2E；目前只是 roadmap。
+- 本文档描述的网关/pin/归档组件只服务 **Suite v3 的 `ipfs://` 路径**：v3 Push
+  使用本地 Kubo 和受控复制，Clone/Fetch 使用 HTTPS IPFS 网关；该行为已冻结。
+- **Suite v4（BYOS）已交付**：pack 上传/持久化/读取走用户自有 Amazon S3 或
+  Cloudflare R2 桶（仅限这两个 provider），不需要安装 Kubo，也不使用本文的
+  HK/US 网关、复制与归档组件。
+- S3/R2 适配器验证稳定内容摘要（SHA-256 + size 全量回读），确认对象持久化后
+  才提交链上 CAS ref，且不把 access key、secret、临时 token 或预签名 URL
+  写到链上或 Git remote；详见 [BYOS 实施规格](storage-byos.md)。
+- v3 历史迁移到 v4 属于条件性 S07 范围，须单独获批后执行。
 
 ## 8. 运维速查
 

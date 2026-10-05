@@ -22,8 +22,8 @@ R01–R08 只是后续任务清单，本轮没有实现这些功能或发送交�
 ## 新存储工作流 S01–S07（2026-09-13 用户决策）
 
 范围见 [ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md)；
-技术细节见 [BYOS 实施规格](storage-byos.md)；下一窗口直接使用
-[实施提示词](prompts/next-storage-implementation.md)。下表是计划，不是实现/云端验收证据。
+技术细节见 [BYOS 实施规格](storage-byos.md)。下表状态已按 2026-10-05 交付情况同步；
+各切片的原始执行记录见下方日期小节。
 
 主网首期直接目标 storage-neutral successor；只接用户自有 AWS S3 / Cloudflare R2 桶，
 不接 MinIO/其他云/自建对象存储服务。公开仓库、canonical JSON、用户独立 reader、用户付费，
@@ -34,9 +34,9 @@ R01–R08 只是后续任务清单，本轮没有实现这些功能或发送交�
 | S01 Canonical manifest / commitment | 立即，本地协议起点 | PASS | 严格 schema、JCS bytes、外层 manifest digest、digest keys、Git/object algorithm 和安全限额；Go/TS 共用正反向向量，明确 pack 顺序与单 pack locations |
 | S02 Verified packstore boundary | S01；先封装现有 IPFS | PASS | 临时文件流式写/读、raw SHA-256/size、验证后才摄取；明确 legacy 无链上 raw digest 的边界，初始 successor 用自包含非 thin pack；取消/错误/Windows 文件生命周期测试 |
 | S03 AWS/R2 BYOS adapters / config | S01–S02；不等云账号 | PASS | 两个独立 provider capability、endpoint allowlist、writer/reader credential reference、条件写/回读/重复对象/有界重试/multipart 限额与恢复；无真实凭据的 SDK/HTTP contract tests，AWS/R2 不初始化 Kubo/replication |
-| S04 Successor Suite / versioned ABI | S01 协议冻结后 | NOT PROVEN | 合约状态/查询/事件绑定 manifest，revision CAS/force/delete/fork/bootstrap 一起审查；Go/Web/indexer/evidence schema 同版本，保留 v3 ABI 和历史证据，未知组合上传前拒绝；solc/Foundry/尺寸/parity 分层报告 |
-| S05 CLI/Web 本地纵向接入 | S02–S04 | NOT PROVEN | fake cloud/chain + 真实本地 Git 的 push/clone/fetch/pull/new-ref/force/delete 与失败恢复；Web 公开 manifest/pack 先验摘要，CORS/大小上限/鉴权限制提示，无云 secret |
-| S06 真实云 / successor 测试网 E2E | 对应本地切片通过，另取资源和写入授权 | NOT PROVEN | 分别证明 AWS/R2 存储及支持的 multipart、公共 GET/CORS、独立 reader、Windows/Linux no-Kubo Git；匹配 successor 收据/finality、源码/ABI/commit，缺资源时仅相关项 BLOCKED |
+| S04 Successor Suite / versioned ABI | S01 协议冻结后 | PASS（2026-10-04 本地；2026-10-04 深夜测试网部署） | 合约状态/查询/事件绑定 manifest，revision CAS/force/delete/fork/bootstrap 一起审查；Go/Web/indexer/evidence schema 同版本，保留 v3 ABI 和历史证据，未知组合上传前拒绝；solc/尺寸/parity 分层报告；Foundry unit/invariant/gas 仍 BLOCKED（R04） |
+| S05 CLI/Web 本地纵向接入 | S02–S04 | PASS（2026-10-04） | fake cloud/chain + 真实本地 Git 的 push/clone/fetch/pull/new-ref/force/delete 与失败恢复；Web 公开 manifest/pack 先验摘要，CORS/大小上限/鉴权限制提示，无云 secret |
+| S06 真实云 / successor 测试网 E2E | 对应本地切片通过，另取资源和写入授权 | PASS（R2 全链路 2026-10-04 深夜）；AWS canary NOT PROVEN | 分别证明 AWS/R2 存储及支持的 multipart、公共 GET/CORS、独立 reader、Windows/Linux no-Kubo Git；匹配 successor 收据/finality、源码/ABI/commit。R2 已真实通过；真实 AWS canary、force 陈旧/并发竞争、Blockscout 验证仍待补 |
 | S07 历史 v3 导入（条件性） | 仅用户另选 import scope 时，依赖 S04–S06 | NOT PROVEN | 固定视图清点、CID→digest/size/位置 mapping、原 bytes/顺序与独立依赖闭包、目标 ref 上下文、保留 legacy 读取/回滚；新 Suite 不自动要求该步骤，V1 仍只读 archive |
 
 ### 2026-09-13 本地切片进展
@@ -82,7 +82,7 @@ S04–S07 仍 NOT PROVEN；下一切片为 successor ABI/CAS/version dispatch，
 - R03 仅阻止受影响的真实配置路径，不能关闭 DACL 保护绕过；R04 只阻止 Foundry 验收，R05 只阻止真实 IPFS 验证。
 - R01/R02 影响依赖它们的真实索引/清理，不能运行四个旧脚本主流程或启用 reaper；不阻止新协议与 adapter mock。
 - R06 UI 缺失不阻止 S01–S03；完整产品/钱包验收时另处理。R07 的原 IPFS 验收不能替代 S06 BYOS 实证。
-- successor 合约/客户端尚未贯通时，S03 adapter 测试 PASS 不能写成“已支持主网/真实 push”。
+- successor 合约与客户端已贯通（S04–S06）；S03 时代的本地 adapter PASS 仍不能单独写成“已支持主网”，主网发布以 publication/mainnet 门禁为准。
 - 私有仓库/E2EE、托管服务、额外 provider、双副本、自动 GC/清理和增量 pack 优化另立范围，见 [开放问题](open-questions.md)。
 
 用户可修改自己的 Git 内容并发布新 pack/manifest/ref；不得用覆盖同一 digest key 的方式改变链上历史。

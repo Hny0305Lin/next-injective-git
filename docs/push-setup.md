@@ -44,7 +44,9 @@ Suite fails before signing.
 Historical fixed-height queries are available only through `igit archive`; they
 are not a push configuration or fallback.
 
-Kubo is the current storage adapter, not a permanent product prerequisite.
-Amazon S3 and Cloudflare R2 profiles are planned so those users can push and
-fetch without a local Kubo daemon. They are not implemented by the current
-Suite or clients; see [ADR 0002](adr/0002-pluggable-pack-storage.md).
+Kubo is the Suite v3 storage adapter, not a permanent product prerequisite.
+Suite v4 (BYOS) is delivered: users push and fetch through their own
+Amazon S3 or Cloudflare R2 bucket with no local Kubo daemon, per
+[ADR 0002](adr/0002-pluggable-pack-storage.md) and
+[ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md);
+the remote helper picks the path from the on-chain suite version.

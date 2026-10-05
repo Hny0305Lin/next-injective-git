@@ -1,7 +1,12 @@
 # ADR 0004: Mainnet Storage-Neutral Successor And AWS S3 / R2 BYOS
 
 - Product decision confirmed by the user: 2026-09-13 (Asia/Shanghai).
-- Implementation and real provider acceptance: **NOT PROVEN**.
+- Status update (2026-10-05): **delivered as Suite v4 (BYOS)** — the successor
+  suite is deployed and active on Injective testnet, CLI/Web dispatch by
+  on-chain version, real Cloudflare R2 end-to-end Git flows and Web reads PASS,
+  and BYOS is limited to AWS S3 / Cloudflare R2 as decided. Still NOT PROVEN:
+  real AWS S3 canary, remaining real-layer residuals, successor publication
+  gate, security review, and mainnet approval ([delivery record](../backlog.md)).
 - Extends [ADR 0002](0002-pluggable-pack-storage.md); supersedes the older
   managed-first and conditional-mainnet-storage proposals in the roadmap.
 - Does not change [ADR 0003](0003-fresh-evm-suite-and-v1-archive-preview.md)

@@ -1,22 +1,29 @@
 # Immutable EVM Suite Architecture
 
-Scope updated: 2026-09-13 (Asia/Shanghai). Current implementation facts are
-bound to the [audit baseline](reconciliation-baseline-2026-09-12.md), not to a
-new deployment. S01–S03 storage libraries and local/mock tests are **PASS** as scoped in [BYOS section 9](storage-byos.md). Real cloud integration and successor acceptance remain **NOT PROVEN**.
+Scope updated: 2026-10-05 (Asia/Shanghai). Suite v4 (BYOS successor) is
+implemented in `contracts/evm-v2-successor`, deployed and active on Injective
+testnet, and reached by CLI/Web through on-chain version dispatch; real
+Cloudflare R2 end-to-end Git flows PASS. The 2026-09-13 audit facts remain
+bound to the [audit baseline](reconciliation-baseline-2026-09-12.md). Still
+open: real AWS S3 canary, Foundry gates, successor publication evidence, and
+mainnet approval.
 The first mainnet target is fixed by [ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md):
 user-owned AWS/R2 buckets on a storage-neutral successor, not an IPFS-only v3 launch.
 
-## Current Implementation: EVM V2 Generation, Suite Version 3
+## Current Implementation: EVM V2 Generation, Suite Versions 3 And 4
 
 The ordinary product code path is EVM V2. A network profile contains endpoints,
 chain ID, and one `SuiteDirectory` address. CLI, the ordinary Web repository
 path, and `git-remote-igit` resolve all current contracts from that Directory
-and fail closed unless it is version 3, active, code-hash verified, and
-internally bound. The Web also exposes a separate, explicit CosmWasm V1
-archive viewer for historical read-only inspection; that viewer is not an
-alternate SuiteDirectory and does not participate in ordinary Git operations.
-EVM V2 is a product-generation name; Suite version 3 and a future successor
-are protocol versions, not alternative Cosmos/EVM runtimes.
+and fail closed unless its on-chain `suiteVersion()` is 3 or 4, it is active,
+code-hash verified, and internally bound. Version 3 dispatches to the frozen
+IPFS path; version 4 dispatches to the BYOS manifest-commitment path (see
+[suite version compatibility](suite-version-compatibility.md)). The Web also
+exposes a separate, explicit CosmWasm V1 archive viewer for historical
+read-only inspection; that viewer is not an alternate SuiteDirectory and does
+not participate in ordinary Git operations.
+EVM V2 is a product-generation name; Suite versions 3 (IPFS) and 4 (BYOS
+successor) are protocol versions, not alternative Cosmos/EVM runtimes.
 
 This is the EVM V2 product generation because CosmWasm V1 required a WSL2-hosted
 Push toolchain on Windows while Linux ran natively. The EVM path removes WSL2
@@ -37,9 +44,11 @@ flowchart LR
   Directory --> Username[UsernameModule]
   Directory --> Badge[BadgeModule]
   Directory --> Release[ReleaseModule]
-  Helper --> Storage[Current IPFS adapter]
-  Web --> Storage
-  Storage -. successor integration pending .-> ObjectStorage[Local AWS S3 / Cloudflare R2 adapters]
+  Helper --> StorageV3[Suite v3: IPFS adapter]
+  Web --> StorageV3
+  Helper --> StorageV4[Suite v4: BYOS adapters]
+  Web --> StorageV4
+  StorageV4 --> ObjectStorage[User-owned AWS S3 / Cloudflare R2 buckets]
 ```
 
 `RepositoryCore` owns stable repo IDs, canonical and historical locators,
@@ -85,22 +94,24 @@ available for audit tooling. Under the accepted current scope in
 [ADR 0003](adr/0003-fresh-evm-suite-and-v1-archive-preview.md), it does not become
 a Suite bootstrap plan: the EVM Suite starts empty and V1 remains preview-only.
 
-## First Mainnet Target: Storage-Neutral Successor
+## First Mainnet Target: Storage-Neutral Successor (Delivered As Suite v4)
 
 Git pack storage is a replaceable data plane, not the control-plane trust root.
-The current Suite, CLI, and Web paths support only `ipfs://`, so Kubo/IPFS
-remains the legacy v3 adapter. AWS S3 and Cloudflare R2 are the confirmed
-first-release BYOS providers, with local libraries/mock tests implemented; they are not aliases for an
-IPFS gateway. The object-storage path must not probe or require Kubo, the IPFS
-network, or the iGit replication/gateway services.
+Suite v3 supports only `ipfs://`, so Kubo/IPFS remains the frozen legacy v3
+adapter. Suite v4 is the delivered BYOS successor: AWS S3 and Cloudflare R2
+are the only first-release providers, selected per repository through
+user-owned buckets; they are not aliases for an IPFS gateway. The
+object-storage path does not probe or require Kubo, the IPFS network, or the
+iGit replication/gateway services.
 
-Because Suite contracts are immutable and currently validate only `ipfs://`, a
-storage-neutral commitment requires a reviewed successor Suite. A fresh
-successor does not require history import; migrating existing v3 history is a
-separate approved scope. Existing v3 addresses, ABIs and deployment evidence
-must not be relabeled as successor evidence.
+Because Suite contracts are immutable, the storage-neutral commitment is a new
+successor Suite (`contracts/evm-v2-successor`, `suiteVersion = 4`), deployed
+and active on Injective testnet; v3 contracts, ABIs, and deployment evidence
+are untouched. A fresh successor does not require history import; migrating
+existing v3 history is a separate approved scope. Existing v3 addresses, ABIs
+and deployment evidence must not be relabeled as successor evidence.
 
-### Target Data Flow (Design, Not Deployed Capability)
+### Data Flow (Deployed On The v4 Testnet Suite; AWS Canary Pending)
 
 ```mermaid
 flowchart TD
@@ -147,7 +158,8 @@ revision. Self-contained non-thin packs are the initial successor policy.
 The detailed [BYOS specification](storage-byos.md) defines JCS cross-language
 vectors, bootstrap discovery, integer/byte limits, endpoint restrictions,
 provider capabilities, failure recovery and concrete code locations. Those
-wire details must be frozen before the successor ABI is implemented.
+wire details are frozen (manifest schema 1) and implemented by the checked-in
+v4 ABI/decoders; treat them as immutable protocol, not open design.
 
 ### Access And Compatibility Invariants
 
@@ -183,4 +195,11 @@ the [next implementation prompt](prompts/next-storage-implementation.md).
 See [migration](evm-v2-migration.md), [release](release.md), and the active
 [delivery roadmap](delivery-roadmap.md).
 
-Local storage code now lives under `cli/internal/packmanifest`, `packstore`, `storageconfig`, and `safehttp`, with TypeScript manifest parity in `web/src/lib/packmanifest.ts`. The ordinary remote helper and Web gitstore still use v3 IPFS; these new APIs have no chain write path. See [BYOS implementation and limits](storage-byos.md#9-s01s03-本地实现与可重复验证2026-09-13).
+Storage code lives under `cli/internal/packmanifest`, `packstore`,
+`storageconfig`, `safehttp`, and `cli/internal/byos` (v4 remote path), with
+TypeScript manifest parity in `web/src/lib/packmanifest.ts` and the verified
+successor reader in `web/src/lib/successorReader.ts`. The remote helper and
+Web gitstore dispatch by suite version: v3 keeps the IPFS path unchanged, v4
+pushes/fetches through the verified manifest/BYOS path with CAS ref updates.
+See [BYOS implementation and limits](storage-byos.md#9-s01s03-本地实现与可重复验证2026-09-13)
+and [suite version compatibility](suite-version-compatibility.md).
