@@ -20,3 +20,4 @@ contracts/evm-v2-successor/**/*.sol text eol=lf
 contracts/evm-v2-successor/abi/*.json text eol=lf
 contracts/evm-v2-successor/artifacts/*.json text eol=lf
 contracts/evm-v2-successor/package-lock.json text eol=lf
+cli/internal/chain/successor/abi/*.json text eol=lf

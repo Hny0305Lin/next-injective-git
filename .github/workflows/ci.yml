@@ -268,11 +268,13 @@ jobs:
           git checkout-index --force --all
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $suiteFiles = @(
-            git ls-files contracts/evm-v2 cli/internal/chain/abi |
+            git ls-files contracts/evm-v2 contracts/evm-v2-successor cli/internal/chain/abi cli/internal/chain/successor/abi |
               Where-Object {
                 $_ -match '\.sol$' -or
                 $_ -match '^contracts/evm-v2/(abi|artifacts)/[^/]+\.json$' -or
-                $_ -match '^cli/internal/chain/abi/[^/]+\.json$'
+                $_ -match '^contracts/evm-v2-successor/(abi|artifacts)/[^/]+\.json$' -or
+                $_ -match '^cli/internal/chain/abi/[^/]+\.json$' -or
+                $_ -match '^cli/internal/chain/successor/abi/[^/]+\.json$'
               }
           )
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
