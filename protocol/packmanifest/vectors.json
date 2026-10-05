@@ -132,6 +132,50 @@
       }
     },
     {
+      "name": "schema2-chain",
+      "kind": "manifest",
+      "input": "{\"schema\":\"igit.pack-manifest\",\"schemaVersion\":2,\"chainId\":\"9007199254740993\",\"suiteDirectory\":\"0x1111111111111111111111111111111111111111\",\"repoId\":\"0x2222222222222222222222222222222222222222222222222222222222222222\",\"refName\":\"refs/heads/公开-é-😀\",\"commit\":{\"algorithm\":\"sha1\",\"oid\":\"3333333333333333333333333333333333333333\"},\"packs\":[{\"sequence\":0,\"sha256\":\"2617667230e2855a43a52a128c3613f47a2b5d9e2ac5b90265820a2042c1556b\",\"size\":\"128\",\"format\":\"git-pack\",\"packVersion\":2,\"thin\":false,\"dependsOn\":[],\"locations\":[{\"provider\":\"aws-s3\",\"url\":\"https://storage.example.com/project/packs/data.pack\",\"reader\":\"\"}]},{\"sequence\":1,\"sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"size\":\"128\",\"format\":\"git-pack\",\"packVersion\":2,\"thin\":false,\"dependsOn\":[\"2617667230e2855a43a52a128c3613f47a2b5d9e2ac5b90265820a2042c1556b\"],\"locations\":[{\"provider\":\"aws-s3\",\"url\":\"https://storage.example.com/project/packs/data.pack\",\"reader\":\"\"}]},{\"sequence\":2,\"sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"size\":\"128\",\"format\":\"git-pack\",\"packVersion\":2,\"thin\":false,\"dependsOn\":[\"2617667230e2855a43a52a128c3613f47a2b5d9e2ac5b90265820a2042c1556b\",\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"],\"locations\":[{\"provider\":\"aws-s3\",\"url\":\"https://storage.example.com/project/packs/data.pack\",\"reader\":\"\"}]}]}",
+      "canonical": "{\"chainId\":\"9007199254740993\",\"commit\":{\"algorithm\":\"sha1\",\"oid\":\"3333333333333333333333333333333333333333\"},\"packs\":[{\"dependsOn\":[],\"format\":\"git-pack\",\"locations\":[{\"provider\":\"aws-s3\",\"reader\":\"\",\"url\":\"https://storage.example.com/project/packs/data.pack\"}],\"packVersion\":2,\"sequence\":0,\"sha256\":\"2617667230e2855a43a52a128c3613f47a2b5d9e2ac5b90265820a2042c1556b\",\"size\":\"128\",\"thin\":false},{\"dependsOn\":[\"2617667230e2855a43a52a128c3613f47a2b5d9e2ac5b90265820a2042c1556b\"],\"format\":\"git-pack\",\"locations\":[{\"provider\":\"aws-s3\",\"reader\":\"\",\"url\":\"https://storage.example.com/project/packs/data.pack\"}],\"packVersion\":2,\"sequence\":1,\"sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"size\":\"128\",\"thin\":false},{\"dependsOn\":[\"2617667230e2855a43a52a128c3613f47a2b5d9e2ac5b90265820a2042c1556b\",\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"],\"format\":\"git-pack\",\"locations\":[{\"provider\":\"aws-s3\",\"reader\":\"\",\"url\":\"https://storage.example.com/project/packs/data.pack\"}],\"packVersion\":2,\"sequence\":2,\"sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"size\":\"128\",\"thin\":false}],\"refName\":\"refs/heads/公开-é-😀\",\"repoId\":\"0x2222222222222222222222222222222222222222222222222222222222222222\",\"schema\":\"igit.pack-manifest\",\"schemaVersion\":2,\"suiteDirectory\":\"0x1111111111111111111111111111111111111111\"}",
+      "sha256": "7e9c09a05b67c8219b9024c4883583fe250bcfeacaae36811638a3cef58032b3",
+      "context": {
+        "chainId": "9007199254740993",
+        "suiteDirectory": "0x1111111111111111111111111111111111111111",
+        "repoId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+        "refName": "refs/heads/公开-é-😀",
+        "commit": {
+          "algorithm": "sha1",
+          "oid": "3333333333333333333333333333333333333333"
+        }
+      },
+      "commitment": {
+        "sha256": "7e9c09a05b67c8219b9024c4883583fe250bcfeacaae36811638a3cef58032b3",
+        "size": "1372",
+        "bootstrapLocator": "https://storage.example.com/project/manifests/7e9c09a05b67c8219b9024c4883583fe250bcfeacaae36811638a3cef58032b3.json"
+      }
+    },
+    {
+      "name": "schema2-partial-deps",
+      "kind": "manifest",
+      "input": "{\"schema\":\"igit.pack-manifest\",\"schemaVersion\":2,\"chainId\":\"9007199254740993\",\"suiteDirectory\":\"0x1111111111111111111111111111111111111111\",\"repoId\":\"0x2222222222222222222222222222222222222222222222222222222222222222\",\"refName\":\"refs/heads/公开-é-😀\",\"commit\":{\"algorithm\":\"sha1\",\"oid\":\"3333333333333333333333333333333333333333\"},\"packs\":[{\"sequence\":0,\"sha256\":\"2617667230e2855a43a52a128c3613f47a2b5d9e2ac5b90265820a2042c1556b\",\"size\":\"128\",\"format\":\"git-pack\",\"packVersion\":2,\"thin\":false,\"dependsOn\":[],\"locations\":[{\"provider\":\"aws-s3\",\"url\":\"https://storage.example.com/project/packs/data.pack\",\"reader\":\"\"}]},{\"sequence\":1,\"sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"size\":\"128\",\"format\":\"git-pack\",\"packVersion\":2,\"thin\":false,\"dependsOn\":[\"2617667230e2855a43a52a128c3613f47a2b5d9e2ac5b90265820a2042c1556b\"],\"locations\":[{\"provider\":\"aws-s3\",\"url\":\"https://storage.example.com/project/packs/data.pack\",\"reader\":\"\"}]},{\"sequence\":2,\"sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"size\":\"128\",\"format\":\"git-pack\",\"packVersion\":2,\"thin\":false,\"dependsOn\":[\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"],\"locations\":[{\"provider\":\"aws-s3\",\"url\":\"https://storage.example.com/project/packs/data.pack\",\"reader\":\"\"}]}]}",
+      "canonical": "{\"chainId\":\"9007199254740993\",\"commit\":{\"algorithm\":\"sha1\",\"oid\":\"3333333333333333333333333333333333333333\"},\"packs\":[{\"dependsOn\":[],\"format\":\"git-pack\",\"locations\":[{\"provider\":\"aws-s3\",\"reader\":\"\",\"url\":\"https://storage.example.com/project/packs/data.pack\"}],\"packVersion\":2,\"sequence\":0,\"sha256\":\"2617667230e2855a43a52a128c3613f47a2b5d9e2ac5b90265820a2042c1556b\",\"size\":\"128\",\"thin\":false},{\"dependsOn\":[\"2617667230e2855a43a52a128c3613f47a2b5d9e2ac5b90265820a2042c1556b\"],\"format\":\"git-pack\",\"locations\":[{\"provider\":\"aws-s3\",\"reader\":\"\",\"url\":\"https://storage.example.com/project/packs/data.pack\"}],\"packVersion\":2,\"sequence\":1,\"sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"size\":\"128\",\"thin\":false},{\"dependsOn\":[\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"],\"format\":\"git-pack\",\"locations\":[{\"provider\":\"aws-s3\",\"reader\":\"\",\"url\":\"https://storage.example.com/project/packs/data.pack\"}],\"packVersion\":2,\"sequence\":2,\"sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"size\":\"128\",\"thin\":false}],\"refName\":\"refs/heads/公开-é-😀\",\"repoId\":\"0x2222222222222222222222222222222222222222222222222222222222222222\",\"schema\":\"igit.pack-manifest\",\"schemaVersion\":2,\"suiteDirectory\":\"0x1111111111111111111111111111111111111111\"}",
+      "sha256": "d7a7da78ce845f71c771ba76dcc7dd296516fef182fc8eb624e4e60c8f6f10b5",
+      "context": {
+        "chainId": "9007199254740993",
+        "suiteDirectory": "0x1111111111111111111111111111111111111111",
+        "repoId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+        "refName": "refs/heads/公开-é-😀",
+        "commit": {
+          "algorithm": "sha1",
+          "oid": "3333333333333333333333333333333333333333"
+        }
+      },
+      "commitment": {
+        "sha256": "d7a7da78ce845f71c771ba76dcc7dd296516fef182fc8eb624e4e60c8f6f10b5",
+        "size": "1305",
+        "bootstrapLocator": "https://storage.example.com/project/manifests/d7a7da78ce845f71c771ba76dcc7dd296516fef182fc8eb624e4e60c8f6f10b5.json"
+      }
+    },
+    {
       "name": "scalar-null",
       "kind": "jcs",
       "input": "null",
@@ -217,7 +261,7 @@
     {
       "name": "schema-version",
       "kind": "manifest",
-      "input": "{\"schema\":\"igit.pack-manifest\",\"schemaVersion\":2,\"chainId\":\"9007199254740993\",\"suiteDirectory\":\"0x1111111111111111111111111111111111111111\",\"repoId\":\"0x2222222222222222222222222222222222222222222222222222222222222222\",\"refName\":\"refs/heads/公开-é-😀\",\"commit\":{\"algorithm\":\"sha1\",\"oid\":\"3333333333333333333333333333333333333333\"},\"packs\":[{\"sequence\":0,\"sha256\":\"2617667230e2855a43a52a128c3613f47a2b5d9e2ac5b90265820a2042c1556b\",\"size\":\"128\",\"format\":\"git-pack\",\"packVersion\":2,\"thin\":false,\"dependsOn\":[],\"locations\":[{\"provider\":\"aws-s3\",\"url\":\"https://storage.example.com/project/packs/data.pack\",\"reader\":\"\"}]}]}"
+      "input": "{\"schema\":\"igit.pack-manifest\",\"schemaVersion\":3,\"chainId\":\"9007199254740993\",\"suiteDirectory\":\"0x1111111111111111111111111111111111111111\",\"repoId\":\"0x2222222222222222222222222222222222222222222222222222222222222222\",\"refName\":\"refs/heads/公开-é-😀\",\"commit\":{\"algorithm\":\"sha1\",\"oid\":\"3333333333333333333333333333333333333333\"},\"packs\":[{\"sequence\":0,\"sha256\":\"2617667230e2855a43a52a128c3613f47a2b5d9e2ac5b90265820a2042c1556b\",\"size\":\"128\",\"format\":\"git-pack\",\"packVersion\":2,\"thin\":false,\"dependsOn\":[],\"locations\":[{\"provider\":\"aws-s3\",\"url\":\"https://storage.example.com/project/packs/data.pack\",\"reader\":\"\"}]}]}"
     },
     {
       "name": "algorithm",
@@ -428,6 +472,31 @@
       "name": "wrong-sequence",
       "kind": "manifest",
       "input": "{\"schema\":\"igit.pack-manifest\",\"schemaVersion\":1,\"chainId\":\"9007199254740993\",\"suiteDirectory\":\"0x1111111111111111111111111111111111111111\",\"repoId\":\"0x2222222222222222222222222222222222222222222222222222222222222222\",\"refName\":\"refs/heads/公开-é-😀\",\"commit\":{\"algorithm\":\"sha1\",\"oid\":\"3333333333333333333333333333333333333333\"},\"packs\":[{\"sequence\":1,\"sha256\":\"2617667230e2855a43a52a128c3613f47a2b5d9e2ac5b90265820a2042c1556b\",\"size\":\"128\",\"format\":\"git-pack\",\"packVersion\":2,\"thin\":false,\"dependsOn\":[],\"locations\":[{\"provider\":\"aws-s3\",\"url\":\"https://storage.example.com/project/packs/data.pack\",\"reader\":\"\"}]}]}"
+    },
+    {
+      "name": "schema2-thin",
+      "kind": "manifest",
+      "input": "{\"schema\":\"igit.pack-manifest\",\"schemaVersion\":2,\"chainId\":\"9007199254740993\",\"suiteDirectory\":\"0x1111111111111111111111111111111111111111\",\"repoId\":\"0x2222222222222222222222222222222222222222222222222222222222222222\",\"refName\":\"refs/heads/公开-é-😀\",\"commit\":{\"algorithm\":\"sha1\",\"oid\":\"3333333333333333333333333333333333333333\"},\"packs\":[{\"sequence\":0,\"sha256\":\"2617667230e2855a43a52a128c3613f47a2b5d9e2ac5b90265820a2042c1556b\",\"size\":\"128\",\"format\":\"git-pack\",\"packVersion\":2,\"thin\":true,\"dependsOn\":[],\"locations\":[{\"provider\":\"aws-s3\",\"url\":\"https://storage.example.com/project/packs/data.pack\",\"reader\":\"\"}]}]}"
+    },
+    {
+      "name": "schema2-self-dep",
+      "kind": "manifest",
+      "input": "{\"schema\":\"igit.pack-manifest\",\"schemaVersion\":2,\"chainId\":\"9007199254740993\",\"suiteDirectory\":\"0x1111111111111111111111111111111111111111\",\"repoId\":\"0x2222222222222222222222222222222222222222222222222222222222222222\",\"refName\":\"refs/heads/公开-é-😀\",\"commit\":{\"algorithm\":\"sha1\",\"oid\":\"3333333333333333333333333333333333333333\"},\"packs\":[{\"sequence\":0,\"sha256\":\"2617667230e2855a43a52a128c3613f47a2b5d9e2ac5b90265820a2042c1556b\",\"size\":\"128\",\"format\":\"git-pack\",\"packVersion\":2,\"thin\":false,\"dependsOn\":[\"2617667230e2855a43a52a128c3613f47a2b5d9e2ac5b90265820a2042c1556b\"],\"locations\":[{\"provider\":\"aws-s3\",\"url\":\"https://storage.example.com/project/packs/data.pack\",\"reader\":\"\"}]}]}"
+    },
+    {
+      "name": "schema2-unknown-dep",
+      "kind": "manifest",
+      "input": "{\"schema\":\"igit.pack-manifest\",\"schemaVersion\":2,\"chainId\":\"9007199254740993\",\"suiteDirectory\":\"0x1111111111111111111111111111111111111111\",\"repoId\":\"0x2222222222222222222222222222222222222222222222222222222222222222\",\"refName\":\"refs/heads/公开-é-😀\",\"commit\":{\"algorithm\":\"sha1\",\"oid\":\"3333333333333333333333333333333333333333\"},\"packs\":[{\"sequence\":0,\"sha256\":\"2617667230e2855a43a52a128c3613f47a2b5d9e2ac5b90265820a2042c1556b\",\"size\":\"128\",\"format\":\"git-pack\",\"packVersion\":2,\"thin\":false,\"dependsOn\":[\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\"],\"locations\":[{\"provider\":\"aws-s3\",\"url\":\"https://storage.example.com/project/packs/data.pack\",\"reader\":\"\"}]}]}"
+    },
+    {
+      "name": "schema2-forward-dep",
+      "kind": "manifest",
+      "input": "{\"schema\":\"igit.pack-manifest\",\"schemaVersion\":2,\"chainId\":\"9007199254740993\",\"suiteDirectory\":\"0x1111111111111111111111111111111111111111\",\"repoId\":\"0x2222222222222222222222222222222222222222222222222222222222222222\",\"refName\":\"refs/heads/公开-é-😀\",\"commit\":{\"algorithm\":\"sha1\",\"oid\":\"3333333333333333333333333333333333333333\"},\"packs\":[{\"sequence\":0,\"sha256\":\"2617667230e2855a43a52a128c3613f47a2b5d9e2ac5b90265820a2042c1556b\",\"size\":\"128\",\"format\":\"git-pack\",\"packVersion\":2,\"thin\":false,\"dependsOn\":[\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"],\"locations\":[{\"provider\":\"aws-s3\",\"url\":\"https://storage.example.com/project/packs/data.pack\",\"reader\":\"\"}]},{\"sequence\":1,\"sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"size\":\"128\",\"format\":\"git-pack\",\"packVersion\":2,\"thin\":false,\"dependsOn\":[],\"locations\":[{\"provider\":\"aws-s3\",\"url\":\"https://storage.example.com/project/packs/data.pack\",\"reader\":\"\"}]}]}"
+    },
+    {
+      "name": "schema2-duplicate-dep",
+      "kind": "manifest",
+      "input": "{\"schema\":\"igit.pack-manifest\",\"schemaVersion\":2,\"chainId\":\"9007199254740993\",\"suiteDirectory\":\"0x1111111111111111111111111111111111111111\",\"repoId\":\"0x2222222222222222222222222222222222222222222222222222222222222222\",\"refName\":\"refs/heads/公开-é-😀\",\"commit\":{\"algorithm\":\"sha1\",\"oid\":\"3333333333333333333333333333333333333333\"},\"packs\":[{\"sequence\":0,\"sha256\":\"2617667230e2855a43a52a128c3613f47a2b5d9e2ac5b90265820a2042c1556b\",\"size\":\"128\",\"format\":\"git-pack\",\"packVersion\":2,\"thin\":false,\"dependsOn\":[],\"locations\":[{\"provider\":\"aws-s3\",\"url\":\"https://storage.example.com/project/packs/data.pack\",\"reader\":\"\"}]},{\"sequence\":1,\"sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"size\":\"128\",\"format\":\"git-pack\",\"packVersion\":2,\"thin\":false,\"dependsOn\":[\"2617667230e2855a43a52a128c3613f47a2b5d9e2ac5b90265820a2042c1556b\",\"2617667230e2855a43a52a128c3613f47a2b5d9e2ac5b90265820a2042c1556b\"],\"locations\":[{\"provider\":\"aws-s3\",\"url\":\"https://storage.example.com/project/packs/data.pack\",\"reader\":\"\"}]}]}"
     }
   ]
 }

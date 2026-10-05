@@ -21,17 +21,8 @@ func Prepare(ctx context.Context, w Writer, m packmanifest.PackManifest, sources
 	if m.Validate() != nil || len(sources) != len(m.Packs) {
 		return result, Fail(Invalid, "prepare-manifest")
 	}
-	if _, err := safehttp.ValidateURL(publicBase); err != nil || !packmanifest.ValidPrefix(prefix) {
-		return result, Fail(Invalid, "manifest-locator")
-	}
-	b, err := packmanifest.Encode(m)
-	if err != nil {
+	if err := validateLocator(publicBase, prefix); err != nil {
 		return result, err
-	}
-	manifestKey, _ := packmanifest.Key(prefix, "manifests", packmanifest.Digest(b))
-	locator := strings.TrimRight(publicBase, "/") + "/" + manifestKey
-	if _, err := safehttp.ValidateURL(locator); err != nil {
-		return result, Fail(Invalid, "manifest-locator")
 	}
 	for _, p := range m.Packs {
 		n, _ := packmanifest.Size(p.Size, packmanifest.MaxPackBytes)
@@ -58,6 +49,40 @@ func Prepare(ctx context.Context, w Writer, m packmanifest.PackManifest, sources
 		if !r.Verified {
 			return result, Fail(Uncertain, "unverified-receipt")
 		}
+	}
+	return publishManifest(ctx, w, m, publicBase, prefix, dir, result)
+}
+
+// PublishManifest uploads and verifies only the canonical manifest of a pack
+// chain whose packs are already stored at their digest keys (incremental
+// pushes reuse previously published packs and never re-upload or overwrite
+// them). No ref is changed; the proposed commitment is returned.
+func PublishManifest(ctx context.Context, w Writer, m packmanifest.PackManifest, publicBase, prefix, dir string) (Prepared, error) {
+	if m.Validate() != nil {
+		return Prepared{}, Fail(Invalid, "prepare-manifest")
+	}
+	if err := validateLocator(publicBase, prefix); err != nil {
+		return Prepared{}, err
+	}
+	return publishManifest(ctx, w, m, publicBase, prefix, dir, Prepared{})
+}
+
+func validateLocator(publicBase, prefix string) error {
+	if _, err := safehttp.ValidateURL(publicBase); err != nil || !packmanifest.ValidPrefix(prefix) {
+		return Fail(Invalid, "manifest-locator")
+	}
+	return nil
+}
+
+func publishManifest(ctx context.Context, w Writer, m packmanifest.PackManifest, publicBase, prefix, dir string, result Prepared) (Prepared, error) {
+	b, err := packmanifest.Encode(m)
+	if err != nil {
+		return result, err
+	}
+	manifestKey, _ := packmanifest.Key(prefix, "manifests", packmanifest.Digest(b))
+	locator := strings.TrimRight(publicBase, "/") + "/" + manifestKey
+	if _, err := safehttp.ValidateURL(locator); err != nil {
+		return result, Fail(Invalid, "manifest-locator")
 	}
 	f, err := Spool(ctx, dir, io.NopCloser(strings.NewReader(string(b))), packmanifest.MaxManifestBytes)
 	if err != nil {

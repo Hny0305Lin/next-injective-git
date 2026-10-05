@@ -448,3 +448,284 @@ func sha256Hex(b []byte) string {
 func sha256Of(b []byte) [32]byte {
 	return sha256.Sum256(b)
 }
+
+// ---- S08 incremental pack chain (ADR 0005, manifest schema 2) ----
+
+func publishedManifest(t *testing.T, chain *fakeChain, store *memStore, repoID [32]byte, refName string) (packmanifest.PackManifest, successor.RefState) {
+	t.Helper()
+	state, err := successorClient(chain).GetRef(context.Background(), repoID, refName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	view := successor.RepositoryView{RepoID: repoID}
+	service := newService(t, chain, store, &gitio.Repo{GitDir: t.TempDir()})
+	m, err := service.readManifest(context.Background(), view, refName, state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m, state
+}
+
+func TestIncrementalPushBuildsSchema2ChainAndColdClone(t *testing.T) {
+	ctx := context.Background()
+	chain := newFakeChain(t)
+	repoID := chain.create(t, "demo")
+	store := newMemStore()
+	gitDir, _ := buildRepo(t, "first")
+	work := filepath.Dir(gitDir)
+	service := newService(t, chain, store, &gitio.Repo{GitDir: gitDir})
+	if err := service.PushRef(ctx, "inj1owner", "demo", "refs/heads/main", "refs/heads/main", false, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	fullCount := store.count()
+
+	localGit(t, work, "commit", "--allow-empty", "-m", "second")
+	tip2 := localGit(t, work, "rev-parse", "HEAD")
+	if err := service.PushRef(ctx, "inj1owner", "demo", "refs/heads/main", "refs/heads/main", false, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	m, state := publishedManifest(t, chain, store, repoID, "refs/heads/main")
+	if state.Revision != 2 {
+		t.Fatalf("revision after incremental push = %d", state.Revision)
+	}
+	if m.SchemaVersion != 2 || len(m.Packs) != 2 {
+		t.Fatalf("chain manifest: schema=%d packs=%d", m.SchemaVersion, len(m.Packs))
+	}
+	if len(m.Packs[0].DependsOn) != 0 {
+		t.Fatalf("base pack carries dependencies: %+v", m.Packs[0].DependsOn)
+	}
+	if deps := m.Packs[1].DependsOn; len(deps) != 1 || deps[0] != m.Packs[0].SHA256 {
+		t.Fatalf("dependsOn = %v, want [%s]", deps, m.Packs[0].SHA256)
+	}
+	if m.Commit.OID != tip2 {
+		t.Fatalf("commit binding = %s, want %s", m.Commit.OID, tip2)
+	}
+	if got := store.count(); got != fullCount+2 {
+		t.Fatalf("store objects after incremental push = %d (full push left %d); only the new pack and manifest may be uploaded", got, fullCount)
+	}
+
+	// Cold clone walks the whole chain and passes the single closure check.
+	bare := t.TempDir()
+	localGit(t, bare, "init", "--bare", "--object-format=sha1")
+	fetcher := newService(t, chain, store, &gitio.Repo{GitDir: bare})
+	if err := fetcher.FetchRef(ctx, "inj1owner", "demo", "refs/heads/main", tip2, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	localGit(t, bare, "update-ref", "refs/heads/main", tip2)
+	localGit(t, bare, "fsck", "--strict")
+
+	// A third fast-forward push extends the chain to three packs.
+	localGit(t, work, "commit", "--allow-empty", "-m", "third")
+	tip3 := localGit(t, work, "rev-parse", "HEAD")
+	if err := service.PushRef(ctx, "inj1owner", "demo", "refs/heads/main", "refs/heads/main", false, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	m2, state2 := publishedManifest(t, chain, store, repoID, "refs/heads/main")
+	if state2.Revision != 3 || len(m2.Packs) != 3 {
+		t.Fatalf("after third push: revision=%d packs=%d", state2.Revision, len(m2.Packs))
+	}
+	deps := m2.Packs[2].DependsOn
+	if len(deps) != 2 || deps[0] != m2.Packs[0].SHA256 || deps[1] != m2.Packs[1].SHA256 {
+		t.Fatalf("chain deps = %v", deps)
+	}
+
+	// Re-pushing the same tip is a no-op: no upload, no revision bump.
+	before := store.count()
+	if err := service.PushRef(ctx, "inj1owner", "demo", "refs/heads/main", "refs/heads/main", false, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	if store.count() != before {
+		t.Fatal("empty increment uploaded objects")
+	}
+	if _, state3 := publishedManifest(t, chain, store, repoID, "refs/heads/main"); state3.Revision != 3 {
+		t.Fatalf("empty increment bumped revision to %d", state3.Revision)
+	}
+	_ = tip3
+}
+
+func TestNonFastForwardPushFallsBackToFullPack(t *testing.T) {
+	ctx := context.Background()
+	chain := newFakeChain(t)
+	repoID := chain.create(t, "demo")
+	store := newMemStore()
+	gitDir, _ := buildRepo(t, "first", "second")
+	work := filepath.Dir(gitDir)
+	service := newService(t, chain, store, &gitio.Repo{GitDir: gitDir})
+	if err := service.PushRef(ctx, "inj1owner", "demo", "refs/heads/main", "refs/heads/main", false, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	// A fresh root commit is not a descendant of the published tip.
+	localGit(t, work, "checkout", "--orphan", "rewrite")
+	localGit(t, work, "commit", "--allow-empty", "-m", "rewritten root")
+	tipR := localGit(t, work, "rev-parse", "HEAD")
+	if err := service.PushRef(ctx, "inj1owner", "demo", "refs/heads/rewrite", "refs/heads/main", true, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	m, state := publishedManifest(t, chain, store, repoID, "refs/heads/main")
+	if state.Revision != 2 || m.SchemaVersion != 1 || len(m.Packs) != 1 || m.Commit.OID != tipR {
+		t.Fatalf("force rewrite must reset to a self-contained schema-1 pack: revision=%d schema=%d packs=%d commit=%.8s", state.Revision, m.SchemaVersion, len(m.Packs), m.Commit.OID)
+	}
+}
+
+func TestUnreadablePreviousManifestFallsBackToFullPack(t *testing.T) {
+	ctx := context.Background()
+	chain := newFakeChain(t)
+	repoID := chain.create(t, "demo")
+	store := newMemStore()
+	gitDir, _ := buildRepo(t, "first")
+	work := filepath.Dir(gitDir)
+	service := newService(t, chain, store, &gitio.Repo{GitDir: gitDir})
+	if err := service.PushRef(ctx, "inj1owner", "demo", "refs/heads/main", "refs/heads/main", false, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	// Corrupt the stored manifest bytes: the chain digest no longer matches.
+	store.mu.Lock()
+	for key, body := range store.objects {
+		if strings.HasSuffix(key, ".json") {
+			tampered := append([]byte{}, body...)
+			tampered[len(tampered)-2] = 'x'
+			store.objects[key] = tampered
+		}
+	}
+	store.mu.Unlock()
+	localGit(t, work, "commit", "--allow-empty", "-m", "second")
+	tip2 := localGit(t, work, "rev-parse", "HEAD")
+	if err := service.PushRef(ctx, "inj1owner", "demo", "refs/heads/main", "refs/heads/main", false, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	m, state := publishedManifest(t, chain, store, repoID, "refs/heads/main")
+	if state.Revision != 2 || m.SchemaVersion != 1 || len(m.Packs) != 1 || m.Commit.OID != tip2 {
+		t.Fatalf("unreadable previous manifest must fall back to schema-1 full pack: revision=%d schema=%d packs=%d", state.Revision, m.SchemaVersion, len(m.Packs))
+	}
+	// The fallback publication stays cold-clonable.
+	bare := t.TempDir()
+	localGit(t, bare, "init", "--bare", "--object-format=sha1")
+	fetcher := newService(t, chain, store, &gitio.Repo{GitDir: bare})
+	if err := fetcher.FetchRef(ctx, "inj1owner", "demo", "refs/heads/main", tip2, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	localGit(t, bare, "update-ref", "refs/heads/main", tip2)
+	localGit(t, bare, "fsck", "--strict")
+}
+
+func TestChainRolloverAtPackLimitFallsBackToFullPack(t *testing.T) {
+	ctx := context.Background()
+	chain := newFakeChain(t)
+	repoID := chain.create(t, "demo")
+	store := newMemStore()
+	gitDir, _ := buildRepo(t, "c1")
+	work := filepath.Dir(gitDir)
+	service := newService(t, chain, store, &gitio.Repo{GitDir: gitDir})
+	if err := service.PushRef(ctx, "inj1owner", "demo", "refs/heads/main", "refs/heads/main", false, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	for i := 2; i <= 16; i++ {
+		localGit(t, work, "commit", "--allow-empty", "-m", fmt.Sprintf("c%d", i))
+		if err := service.PushRef(ctx, "inj1owner", "demo", "refs/heads/main", "refs/heads/main", false, t.TempDir()); err != nil {
+			t.Fatalf("incremental push %d: %v", i, err)
+		}
+	}
+	m, state := publishedManifest(t, chain, store, repoID, "refs/heads/main")
+	if state.Revision != 16 || len(m.Packs) != packmanifest.MaxPacks {
+		t.Fatalf("before rollover: revision=%d packs=%d", state.Revision, len(m.Packs))
+	}
+	// The 17th push must roll over to a fresh self-contained single pack.
+	localGit(t, work, "commit", "--allow-empty", "-m", "c17")
+	tip17 := localGit(t, work, "rev-parse", "HEAD")
+	if err := service.PushRef(ctx, "inj1owner", "demo", "refs/heads/main", "refs/heads/main", false, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	m2, state2 := publishedManifest(t, chain, store, repoID, "refs/heads/main")
+	if state2.Revision != 17 || m2.SchemaVersion != 1 || len(m2.Packs) != 1 || m2.Commit.OID != tip17 {
+		t.Fatalf("rollover must reset to schema-1 single pack: revision=%d schema=%d packs=%d", state2.Revision, m2.SchemaVersion, len(m2.Packs))
+	}
+	// The rolled-over manifest still cold-clones the full history.
+	bare := t.TempDir()
+	localGit(t, bare, "init", "--bare", "--object-format=sha1")
+	fetcher := newService(t, chain, store, &gitio.Repo{GitDir: bare})
+	if err := fetcher.FetchRef(ctx, "inj1owner", "demo", "refs/heads/main", tip17, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	localGit(t, bare, "update-ref", "refs/heads/main", tip17)
+	localGit(t, bare, "fsck", "--strict")
+}
+
+func TestFetchRejectsMissingChainPack(t *testing.T) {
+	ctx := context.Background()
+	chain := newFakeChain(t)
+	repoID := chain.create(t, "demo")
+	store := newMemStore()
+	gitDir, _ := buildRepo(t, "first")
+	work := filepath.Dir(gitDir)
+	service := newService(t, chain, store, &gitio.Repo{GitDir: gitDir})
+	if err := service.PushRef(ctx, "inj1owner", "demo", "refs/heads/main", "refs/heads/main", false, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	localGit(t, work, "commit", "--allow-empty", "-m", "second")
+	tip2 := localGit(t, work, "rev-parse", "HEAD")
+	if err := service.PushRef(ctx, "inj1owner", "demo", "refs/heads/main", "refs/heads/main", false, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	m, state := publishedManifest(t, chain, store, repoID, "refs/heads/main")
+	// Simulate the bucket losing the chain's base pack.
+	store.mu.Lock()
+	delete(store.objects, "igit-fixture/packs/sha256/"+m.Packs[0].SHA256+".pack")
+	store.mu.Unlock()
+	bare := t.TempDir()
+	localGit(t, bare, "init", "--bare", "--object-format=sha1")
+	fetcher := newService(t, chain, store, &gitio.Repo{GitDir: bare})
+	if err := fetcher.FetchRef(ctx, "inj1owner", "demo", "refs/heads/main", tip2, t.TempDir()); err == nil {
+		t.Fatal("fetch accepted a chain with a missing dependency pack")
+	}
+	if state.Revision == 0 {
+		t.Fatal("chain state missing")
+	}
+}
+
+func TestSiblingRefDeletionKeepsIndependentClone(t *testing.T) {
+	ctx := context.Background()
+	chain := newFakeChain(t)
+	repoID := chain.create(t, "demo")
+	store := newMemStore()
+	gitDir, _ := buildRepo(t, "first", "second")
+	work := filepath.Dir(gitDir)
+	service := newService(t, chain, store, &gitio.Repo{GitDir: gitDir})
+	if err := service.PushRef(ctx, "inj1owner", "demo", "refs/heads/main", "refs/heads/main", false, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	// A diverging feature branch gets its own full pack (different digest).
+	localGit(t, work, "checkout", "-b", "feature")
+	if err := os.WriteFile(filepath.Join(work, "feature.txt"), []byte("feature work"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	localGit(t, work, "add", ".")
+	localGit(t, work, "commit", "-m", "feature work")
+	if err := service.PushRef(ctx, "inj1owner", "demo", "refs/heads/feature", "refs/heads/feature", false, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	// main advances incrementally afterwards.
+	localGit(t, work, "checkout", "main")
+	localGit(t, work, "commit", "--allow-empty", "-m", "third")
+	tip3 := localGit(t, work, "rev-parse", "HEAD")
+	if err := service.PushRef(ctx, "inj1owner", "demo", "refs/heads/main", "refs/heads/main", false, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	// Delete the sibling ref and every object it owned.
+	fm, fstate := publishedManifest(t, chain, store, repoID, "refs/heads/feature")
+	if err := service.PushRef(ctx, "inj1owner", "demo", "", "refs/heads/feature", false, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	store.mu.Lock()
+	delete(store.objects, "igit-fixture/packs/sha256/"+fm.Packs[0].SHA256+".pack")
+	delete(store.objects, "igit-fixture/manifests/sha256/"+fmt.Sprintf("%x", fstate.Commitment.ManifestDigest)+".json")
+	store.mu.Unlock()
+	// main's chain never referenced the sibling: cold clone stays complete.
+	bare := t.TempDir()
+	localGit(t, bare, "init", "--bare", "--object-format=sha1")
+	fetcher := newService(t, chain, store, &gitio.Repo{GitDir: bare})
+	if err := fetcher.FetchRef(ctx, "inj1owner", "demo", "refs/heads/main", tip3, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	localGit(t, bare, "update-ref", "refs/heads/main", tip3)
+	localGit(t, bare, "fsck", "--strict")
+}

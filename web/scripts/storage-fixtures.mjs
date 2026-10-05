@@ -26,11 +26,20 @@ for (const [name,change] of [
   const m=change(structuredClone(base)),b=encodeManifest(m),sha256=await digest(b);
   vectors.push({name,kind:'manifest',input:JSON.stringify(m),canonical:dec.decode(b),sha256,context:context(m),commitment:{sha256,size:String(b.length),bootstrapLocator:'https://storage.example.com/project/manifests/'+sha256+'.json'}});
 }
+// S08 (ADR 0005): schema-2 incremental chains carry an explicit dependsOn
+// closure; every reference must point at an earlier pack of the same manifest.
+for (const [name,change] of [
+  ['schema2-chain',m=>{m.schemaVersion=2;m.packs.push({...structuredClone(m.packs[0]),sequence:1,sha256:'b'.repeat(64),dependsOn:[m.packs[0].sha256]},{...structuredClone(m.packs[0]),sequence:2,sha256:'c'.repeat(64),dependsOn:[m.packs[0].sha256,'b'.repeat(64)]});return m;}],
+  ['schema2-partial-deps',m=>{m.schemaVersion=2;m.packs.push({...structuredClone(m.packs[0]),sequence:1,sha256:'b'.repeat(64),dependsOn:[m.packs[0].sha256]},{...structuredClone(m.packs[0]),sequence:2,sha256:'c'.repeat(64),dependsOn:['b'.repeat(64)]});return m;}],
+]) {
+  const m=change(structuredClone(base)),b=encodeManifest(m),sha256=await digest(b);
+  vectors.push({name,kind:'manifest',input:JSON.stringify(m),canonical:dec.decode(b),sha256,context:context(m),commitment:{sha256,size:String(b.length),bootstrapLocator:'https://storage.example.com/project/manifests/'+sha256+'.json'}});
+}
 const invalid = [
  ['duplicate','{"a":1,"a":2}'],['escaped-duplicate','{"a":1,"\\u0061":2}'],['lone-high','{"a":"\\ud800"}'],['lone-low','{"a":"\\udfff"}'],['surrogate-order','{"a":"\\ud800x"}'],['trailing','{}{}'],['trailing-comma','[1,]'],['infinity','{"a":1e999}'],['nan','{"a":NaN}'],['bom','\ufeff{}'],['depth','['.repeat(18)+'0'+']'.repeat(18)],['leading-zero','{"n":01}'],
 ].map(([name,input])=>({name,kind:'jcs',input}));
 for (const [name,change] of [
- ['schema-version',m=>m.schemaVersion=2],['algorithm',m=>m.commit.algorithm='sha256'],['thin',m=>m.packs[0].thin=true],['dependencies',m=>m.packs[0].dependsOn=['a'.repeat(64)]],['null-dependencies',m=>m.packs[0].dependsOn=null],['missing-thin',m=>delete m.packs[0].thin],['null-thin',m=>m.packs[0].thin=null],['unsafe-sequence',m=>m.packs[0].sequence=9007199254740992],['fraction-sequence',m=>m.packs[0].sequence=.5],['pack-version',m=>m.packs[0].packVersion=3],['size-limit',m=>m.packs[0].size='536870913'],['size-overflow',m=>m.packs[0].size='18446744073709551616'],['size-leading-zero',m=>m.packs[0].size='0128'],['numeric-size',m=>m.packs[0].size=128],['chain-overflow',m=>m.chainId=(1n<<256n).toString()],['unknown',m=>m.extra=true],['self-digest',m=>m.manifestDigest='a'.repeat(64)],['unknown-nested',m=>m.commit.extra=true],['empty-location',m=>m.packs[0].locations=[]],['duplicate-pack',m=>m.packs.push({...m.packs[0],sequence:1})],['query',m=>m.packs[0].locations[0].url+='?X-Amz-Signature=redacted'],['userinfo',m=>m.packs[0].locations[0].url='https://user:pass@storage.example.com/p'],['http',m=>m.packs[0].locations[0].url='http://storage.example.com/p'],['traversal',m=>m.packs[0].locations[0].url='https://storage.example.com/a/../p'],['ref-traversal',m=>m.refName='refs/heads/a..b'],['directory-case',m=>m.suiteDirectory='0x'+'A'.repeat(40)],
+ ['schema-version',m=>m.schemaVersion=3],['algorithm',m=>m.commit.algorithm='sha256'],['thin',m=>m.packs[0].thin=true],['dependencies',m=>m.packs[0].dependsOn=['a'.repeat(64)]],['null-dependencies',m=>m.packs[0].dependsOn=null],['missing-thin',m=>delete m.packs[0].thin],['null-thin',m=>m.packs[0].thin=null],['unsafe-sequence',m=>m.packs[0].sequence=9007199254740992],['fraction-sequence',m=>m.packs[0].sequence=.5],['pack-version',m=>m.packs[0].packVersion=3],['size-limit',m=>m.packs[0].size='536870913'],['size-overflow',m=>m.packs[0].size='18446744073709551616'],['size-leading-zero',m=>m.packs[0].size='0128'],['numeric-size',m=>m.packs[0].size=128],['chain-overflow',m=>m.chainId=(1n<<256n).toString()],['unknown',m=>m.extra=true],['self-digest',m=>m.manifestDigest='a'.repeat(64)],['unknown-nested',m=>m.commit.extra=true],['empty-location',m=>m.packs[0].locations=[]],['duplicate-pack',m=>m.packs.push({...m.packs[0],sequence:1})],['query',m=>m.packs[0].locations[0].url+='?X-Amz-Signature=redacted'],['userinfo',m=>m.packs[0].locations[0].url='https://user:pass@storage.example.com/p'],['http',m=>m.packs[0].locations[0].url='http://storage.example.com/p'],['traversal',m=>m.packs[0].locations[0].url='https://storage.example.com/a/../p'],['ref-traversal',m=>m.refName='refs/heads/a..b'],['directory-case',m=>m.suiteDirectory='0x'+'A'.repeat(40)],
 ]) {const m=structuredClone(base);change(m);invalid.push({name,kind:'manifest',input:JSON.stringify(m)});}
 
 for(const [name,input] of [['scalar-null','null'],['scalar-string','"\\ud83d\\ude00"'],['scalar-number','-0']]) {
@@ -54,6 +63,11 @@ for(const [name,change] of [
  ['encoded-path',m=>m.packs[0].locations[0].url='https://storage.example.com/a%2fb'],
  ['custom-port',m=>m.packs[0].locations[0].url='https://storage.example.com:443/a'],
  ['wrong-sequence',m=>m.packs[0].sequence=1],
+ ['schema2-thin',m=>{m.schemaVersion=2;m.packs[0].thin=true;}],
+ ['schema2-self-dep',m=>{m.schemaVersion=2;m.packs[0].dependsOn=[m.packs[0].sha256];}],
+ ['schema2-unknown-dep',m=>{m.schemaVersion=2;m.packs[0].dependsOn=['d'.repeat(64)];}],
+ ['schema2-forward-dep',m=>{m.schemaVersion=2;m.packs.push({...structuredClone(m.packs[0]),sequence:1,sha256:'b'.repeat(64)});m.packs[0].dependsOn=['b'.repeat(64)];}],
+ ['schema2-duplicate-dep',m=>{m.schemaVersion=2;m.packs.push({...structuredClone(m.packs[0]),sequence:1,sha256:'b'.repeat(64),dependsOn:[m.packs[0].sha256,m.packs[0].sha256]});}],
 ]){const m=structuredClone(base);change(m);invalid.push({name,kind:'manifest',input:JSON.stringify(m)});}
 
 const dir=new URL('../../protocol/packmanifest/',import.meta.url);await mkdir(dir,{recursive:true});await writeFile(new URL('vectors.json',dir),JSON.stringify({vectors,invalid},null,2)+'\n');

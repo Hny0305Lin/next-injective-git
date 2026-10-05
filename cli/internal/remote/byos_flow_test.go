@@ -212,3 +212,93 @@ func TestHelperByosConversation(t *testing.T) {
 	}
 	byosLocalGit(t, bare, "fsck", "--strict")
 }
+
+// TestHelperByosIncrementalConversation drives push, an incremental push, list
+// and a cold fetch of a schema-2 chain through the remote-helper protocol.
+func TestHelperByosIncrementalConversation(t *testing.T) {
+	dir := t.TempDir()
+	byosLocalGit(t, dir, "init", "--object-format=sha1", "-b", "main")
+	if err := os.WriteFile(filepath.Join(dir, "history.txt"), []byte("one"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	byosLocalGit(t, dir, "add", ".")
+	byosLocalGit(t, dir, "commit", "-m", "first")
+
+	inner := successor.NewFakeChain(common.HexToAddress("0xa11ce00000000000000000000000000000000001"), big.NewInt(1439), common.HexToAddress("0x4444000000000000000000000000000000000444"))
+	repoID, err := inner.CreateRepository("demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chain := &byosFakeChain{inner: inner, view: successor.RepositoryView{RepoID: repoID, OwnerHex: "0xa11ce00000000000000000000000000000000001", Name: "demo", DefaultBranch: "main"}}
+	store := &byosMemStore{objects: map[string][]byte{}}
+	service, err := byos.NewService(chain, &gitio.Repo{GitDir: filepath.Join(dir, ".git")}, byosMemFactory{store}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	runHelper := func(input string) string {
+		out.Reset()
+		h := NewHelper(RepoURL{Owner: "inj1owner", Repo: "demo"}, nil, nil, nil, nil, nil, strings.NewReader(input), &out, io.Discard)
+		h.SetByosStorage(service)
+		if err := h.Run(); err != nil {
+			t.Fatalf("conversation %q: %v", input, err)
+		}
+		return out.String()
+	}
+
+	// 1) initial push
+	if got := runHelper("list for-push\npush refs/heads/main:refs/heads/main\n\n"); !strings.Contains(got, "ok refs/heads/main") {
+		t.Fatalf("push output: %q", got)
+	}
+	objectsAfterFull := len(storeSnapshot(store))
+
+	// 2) second commit → incremental push through the same protocol
+	if err := os.WriteFile(filepath.Join(dir, "history.txt"), []byte("two"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	byosLocalGit(t, dir, "commit", "-am", "second")
+	tip2 := byosLocalGit(t, dir, "rev-parse", "HEAD")
+	if got := runHelper("list for-push\npush refs/heads/main:refs/heads/main\n\n"); !strings.Contains(got, "ok refs/heads/main") {
+		t.Fatalf("incremental push output: %q", got)
+	}
+	after := storeSnapshot(store)
+	if len(after) != objectsAfterFull+2 {
+		t.Fatalf("objects after incremental push = %d (full push left %d); only the new pack and manifest may be uploaded", len(after), objectsAfterFull)
+	}
+
+	// 3) list advertises the incremental tip
+	if got := runHelper("list\n"); !strings.Contains(got, tip2+" refs/heads/main") {
+		t.Fatalf("list output: %q", got)
+	}
+
+	// 4) cold fetch of the chain into a bare repository
+	bare := t.TempDir()
+	byosLocalGit(t, bare, "init", "--bare", "--object-format=sha1")
+	coldService, err := byos.NewService(chain, &gitio.Repo{GitDir: bare}, byosMemFactory{store}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	h4 := NewHelper(RepoURL{Owner: "inj1owner", Repo: "demo"}, nil, nil, nil, nil, nil,
+		strings.NewReader(fmt.Sprintf("fetch %s refs/heads/main\n\n", tip2)), &out, io.Discard)
+	h4.SetByosStorage(coldService)
+	if err := h4.Run(); err != nil {
+		t.Fatalf("cold fetch conversation: %v", err)
+	}
+	byosLocalGit(t, bare, "update-ref", "refs/heads/main", tip2)
+	if got := byosLocalGit(t, bare, "show", tip2+":history.txt"); got != "two" {
+		t.Fatalf("cold-fetch content: %q", got)
+	}
+	byosLocalGit(t, bare, "fsck", "--strict")
+}
+
+func storeSnapshot(m *byosMemStore) map[string][]byte {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	snapshot := make(map[string][]byte, len(m.objects))
+	for key, body := range m.objects {
+		snapshot[key] = body
+	}
+	return snapshot
+}

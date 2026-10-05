@@ -151,15 +151,30 @@ func (l PackLocation) Validate() error {
 	return nil
 }
 func (m PackManifest) Validate() error {
-	if m.Schema != "igit.pack-manifest" || m.SchemaVersion != 1 || m.Context.Validate() != nil || len(m.Packs) < 1 || len(m.Packs) > MaxPacks {
+	if m.Schema != "igit.pack-manifest" || (m.SchemaVersion != 1 && m.SchemaVersion != 2) || m.Context.Validate() != nil || len(m.Packs) < 1 || len(m.Packs) > MaxPacks {
 		return ErrManifest
 	}
 	seen := map[string]bool{}
 	var total int64
 	for i, p := range m.Packs {
 		n, err := Size(p.Size, MaxPackBytes)
-		if err != nil || n < 32 || p.Sequence != i || !ValidDigest(p.SHA256) || seen[p.SHA256] || p.Format != "git-pack" || p.PackVersion != 2 || p.Thin || p.DependsOn == nil || len(p.DependsOn) != 0 || len(p.Locations) < 1 || len(p.Locations) > MaxLocations {
+		if err != nil || n < 32 || p.Sequence != i || !ValidDigest(p.SHA256) || seen[p.SHA256] || p.Format != "git-pack" || p.PackVersion != 2 || p.Thin || p.DependsOn == nil || len(p.Locations) < 1 || len(p.Locations) > MaxLocations {
 			return ErrManifest
+		}
+		// Schema 1 keeps self-contained packs only. Schema 2 (incremental
+		// chains, ADR 0005) allows an explicit dependency closure: every
+		// dependsOn digest must reference an earlier entry, so references are
+		// backward-only and the chain is acyclic by construction; duplicate,
+		// self, forward and unknown references are all rejected.
+		if m.SchemaVersion == 1 && len(p.DependsOn) != 0 {
+			return ErrManifest
+		}
+		deps := map[string]bool{}
+		for _, d := range p.DependsOn {
+			if !ValidDigest(d) || !seen[d] || deps[d] {
+				return ErrManifest
+			}
+			deps[d] = true
 		}
 		seen[p.SHA256] = true
 		total += n

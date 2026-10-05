@@ -38,7 +38,10 @@ type GitRepo interface {
 	ResolveRef(ref string) string
 	ScanSecrets(rev string) []string
 	PackFullHistory(ctx context.Context, tip, dir string) (*packstore.File, error)
-	IndexVerified(ctx context.Context, file *packstore.File, o packstore.Object, tip string) error
+	IsAncestor(ctx context.Context, base, tip string) bool
+	PackIncremental(ctx context.Context, tip, base, dir string) (*packstore.File, int64, error)
+	IndexPackVerified(ctx context.Context, file *packstore.File, o packstore.Object) error
+	VerifyClosure(ctx context.Context, tip string) error
 }
 
 // Progress reports bilingual user-visible progress.
@@ -197,19 +200,26 @@ func (s *Service) FetchRef(ctx context.Context, owner, repo, refName, wantOID, t
 			return i18n.Errorf("verified pack download failed: %w", "已验证 pack 下载失败：%w", err)
 		}
 		s.progress("ingesting verified pack into git", "正在将已验证 pack 导入 git")
-		if err := s.git.IndexVerified(ctx, file, object, manifest.Commit.OID); err != nil {
+		if err := s.git.IndexPackVerified(ctx, file, object); err != nil {
 			_ = file.Close()
 			return i18n.Errorf("git rejected verified pack: %w", "git 拒绝了已验证 pack：%w", err)
 		}
 		_ = file.Close()
 		s.ingested[entry.SHA256] = true
 	}
+	// One closure check after the whole chain: intermediate packs legitimately
+	// lack the tip, so only the union of every declared pack may pass.
+	if err := s.git.VerifyClosure(ctx, manifest.Commit.OID); err != nil {
+		return i18n.Errorf("verified pack chain failed the closure check: %w", "已验证 pack 链闭包校验失败：%w", err)
+	}
 	return nil
 }
 
-// PushRef publishes a self-contained full-history pack plus manifest and CASes
-// the ref commitment. CAS conflicts keep the uploaded objects for a directed
-// retry; nothing is force-replaced or deleted.
+// PushRef publishes the ref's pack chain and CASes the commitment: a
+// fast-forward update appends one incremental pack (ADR 0005, manifest schema
+// 2); every other case publishes a self-contained full-history pack (schema 1).
+// CAS conflicts keep the uploaded objects for a directed retry; nothing is
+// force-replaced or deleted.
 func (s *Service) PushRef(ctx context.Context, owner, repo, srcRef, dstRef string, force bool, tmpDir string) error {
 	view, _, err := s.chain.ResolveRepository(ctx, owner, repo)
 	if err != nil {
@@ -227,26 +237,33 @@ func (s *Service) PushRef(ctx context.Context, owner, repo, srcRef, dstRef strin
 	for _, match := range s.git.ScanSecrets(tip) {
 		s.progress("warning: possible credential in %s", "警告：%s 中可能包含凭据", match)
 	}
-	expectedRevision, expectedDigest, err := s.currentExpectation(ctx, view.RepoID, dstRef)
+	state, refExists, err := s.currentRefState(ctx, view.RepoID, dstRef)
 	if err != nil {
 		return err
+	}
+	expectedRevision, expectedDigest := uint64(0), [32]byte{}
+	if refExists {
+		expectedRevision, expectedDigest = state.Revision, state.Commitment.ManifestDigest
 	}
 	writer, publicBase, prefix, provider, err := s.stores.Writer(view)
 	if err != nil {
 		return err
 	}
-	s.progress("packing self-contained full history for %s", "正在为 %s 打包自包含完整历史", dstRef)
-	packFile, err := s.git.PackFullHistory(ctx, tip, tmpDir)
+	manifest, packFile, err := s.planPack(ctx, view, dstRef, tip, state, refExists, provider, publicBase, prefix, tmpDir)
 	if err != nil {
 		return err
+	}
+	if packFile == nil {
+		return nil // the published commit already matches the tip; nothing to upload
 	}
 	defer func() { _ = packFile.Close() }()
-	manifest, err := s.buildManifest(view, dstRef, tip, packFile.Source(), provider, publicBase, prefix)
-	if err != nil {
-		return err
-	}
 	s.progress("uploading pack and manifest with verification", "正在上传并验证 pack 与 manifest")
-	prepared, err := packstore.Prepare(ctx, writer, manifest, []packstore.Source{packFile.Source()}, publicBase, prefix, tmpDir)
+	var prepared packstore.Prepared
+	if len(manifest.Packs) > 1 {
+		prepared, err = s.uploadIncremental(ctx, writer, manifest, packFile.Source(), publicBase, prefix, tmpDir)
+	} else {
+		prepared, err = packstore.Prepare(ctx, writer, manifest, []packstore.Source{packFile.Source()}, publicBase, prefix, tmpDir)
+	}
 	if err != nil {
 		return i18n.Errorf("verified upload failed: %w", "已验证上传失败：%w", err)
 	}
@@ -281,15 +298,15 @@ func (s *Service) PushRef(ctx context.Context, owner, repo, srcRef, dstRef strin
 	return err
 }
 
-func (s *Service) currentExpectation(ctx context.Context, repoID [32]byte, refName string) (uint64, [32]byte, error) {
+func (s *Service) currentRefState(ctx context.Context, repoID [32]byte, refName string) (successor.RefState, bool, error) {
 	state, err := s.chain.GetRef(ctx, repoID, refName)
 	if errors.Is(err, successor.ErrRefNotFound) {
-		return 0, [32]byte{}, nil
+		return successor.RefState{}, false, nil
 	}
 	if err != nil {
-		return 0, [32]byte{}, err
+		return successor.RefState{}, false, err
 	}
-	return state.Revision, state.Commitment.ManifestDigest, nil
+	return state, true, nil
 }
 
 // readManifest fetches the manifest through the independent reader with a
@@ -346,6 +363,121 @@ func (s *Service) buildManifest(view successor.RepositoryView, refName, tip stri
 			Format: "git-pack", PackVersion: 2, Thin: false, DependsOn: []string{},
 			Locations: []packmanifest.PackLocation{{Provider: provider, URL: publicBase + "/" + packKey}},
 		}},
+	}
+	if err := m.Validate(); err != nil {
+		return packmanifest.PackManifest{}, err
+	}
+	return m, nil
+}
+
+// planPack decides between appending one incremental pack to the ref's
+// manifest chain and publishing a fresh self-contained full-history pack.
+// Incremental is an optimization only: every failure reason (no previous
+// manifest, non-fast-forward move, unreadable or corrupt previous manifest,
+// chain at the pack-count or size limit) falls back to the always-correct
+// full pack. A nil file with a nil error means the tip is already the
+// published commit and nothing needs to be uploaded.
+func (s *Service) planPack(ctx context.Context, view successor.RepositoryView, refName, tip string, state successor.RefState, refExists bool, provider, publicBase, prefix, tmpDir string) (packmanifest.PackManifest, *packstore.File, error) {
+	if refExists {
+		prev, err := s.readManifest(ctx, view, refName, state)
+		switch {
+		case err != nil:
+			s.progress("previous manifest unreadable; publishing a self-contained full-history pack", "上一 manifest 不可读，改为发布自包含完整历史 pack")
+		case prev.Commit.OID == tip:
+			s.progress("%s already publishes this commit; nothing to upload", "%s 已发布该 commit，无需上传", refName)
+			return packmanifest.PackManifest{}, nil, nil
+		case len(prev.Packs) >= packmanifest.MaxPacks:
+			s.progress("pack chain at the %d-pack limit; re-packing full history", "pack 链已达 %d 包上限，重新打包完整历史", packmanifest.MaxPacks)
+		case s.git.IsAncestor(ctx, prev.Commit.OID, tip):
+			if file, count, e := s.git.PackIncremental(ctx, tip, prev.Commit.OID, tmpDir); e == nil && count > 0 {
+				manifest, me := s.buildChainManifest(view, refName, tip, prev, file.Source(), provider, publicBase, prefix)
+				if me == nil {
+					s.progress("packing %d new objects for %s (incremental)", "正在为 %s 打包 %d 个新增对象（增量）", count, refName)
+					return manifest, file, nil
+				}
+				_ = file.Close()
+			}
+		}
+	}
+	s.progress("packing self-contained full history for %s", "正在为 %s 打包自包含完整历史", refName)
+	file, err := s.git.PackFullHistory(ctx, tip, tmpDir)
+	if err != nil {
+		return packmanifest.PackManifest{}, nil, err
+	}
+	manifest, err := s.buildManifest(view, refName, tip, file.Source(), provider, publicBase, prefix)
+	if err != nil {
+		_ = file.Close()
+		return packmanifest.PackManifest{}, nil, err
+	}
+	return manifest, file, nil
+}
+
+// uploadIncremental uploads exactly the new pack, then publishes the chain
+// manifest. Earlier packs of the chain already exist at their digest keys and
+// are never re-uploaded or overwritten.
+func (s *Service) uploadIncremental(ctx context.Context, writer packstore.Writer, manifest packmanifest.PackManifest, pack packstore.Source, publicBase, prefix, dir string) (packstore.Prepared, error) {
+	entry := manifest.Packs[len(manifest.Packs)-1]
+	size, err := packmanifest.Size(entry.Size, packmanifest.MaxPackBytes)
+	if err != nil {
+		return packstore.Prepared{}, err
+	}
+	if size > writer.Capabilities().MaxObject {
+		return packstore.Prepared{}, packstore.Fail(packstore.Limit, "provider-object")
+	}
+	object := packstore.Object{Kind: "packs", SHA256: pack.SHA256, Size: size}
+	f, err := packstore.CheckSource(ctx, pack, object)
+	if err != nil {
+		return packstore.Prepared{}, err
+	}
+	_ = f.Close()
+	receipt, err := writer.PutIfAbsent(ctx, object, pack)
+	if err != nil {
+		return packstore.Prepared{}, err
+	}
+	if !receipt.Verified {
+		return packstore.Prepared{}, packstore.Fail(packstore.Uncertain, "unverified-receipt")
+	}
+	prepared, err := packstore.PublishManifest(ctx, writer, manifest, publicBase, prefix, dir)
+	if err != nil {
+		return prepared, err
+	}
+	prepared.Receipts = append([]packstore.Receipt{receipt}, prepared.Receipts...)
+	return prepared, nil
+}
+
+// buildChainManifest appends one pack entry to the ref's previous manifest.
+// dependsOn lists every earlier entry of the same manifest, making the
+// dependency closure explicit; schema 2 is used as soon as any dependency
+// exists, while a reset single-pack manifest stays schema 1 for old readers.
+func (s *Service) buildChainManifest(view successor.RepositoryView, refName, tip string, prev packmanifest.PackManifest, pack packstore.Source, provider, publicBase, prefix string) (packmanifest.PackManifest, error) {
+	packKey, err := packmanifest.Key(prefix, "packs", pack.SHA256)
+	if err != nil {
+		return packmanifest.PackManifest{}, err
+	}
+	entries := make([]packmanifest.PackEntry, 0, len(prev.Packs)+1)
+	entries = append(entries, prev.Packs...)
+	deps := make([]string, 0, len(entries))
+	for _, e := range entries {
+		deps = append(deps, e.SHA256)
+	}
+	entries = append(entries, packmanifest.PackEntry{
+		Sequence: len(entries), SHA256: pack.SHA256, Size: strconv.FormatInt(pack.Size, 10),
+		Format: "git-pack", PackVersion: 2, Thin: false, DependsOn: deps,
+		Locations: []packmanifest.PackLocation{{Provider: provider, URL: publicBase + "/" + packKey}},
+	})
+	m := packmanifest.PackManifest{
+		Schema: "igit.pack-manifest", SchemaVersion: 1,
+		Context: packmanifest.Context{
+			ChainID:        s.chain.ChainIDDecimal(),
+			SuiteDirectory: s.chain.DirectoryHex(),
+			RepoID:         fmt.Sprintf("%#x", view.RepoID),
+			RefName:        refName,
+			Commit:         packmanifest.Commit{Algorithm: "sha1", OID: tip},
+		},
+		Packs: entries,
+	}
+	if len(deps) > 0 {
+		m.SchemaVersion = 2
 	}
 	if err := m.Validate(); err != nil {
 		return packmanifest.PackManifest{}, err

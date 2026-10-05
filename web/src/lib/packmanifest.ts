@@ -58,7 +58,7 @@ export type Commit = { algorithm: 'sha1'; oid: string };
 export type ManifestContext = { chainId: string; suiteDirectory: string; repoId: string; refName: string; commit: Commit };
 export type PackLocation = { provider: 'aws-s3' | 'cloudflare-r2' | 'ipfs'; url: string; reader: string };
 export type PackEntry = { sequence: number; sha256: string; size: string; format: 'git-pack'; packVersion: 2; thin: false; dependsOn: string[]; locations: PackLocation[] };
-export type PackManifest = ManifestContext & { schema: 'igit.pack-manifest'; schemaVersion: 1; packs: PackEntry[] };
+export type PackManifest = ManifestContext & { schema: 'igit.pack-manifest'; schemaVersion: 1 | 2; packs: PackEntry[] };
 export type ManifestCommitment = { sha256: string; size: string; bootstrapLocator: string };
 function obj(v: unknown, keys: string[]): Record<string, unknown> {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return invalid();
@@ -90,12 +90,16 @@ function context(v: Record<string, unknown>): void {
 }
 export function validateManifest(input: unknown): PackManifest {
   const m = obj(input, ['schema','schemaVersion','chainId','suiteDirectory','repoId','refName','commit','packs']);
-  context(m); if (m.schema !== 'igit.pack-manifest' || m.schemaVersion !== 1 || !Array.isArray(m.packs) || !m.packs.length || m.packs.length > 16) invalid();
+  context(m); if (m.schema !== 'igit.pack-manifest' || (m.schemaVersion !== 1 && m.schemaVersion !== 2) || !Array.isArray(m.packs) || !m.packs.length || m.packs.length > 16) invalid();
   let total = 0n; const digests = new Set<string>();
   Array.from(m.packs as unknown[]).forEach((v, i) => {
     const p = obj(v, ['sequence','sha256','size','format','packVersion','thin','dependsOn','locations']);
     const n = size(p.size, BigInt(MAX_PACK_BYTES)); total += n;
-    if (n < 32n || total > BigInt(MAX_TOTAL_BYTES) || p.sequence !== i || !Number.isSafeInteger(p.sequence) || !match(p.sha256, /^[0-9a-f]{64}$/) || digests.has(p.sha256 as string) || p.format !== 'git-pack' || p.packVersion !== 2 || p.thin !== false || !Array.isArray(p.dependsOn) || p.dependsOn.length !== 0 || !Array.isArray(p.locations) || !p.locations.length || p.locations.length > 4) invalid();
+    if (n < 32n || total > BigInt(MAX_TOTAL_BYTES) || p.sequence !== i || !Number.isSafeInteger(p.sequence) || !match(p.sha256, /^[0-9a-f]{64}$/) || digests.has(p.sha256 as string) || p.format !== 'git-pack' || p.packVersion !== 2 || p.thin !== false || !Array.isArray(p.dependsOn) || !Array.isArray(p.locations) || !p.locations.length || p.locations.length > 4) invalid();
+    // Schema 1 keeps self-contained packs only; schema 2 (incremental chains)
+    // allows an explicit backward-only dependency closure per entry.
+    if (m.schemaVersion === 1 && (p.dependsOn as unknown[]).length !== 0) invalid();
+    if (m.schemaVersion === 2) { const deps = new Set<string>(); for (const d of p.dependsOn as unknown[]) { if (typeof d !== 'string' || !match(d, /^[0-9a-f]{64}$/) || !digests.has(d) || deps.has(d)) invalid(); deps.add(d as string); } }
     digests.add(p.sha256 as string); const locations = new Set<string>();
     Array.from(p.locations as unknown[]).forEach(v => {
       const l = obj(v, ['provider','url','reader']);
