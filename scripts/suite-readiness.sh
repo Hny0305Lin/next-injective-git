@@ -103,8 +103,12 @@ if grep -n -E 'repo-registry\.wasm|contracts/repo-registry|cargo build.*wasm32' 
   exit 1
 fi
 
+# The reconciliation baseline is immutable audit evidence: it records that
+# RepoRegistryV2 and the alpha migration paths WERE removed, which is the
+# finding this gate enforces, not an advertisement of them.
 if grep -R -n -E 'RepoRegistryV2|igit-migrate-v(1|2)|igit upgrade|contracts/repo-registry' \
-  "$ROOT/README.md" "$ROOT/CLAUDE.md" "$ROOT/docs" --include='*.md'; then
+  "$ROOT/README.md" "$ROOT/CLAUDE.md" "$ROOT/docs" --include='*.md' \
+  --exclude='reconciliation-baseline-*.md'; then
   echo "FAIL: ordinary documentation still advertises a removed V1 or alpha path" >&2
   exit 1
 fi
