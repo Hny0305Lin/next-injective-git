@@ -1,5 +1,4 @@
-import type { ReactNode } from "react";
-import type { LucideIcon } from "lucide-react";
+import type { ComponentType, ReactNode } from "react";
 import { Badge } from "../../components/ui/badge";
 import {
   Card,
@@ -20,7 +19,7 @@ export function SourceCard({
   healthyLabel,
   children,
 }: {
-  icon: LucideIcon;
+  icon: ComponentType<{ size?: string | number; className?: string }>;
   title: string;
   source: SourceSnapshot;
   description: string;

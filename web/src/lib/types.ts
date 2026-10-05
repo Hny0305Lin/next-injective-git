@@ -12,6 +12,7 @@ export interface SourceSnapshot {
 
 export interface MonitorSnapshot {
   evm: SourceSnapshot;
+  evmV4: SourceSnapshot;
   latestBlock: bigint | null;
   activity: ContractTx[];
   activityError: string;

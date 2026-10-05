@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { Icon as IconifyIcon } from "@iconify/react/offline";
 import type { Hex } from "viem";
 import {
   Activity,
@@ -79,6 +80,7 @@ import { IpfsGatewayCard } from "./Monitor/IpfsGatewayCard";
 import { PublicStorageProviderCard } from "./Monitor/PublicStorageProviderCard";
 import { shortAddress, formatBlock, formatCheckedAt, formatAction, activityContext, activityBuckets } from "./Monitor/utils";
 import { sourceBadge } from "./Monitor/badges";
+import "../lib/architecture-icons";
 
 const PUBLIC_IPFS_GATEWAYS: readonly IpfsGatewayDefinition[] = [
   {
@@ -103,6 +105,12 @@ const PUBLIC_IPFS_GATEWAYS: readonly IpfsGatewayDefinition[] = [
 
 const IPFS_GATEWAY_IDS = PUBLIC_IPFS_GATEWAYS.map((gateway) => gateway.id) as IpfsGatewayId[];
 
+// Shares the bundled mdi:ethereum mark with the Architecture rail so the
+// trust-root card and the sidebar logo stay identical.
+function EthereumMark({ size = 16 }: { size?: number | string }) {
+  return <IconifyIcon icon="mdi:ethereum" width={size} height={size} aria-hidden="true" />;
+}
+
 function initialIpfsSnapshot(): Record<IpfsGatewayId, IpfsGatewaySnapshot> {
   return Object.fromEntries(
     PUBLIC_IPFS_GATEWAYS.map((gateway) => [gateway.id, {
@@ -121,6 +129,7 @@ function initialIpfsSnapshot(): Record<IpfsGatewayId, IpfsGatewaySnapshot> {
 
 const INITIAL_SNAPSHOT: MonitorSnapshot = {
   evm: { state: "loading", detail: "Checking SuiteDirectory", checkedAt: null },
+  evmV4: { state: "loading", detail: "Checking successor SuiteDirectory", checkedAt: null },
   latestBlock: null,
   activity: [],
   activityError: "",
@@ -220,19 +229,38 @@ export default function Monitor() {
       apply({
         evm: {
           state: "not-configured",
-          detail: "Add a verified EVM V2 SuiteDirectory in Settings",
+          detail: "Add a verified EVM V2/V3 SuiteDirectory in Settings",
+          checkedAt,
+        },
+        evmV4: {
+          state: "not-configured",
+          detail: "Add a verified EVM V4 SuiteDirectory in Settings",
           checkedAt,
         },
       });
     } else {
       suitePromise.then(
-        () => apply({
-          evm: {
-            state: "healthy",
-            detail: `Verified on ${profile.label}`,
-            checkedAt,
-          },
-        }),
+        (binding) => {
+          if (binding == null) return;
+          apply({
+            evm: {
+              state: "healthy",
+              detail: `Verified on ${profile.label}`,
+              checkedAt,
+            },
+            evmV4: binding.version === 4n
+              ? {
+                  state: "healthy",
+                  detail: `Verified on ${profile.label}`,
+                  checkedAt,
+                }
+              : {
+                  state: "not-configured",
+                  detail: `Directory is suite v${binding.version}· successor not selected`,
+                  checkedAt,
+                },
+          });
+        },
         (reason) => {
           const suiteError = formatError(reason);
           apply({
@@ -241,6 +269,11 @@ export default function Monitor() {
               detail: suiteError || "Suite verification failed",
               checkedAt,
               error: suiteError || undefined,
+            },
+            evmV4: {
+              state: "unavailable",
+              detail: `Suite verification failed· successor state unknown`,
+              checkedAt,
             },
           });
         },
@@ -411,8 +444,8 @@ export default function Monitor() {
 
       <div className="monitor-source-grid" aria-label="Public data source status">
         <SourceCard
-          icon={ShieldCheck}
-          title="EVM V2 Suite"
+          icon={EthereumMark}
+          title="EVM V2/V3 Suite"
           source={snapshot.evm}
           description="Verified Directory trust root"
         >
@@ -423,6 +456,18 @@ export default function Monitor() {
                 <ExternalLink size={13} /> {shortAddress(cfg.suiteDirectory, 8)}
               </a>
             )}
+          </div>
+        </SourceCard>
+
+        <SourceCard
+          icon={Database}
+          title="EVM V4"
+          source={snapshot.evmV4}
+          description={`Successor suite · BYOS storage buckets`}
+        >
+          <div className="monitor-source-meta">
+            <span><HardDrive size={13} /> Pack storage <b>S3 / Cloudflare R2</b></span>
+            <span><Box size={13} /> Incremental packs <b>Manifest schema 2</b></span>
           </div>
         </SourceCard>
 
@@ -478,13 +523,13 @@ export default function Monitor() {
       {/* Only a resolved verification failure warrants this banner. `loading` is
           the first-paint state, and `not-configured` is the expected default for
           every published profile until cutover evidence is approved, so neither
-          should greet a visitor with an alert. The EVM V2 Suite SourceCard above
+          should greet a visitor with an alert. The EVM V2/V3 Suite SourceCard above
           already carries the badge and detail for those two states. */}
       {snapshot.evm.state === "unavailable" && snapshot.evm.checkedAt != null && (
         <Alert variant="destructive" className="monitor-alert">
           <AlertTriangle />
           <div>
-            <AlertTitle>EVM V2 is unavailable</AlertTitle>
+            <AlertTitle>EVM V2/V3 is unavailable</AlertTitle>
             <AlertDescription>{snapshot.evm.detail}</AlertDescription>
           </div>
         </Alert>
@@ -535,7 +580,7 @@ export default function Monitor() {
                   <CardTitle>Activity pulse</CardTitle>
                   <CardDescription>Decoded EVM actions in the latest observation window.</CardDescription>
                 </div>
-                <CardAction><Badge variant="outline">EVM V2</Badge></CardAction>
+                <CardAction><Badge variant="outline">EVM V2/V3</Badge></CardAction>
               </CardHeader>
               <CardContent>
                 <div className="monitor-bars" aria-label="Activity distribution across the observed block window">
@@ -561,7 +606,7 @@ export default function Monitor() {
                 <CardDescription>Scope and freshness</CardDescription>
               </CardHeader>
               <CardContent className="monitor-summary-list">
-                <div><span><ShieldCheck size={14} /> EVM V2</span><b>{suiteBadge.label}</b></div>
+                <div><span><ShieldCheck size={14} /> EVM V2/V3</span><b>{suiteBadge.label}</b></div>
                 <Separator />
                 <div><span><ArchiveIcon size={14} /> V1 archive</span><b>{v1Badge.label}</b></div>
                 <Separator />
