@@ -322,7 +322,17 @@ jobs:
       # than relying only on a Linux cross-compile.
       - name: native setup, bootstrap, and backend tests
         shell: pwsh
-        run: go test -count=1 ./...
+        run: |
+          $log = go test -count=1 ./... 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            # Surface the failing tests in the step summary: anonymous readers
+            # (and the check-run API) can then see what broke without log access.
+            $hits = ($log -split "`n") | Select-String -Pattern 'FAIL|panic|\.go:\d+:' | Select-Object -First 80
+            $hits | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          }
+          $log
+          exit $code
 
       - name: pinned native Kubo download and daemon smoke
         shell: pwsh
