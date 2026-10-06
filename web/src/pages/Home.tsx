@@ -23,7 +23,6 @@ import { useWallet } from "../lib/WalletContext";
 import { ContractTypeBadge } from "../components/ContractTypeBadge";
 import { truncateAddress } from "../lib/utils";
 
-const EVM_EXPLORER = "https://testnet-injective.cloud.blockscout.com";
 const ACTIVITY_LIMIT = 100;
 
 export default function Home() {
@@ -261,17 +260,6 @@ export default function Home() {
         </aside>
       </div>
 
-      <div className="page-note">
-        <span>Injective testnet</span>
-        <span>SuiteDirectory <code>{suiteConfigured ? truncateAddress(cfg.suiteDirectory, 10) : "Not configured"}</code></span>
-        {suiteConfigured ? (
-          <a href={`${EVM_EXPLORER}/address/${cfg.suiteDirectory}`} target="_blank" rel="noreferrer">
-            Open in Blockscout <ArrowUpRight size={13} />
-          </a>
-        ) : (
-          <Link to="/settings">Configure EVM Suite <ArrowUpRight size={13} /></Link>
-        )}
-      </div>
     </div>
   );
 }
