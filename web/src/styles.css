@@ -532,6 +532,12 @@ input.field:focus {
 .repo-head h2 .owner-link:hover {
   color: var(--fg);
 }
+
+.repo-head h2 .contract-type-badge,
+.repo-head h2 .badge {
+  /* Matches the 6px gap of .repo-list-item h3 so headers and lists align. */
+  margin-left: 6px;
+}
 .repo-desc {
   color: var(--fg-muted);
   font-size: 0.84rem;
