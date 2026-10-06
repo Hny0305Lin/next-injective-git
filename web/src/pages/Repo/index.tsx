@@ -46,6 +46,10 @@ import RefsTab from "./RefsTab";
 import SponsorsTab from "./SponsorsTab";
 import { findRef, parseView, shortRef } from "./useRepoViews";
 
+// The https clone URL must reference the public site, not whatever origin
+// this UI is served from (localhost dev, preview deployments).
+const SITE_ORIGIN = "https://www.igit.xyz";
+
 interface RepoProps {
   contractKind?: RepositoryContractKind;
 }
@@ -401,8 +405,8 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
                 <option value="igit">igit://</option>
                 <option value="https">https://</option>
               </select>
-              <code title={cloneProtocol === "igit" ? `igit clone igit://${resolvedRepo.canonical.owner}/${resolvedRepo.canonical.name}` : `${cloneProtocol}://${resolvedRepo.canonical.owner}/${resolvedRepo.canonical.name}`}>
-                {cloneProtocol === "igit" ? `igit clone igit://${resolvedRepo.canonical.owner}/${resolvedRepo.canonical.name}` : `${cloneProtocol}://${resolvedRepo.canonical.owner}/${resolvedRepo.canonical.name}`}
+              <code title={cloneProtocol === "igit" ? `igit clone igit://${resolvedRepo.canonical.owner}/${resolvedRepo.canonical.name}` : `${SITE_ORIGIN}/${resolvedRepo.canonical.owner}/${resolvedRepo.canonical.name}`}>
+                {cloneProtocol === "igit" ? `igit clone igit://${resolvedRepo.canonical.owner}/${resolvedRepo.canonical.name}` : `${SITE_ORIGIN}/${resolvedRepo.canonical.owner}/${resolvedRepo.canonical.name}`}
               </code>
             </div>
             <button
@@ -411,7 +415,7 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
               onClick={async () => {
                 const url = cloneProtocol === "igit"
                   ? `igit clone igit://${resolvedRepo.canonical.owner}/${resolvedRepo.canonical.name}`
-                  : `${cloneProtocol}://${resolvedRepo.canonical.owner}/${resolvedRepo.canonical.name}`;
+                  : `${SITE_ORIGIN}/${resolvedRepo.canonical.owner}/${resolvedRepo.canonical.name}`;
                 try {
                   await navigator.clipboard.writeText(url);
                   setCopied(true);
