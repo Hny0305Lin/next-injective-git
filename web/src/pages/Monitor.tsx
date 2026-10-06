@@ -63,7 +63,7 @@ import {
   BROWSER_GATEWAY_PROBE_SAMPLE_COUNT,
   probeGatewayFromBrowser,
 } from "../lib/ipfs-probe";
-import { rpcRequest, verifySuite } from "../lib/transport";
+import { readSuiteVersion, rpcRequest, verifySuite } from "../lib/transport";
 import { BlockSubscriptionManager, type ConnectionState } from "../lib/block-subscription";
 import type { AppConfig } from "../lib/profile";
 import type {
@@ -111,6 +111,15 @@ function EthereumMark({ size = 16 }: { size?: number | string }) {
   return <IconifyIcon icon="mdi:ethereum" width={size} height={size} aria-hidden="true" />;
 }
 
+// Splits the configured SuiteDirectory list while preserving each address as
+// written, so explorer links stay byte-identical to the published profile.
+function suiteDirectoryCandidates(value: string): string[] {
+  return value
+    .split(/[;,]/)
+    .map((entry) => entry.trim())
+    .filter((entry) => /^0x[0-9a-fA-F]{40}$/.test(entry));
+}
+
 function initialIpfsSnapshot(): Record<IpfsGatewayId, IpfsGatewaySnapshot> {
   return Object.fromEntries(
     PUBLIC_IPFS_GATEWAYS.map((gateway) => [gateway.id, {
@@ -130,6 +139,7 @@ function initialIpfsSnapshot(): Record<IpfsGatewayId, IpfsGatewaySnapshot> {
 const INITIAL_SNAPSHOT: MonitorSnapshot = {
   evm: { state: "loading", detail: "Checking SuiteDirectory", checkedAt: null },
   evmV4: { state: "loading", detail: "Checking successor SuiteDirectory", checkedAt: null },
+  suiteDirectories: { v3: null, v4: null },
   latestBlock: null,
   activity: [],
   activityError: "",
@@ -224,6 +234,25 @@ export default function Monitor() {
     const activityPromise = configured ? contractActivity(cfg, 50) : Promise.resolve([] as ContractTx[]);
     const v1Promise = prepareCosmWasmV1Snapshot();
     const ipfsPromises = PUBLIC_IPFS_GATEWAYS.map((gateway) => probeGatewayFromBrowser(gateway.endpoint));
+
+    // Resolve each configured directory's on-chain suiteVersion so every card
+    // links the address that actually belongs to its suite generation.
+    const directoriesPromise = (async () => {
+      const reads = await Promise.allSettled(
+        suiteDirectoryCandidates(cfg.suiteDirectory).map(async (address) => ({
+          address,
+          version: await readSuiteVersion(cfg, address),
+        })),
+      );
+      const resolved: { v3: string | null; v4: string | null } = { v3: null, v4: null };
+      for (const read of reads) {
+        if (read.status !== "fulfilled") continue;
+        const { address, version } = read.value;
+        if (version === 3n && resolved.v3 == null) resolved.v3 = address;
+        else if (version === 4n && resolved.v4 == null) resolved.v4 = address;
+      }
+      apply({ suiteDirectories: resolved });
+    })();
 
     if (!configured) {
       apply({
@@ -366,7 +395,7 @@ export default function Monitor() {
       );
     });
 
-    await Promise.allSettled([suitePromise, latestPromise, activityPromise, v1Promise, ...ipfsPromises]);
+    await Promise.allSettled([suitePromise, latestPromise, activityPromise, v1Promise, directoriesPromise, ...ipfsPromises]);
     if (refreshRunRef.current !== run) return;
     setLastRefresh(checkedAt);
     setRefreshing(false);
@@ -405,7 +434,7 @@ export default function Monitor() {
   const v1Badge = sourceBadge(snapshot.v1.state);
   const ipfsSnapshots = IPFS_GATEWAY_IDS.map((gatewayId) => snapshot.ipfs[gatewayId]);
   const ipfsBadge = sourceBadge(aggregateGatewayState(ipfsSnapshots), "Reachable");
-  const evmExplorer = `${profile.evmExplorer.replace(/\/+$/, "")}/address/${cfg.suiteDirectory}`;
+  const explorerBase = profile.evmExplorer.replace(/\/+$/, "");
 
   // Connection state indicator
   const connectionBadge = useMemo(() => {
@@ -451,9 +480,9 @@ export default function Monitor() {
         >
           <div className="monitor-source-meta">
             <span><Box size={13} /> Latest block <b>{formatBlock(snapshot.latestBlock)}</b></span>
-            {isSuiteDirectoryConfigured(cfg.suiteDirectory) && (
-              <a href={evmExplorer} target="_blank" rel="noreferrer" title="Open the EVM SuiteDirectory in Blockscout">
-                <ExternalLink size={13} /> {shortAddress(cfg.suiteDirectory, 8)}
+            {snapshot.suiteDirectories.v3 != null && (
+              <a href={`${explorerBase}/address/${snapshot.suiteDirectories.v3}`} target="_blank" rel="noreferrer" title="Open the EVM V2/V3 SuiteDirectory in Blockscout">
+                <ExternalLink size={13} /> {shortAddress(snapshot.suiteDirectories.v3, 8)}
               </a>
             )}
           </div>
@@ -467,7 +496,11 @@ export default function Monitor() {
         >
           <div className="monitor-source-meta">
             <span><HardDrive size={13} /> Pack storage <b>S3 / Cloudflare R2</b></span>
-            <span><Box size={13} /> Incremental packs <b>Manifest schema 2</b></span>
+            {snapshot.suiteDirectories.v4 != null && (
+              <a href={`${explorerBase}/address/${snapshot.suiteDirectories.v4}`} target="_blank" rel="noreferrer" title="Open the EVM V4 SuiteDirectory in Blockscout">
+                <ExternalLink size={13} /> {shortAddress(snapshot.suiteDirectories.v4, 8)}
+              </a>
+            )}
           </div>
         </SourceCard>
 

@@ -147,6 +147,16 @@ async function rawRead(
   return decodeFunctionResult({ abi, functionName, data: result } as never);
 }
 
+/** Read the on-chain suiteVersion() of a SuiteDirectory candidate address. */
+export async function readSuiteVersion(
+  cfg: AppConfig,
+  address: string,
+  blockTag: Hex | "latest" = "latest",
+): Promise<bigint> {
+  const target = getAddress(address);
+  return BigInt((await rawRead(cfg, target, directoryAbi, "suiteVersion", [], blockTag)) as bigint);
+}
+
 async function verifySuiteNow(cfg: AppConfig): Promise<SuiteBinding> {
   const directory = requireDirectory(cfg);
   const [chainHex, blockTag] = await Promise.all([
