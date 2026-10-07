@@ -593,6 +593,41 @@ jobs:
             echo "repository secret and pass it to the build step directly."
           fi
 
+      # Build-time Vite variables come from repository secrets, not from
+      # `vercel env pull`: the project-scoped token cannot read project env
+      # vars, so every VITE_ var added in the Vercel dashboard is silently
+      # absent from CI-built bundles (this is how production served a
+      # keyless MapMonitor). Vite loads .env.production.local with the
+      # highest priority in production builds, so writing the file is the
+      # deterministic delivery path into `vercel build`'s vite invocation.
+      # The file lives in web/ (gitignored via `.env*`) and never enters
+      # dist/, so it cannot leak into the deployed static output.
+      - name: write build-time Vite env
+        env:
+          AMAP_KEY: ${{ secrets.VITE_AMAP_KEY }}
+          AMAP_SECURITY_CODE: ${{ secrets.VITE_AMAP_SECURITY_CODE }}
+          WALLETCONNECT_ID: ${{ secrets.VITE_WALLETCONNECT_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$AMAP_KEY" || -z "$AMAP_SECURITY_CODE" ]]; then
+            echo "FAIL: missing repository secrets:" >&2
+            [[ -n "$AMAP_KEY" ]] || echo "  VITE_AMAP_KEY" >&2
+            [[ -n "$AMAP_SECURITY_CODE" ]] || echo "  VITE_AMAP_SECURITY_CODE" >&2
+            echo "Add them under Settings > Secrets and variables > Actions." >&2
+            echo "MapMonitor must not ship its OpenStreetMap fallback to" >&2
+            echo "production, so this is fatal by design." >&2
+            exit 1
+          fi
+          umask 177
+          {
+            printf 'VITE_AMAP_KEY=%s\n' "$AMAP_KEY"
+            printf 'VITE_AMAP_SECURITY_CODE=%s\n' "$AMAP_SECURITY_CODE"
+            if [[ -n "$WALLETCONNECT_ID" ]]; then
+              printf 'VITE_WALLETCONNECT_PROJECT_ID=%s\n' "$WALLETCONNECT_ID"
+            fi
+          } > web/.env.production.local
+          echo "wrote $(grep -c '^VITE_' web/.env.production.local) build-time Vite vars (values masked)"
+
       - name: build production bundle
         # Deliberately without --yes and without --scope. --yes makes build
         # perform its own full pull, and --scope triggers the user lookup a
