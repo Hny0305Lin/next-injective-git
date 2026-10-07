@@ -26,11 +26,11 @@ export function ContractTypeBadge({
     );
   }
   const Icon = legacy ? Archive : Boxes;
-  const label = legacy ? "CosmWasm V1" : "EVM V2";
+  const label = legacy ? "CosmWasm V1" : "EVM V2 + V3";
   return (
     <span
       className={`contract-type-badge ${legacy ? "contract-cosmwasm" : "contract-evm"}`}
-      title={legacy ? "Read-only CosmWasm V1 archive contract" : "Injective EVM V2 Suite contract"}
+      title={legacy ? "Read-only CosmWasm V1 archive contract" : "Injective EVM V2/V3 Suite contract"}
     >
       <Icon size={11} aria-hidden="true" />
       {label}

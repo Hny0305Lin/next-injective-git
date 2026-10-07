@@ -42,6 +42,8 @@ export interface ResolvedRepo {
   canonical: { owner: string; name: string };
   isCanonical: boolean;
   info: RepoInfo;
+  /** The single SuiteDirectory that actually resolved this repository. */
+  suiteDirectory?: string;
 }
 
 export interface RepoInfoPatch {
@@ -162,6 +164,7 @@ async function resolveRepoSingleDir(cfg: AppConfig, owner: string, repo: string)
       canonical: { owner: info.owner, name: raw.name },
       isCanonical: canonical,
       info,
+      suiteDirectory: cfg.suiteDirectory,
     };
   });
 }
@@ -198,21 +201,38 @@ async function listReposSingleDir(cfg: AppConfig, owner: string, includeInactive
 
 // 鈹€鈹€ Multi-directory helpers (comma-separated SuiteDirectory support) 鈹€鈹€
 
-export async function resolveRepo(cfg: AppConfig, owner: string, repo: string): Promise<ResolvedRepo> {
+export async function resolveRepo(
+  cfg: AppConfig,
+  owner: string,
+  repo: string,
+  options?: { suiteVersion?: bigint },
+): Promise<ResolvedRepo> {
   const dirs = parseSuiteDirectories(cfg.suiteDirectory);
   if (dirs.length <= 1) return resolveRepoSingleDir(cfg, owner, repo);
+  let firstHit: ResolvedRepo | null = null;
   let lastErr: unknown;
   for (const dir of dirs) {
     try {
-      return await resolveRepoSingleDir({ ...cfg, suiteDirectory: dir }, owner, repo);
+      const resolved = await resolveRepoSingleDir({ ...cfg, suiteDirectory: dir }, owner, repo);
+      if (firstHit == null) firstHit = resolved;
+      // With a requested suite version, keep walking until that generation's
+      // copy resolves; without one, the first directory hit wins as before.
+      if (options?.suiteVersion != null && resolved.info.suite_version !== options.suiteVersion) {
+        continue;
+      }
+      return resolved;
     } catch (e) {
       lastErr = e;
       if (!(e instanceof EVMLocatorNotFoundError)) throw e;
     }
   }
+  if (firstHit != null) return firstHit;
   throw lastErr;
 }
 
+// A same-named repository exists independently in each suite generation;
+// the dedupe key must include the suite version or the v4 copy (first in the
+// configured directory order) would silently hide the v3 original.
 export async function listRepos(cfg: AppConfig, owner: string, includeInactive = false): Promise<RepoInfo[]> {
   const dirs = parseSuiteDirectories(cfg.suiteDirectory);
   if (dirs.length <= 1) return listReposSingleDir(cfg, owner, includeInactive);
@@ -222,7 +242,7 @@ export async function listRepos(cfg: AppConfig, owner: string, includeInactive =
   for (const r of results) {
     if (r.status !== "fulfilled") continue;
     for (const repo of r.value) {
-      const key = repo.owner + "/" + repo.name;
+      const key = `${repo.owner}/${repo.name}/v${repo.suite_version ?? "?"}`;
       if (!seen.has(key)) { seen.add(key); merged.push(repo); }
     }
   }

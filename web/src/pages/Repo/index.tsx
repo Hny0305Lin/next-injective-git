@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { AlertTriangle, ArrowRightLeft, Check, Copy, FileCode2, GitBranch, GitCommit, Pencil, Save, Users, X } from "lucide-react";
 import { loadConfig } from "../../lib/chain";
 import { ContractTypeBadge, type RepositoryContractKind } from "../../components/ContractTypeBadge";
@@ -85,6 +85,21 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
   const [transferBusy, setTransferBusy] = useState(false);
   const [transferError, setTransferError] = useState("");
 
+  // The ?suite=3|4 link parameter selects which generation's same-named copy
+  // this page operates on; every read and write then runs against that
+  // repository's own SuiteDirectory instead of the first configured one.
+  const [searchParams] = useSearchParams();
+  const suiteParam = Number(searchParams.get("suite"));
+  // Memoized: a fresh object every render would retrigger the load effect.
+  const suitePref = useMemo(
+    () => (suiteParam === 3 || suiteParam === 4 ? { suiteVersion: BigInt(suiteParam) } : undefined),
+    [suiteParam],
+  );
+  const suiteCfg = useMemo(
+    () => (resolvedRepo?.suiteDirectory != null ? { ...cfg, suiteDirectory: resolvedRepo.suiteDirectory } : cfg),
+    [cfg, resolvedRepo?.suiteDirectory],
+  );
+
   useEffect(() => {
     setErr("");
     setArchiveDiscoveryAvailable(false);
@@ -114,8 +129,11 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
         }
 
         const address = await resolveOwner(cfg, owner);
-        const identity = await resolveRepo(cfg, address, repo);
-        const evmRefs = await listRefs(cfg, address, repo);
+        const identity = await resolveRepo(cfg, address, repo, suitePref);
+        const repoCfg = identity.suiteDirectory != null
+          ? { ...cfg, suiteDirectory: identity.suiteDirectory }
+          : cfg;
+        const evmRefs = await listRefs(repoCfg, address, repo);
         if (cancelled) return;
         setResolvedRepo(identity);
         setAddr(identity.canonical.owner);
@@ -131,7 +149,7 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
       }
     })();
     return () => { cancelled = true; };
-  }, [owner, repo, cfg, isLegacy]);
+  }, [owner, repo, cfg, isLegacy, suitePref]);
 
   useEffect(() => {
     let cancelled = false;
@@ -141,7 +159,7 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
       setPendingTransfer(null);
       return () => { cancelled = true; };
     }
-    void pendingOwnershipTransferWithEvm(cfg, resolvedRepo.repoId)
+    void pendingOwnershipTransferWithEvm(suiteCfg, resolvedRepo.repoId)
       .then((pending) => {
         if (!cancelled) {
           setPendingTransfer(pending);
@@ -257,13 +275,14 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
     setTransferError("");
     try {
       await action(provider, resolvedRepo.repoId);
-      const refreshed = await pendingOwnershipTransferWithEvm(cfg, resolvedRepo.repoId);
+      const refreshed = await pendingOwnershipTransferWithEvm(suiteCfg, resolvedRepo.repoId);
       setPendingTransfer(refreshed);
       setTransferLoaded(true);
       const refreshedRepo = await resolveRepo(
         cfg,
         resolvedRepo.requested.owner,
         resolvedRepo.requested.name,
+        suitePref,
       );
       setResolvedRepo(refreshedRepo);
       setAddr(refreshedRepo.canonical.owner);
@@ -285,8 +304,8 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
     setTransferBusy(true);
     setTransferError("");
     try {
-      await beginOwnershipTransferWithEvm(provider, cfg, resolvedRepo.repoId, transferTarget.trim());
-      setPendingTransfer(await pendingOwnershipTransferWithEvm(cfg, resolvedRepo.repoId));
+      await beginOwnershipTransferWithEvm(provider, suiteCfg, resolvedRepo.repoId, transferTarget.trim());
+      setPendingTransfer(await pendingOwnershipTransferWithEvm(suiteCfg, resolvedRepo.repoId));
       setTransferLoaded(true);
       setTransferTarget("");
       showToast("Ownership transfer started");
@@ -319,11 +338,11 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
     setSavingMetadata(true);
     setMetadataError("");
     try {
-      await updateRepoInfoWithEvm(provider, cfg, resolvedRepo.repoId, {
+      await updateRepoInfoWithEvm(provider, suiteCfg, resolvedRepo.repoId, {
         ...(descriptionChanged ? { description: draftDescription } : {}),
         ...(branchChanged ? { defaultBranch: draftBranch } : {}),
       });
-      const refreshed = await resolveRepo(cfg, addr, repo);
+      const refreshed = await resolveRepo(cfg, addr, repo, suitePref);
       setResolvedRepo(refreshed);
       setInfo(refreshed.info);
       setEditingMetadata(false);
@@ -372,7 +391,7 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
             {" / "}
             <b>{resolvedRepo.canonical.name}</b>
             <ContractTypeBadge kind={contractKind} suiteVersion={info.suite_version} />
-            {!isLegacy && <SuiteVersionBadge cfg={cfg} />}
+          {!isLegacy && <SuiteVersionBadge cfg={suiteCfg} />}
             {info.moderation_status !== "active" && (
               <span className={`badge ${info.moderation_status}`}>{info.moderation_status}</span>
             )}
@@ -489,7 +508,7 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
                   <button
                     type="button"
                     disabled={transferBusy}
-                    onClick={() => void runOwnershipAction((provider, repoId) => cancelOwnershipTransferWithEvm(provider, cfg, repoId))}
+                    onClick={() => void runOwnershipAction((provider, repoId) => cancelOwnershipTransferWithEvm(provider, suiteCfg, repoId))}
                   >
                     Cancel
                   </button>
@@ -499,7 +518,7 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
                     <button
                       type="button"
                       disabled={transferBusy}
-                      onClick={() => void runOwnershipAction((provider, repoId) => rejectOwnershipTransferWithEvm(provider, cfg, repoId))}
+                      onClick={() => void runOwnershipAction((provider, repoId) => rejectOwnershipTransferWithEvm(provider, suiteCfg, repoId))}
                     >
                       Reject
                     </button>
@@ -507,7 +526,7 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
                       className="repo-transfer-primary"
                       type="button"
                       disabled={transferBusy}
-                      onClick={() => void runOwnershipAction((provider, repoId) => acceptOwnershipWithEvm(provider, cfg, repoId))}
+                      onClick={() => void runOwnershipAction((provider, repoId) => acceptOwnershipWithEvm(provider, suiteCfg, repoId))}
                     >
                       Accept
                     </button>
@@ -517,7 +536,7 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
                   <button
                     type="button"
                     disabled={transferBusy}
-                    onClick={() => void runOwnershipAction((provider, repoId) => expireOwnershipTransferWithEvm(provider, cfg, repoId))}
+                    onClick={() => void runOwnershipAction((provider, repoId) => expireOwnershipTransferWithEvm(provider, suiteCfg, repoId))}
                   >
                     Clear expired transfer
                   </button>

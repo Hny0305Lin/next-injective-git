@@ -4432,3 +4432,643 @@ html.dark .action-badge.a-award_badge {
   overflow-x: auto;
   color: var(--danger);
 }
+
+/* ---------------- MapMonitor ---------------- */
+
+.mapmonitor-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Full-bleed variant: the map page drops the 1220px content cap and spans
+   everything to the right of the workspace sidebar. The column flexes so the
+   map absorbs all available viewport height; the marquee keeps its fixed
+   height and never gets squeezed. */
+.content-mapmonitor {
+  max-width: none;
+  width: 100%;
+  padding: 28px 28px 32px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+@media (max-width: 720px) {
+  .content-mapmonitor {
+    padding: 16px 12px 24px;
+  }
+}
+
+.mapmonitor-map-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 380px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--bg-inset);
+}
+
+.mapmonitor-map {
+  position: absolute;
+  inset: 0;
+}
+
+/* Minimal ODbL credit replaces the default Leaflet attribution block. */
+.mapmonitor-map-credit {
+  position: absolute;
+  left: 8px;
+  bottom: 6px;
+  z-index: 1000;
+  padding: 1px 6px;
+  font-size: 10px;
+  color: var(--fg-faint);
+  background: color-mix(in srgb, var(--card) 78%, transparent);
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+/* Custom InfoWindow shell (isCustom:true) themed with CSS variables. */
+.mapmonitor-popup {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 10px 14px;
+  box-shadow: 0 6px 18px rgba(16, 24, 40, 0.18);
+  color: var(--fg);
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: nowrap;
+  position: relative;
+}
+
+.mapmonitor-popup strong {
+  color: var(--fg);
+  font-size: 13.5px;
+  display: block;
+  margin-bottom: 3px;
+}
+
+/* Arrow pointing down to the marker dot. */
+.mapmonitor-popup::after {
+  content: "";
+  position: absolute;
+  bottom: -7px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border: 7px solid transparent;
+  border-top-color: var(--border);
+  border-bottom: none;
+}
+
+.dark .mapmonitor-popup {
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.5);
+}
+
+/* Wallet-gated owner link / observed-owner count inside the InfoWindow.
+   Colors come from CSS variables so both themes stay correct. */
+.mapmonitor-popup a.mapmonitor-popup-link {
+  display: inline-block;
+  margin-top: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-3);
+  text-decoration: none;
+}
+
+.mapmonitor-popup a.mapmonitor-popup-link:hover,
+.mapmonitor-popup a.mapmonitor-popup-link:focus-visible {
+  text-decoration: underline;
+}
+
+.mapmonitor-popup .mapmonitor-popup-meta {
+  display: inline-block;
+  margin-top: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+
+/* Repository sample rows shown above the owner link while a wallet is
+   connected. Bounded to 10 rows + an "+ N others" line by the popup
+   builder; colors follow the theme variables for dark mode. */
+.mapmonitor-popup .mapmonitor-popup-repos {
+  display: grid;
+  gap: 2px;
+  margin: 7px 0 0;
+  padding-top: 7px;
+  border-top: 1px dashed var(--border);
+}
+
+.mapmonitor-popup a.mapmonitor-popup-repo {
+  display: block;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--accent-3);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.mapmonitor-popup a.mapmonitor-popup-repo::before {
+  content: "· ";
+  color: var(--fg-faint);
+}
+
+.mapmonitor-popup a.mapmonitor-popup-repo:hover,
+.mapmonitor-popup a.mapmonitor-popup-repo:focus-visible {
+  text-decoration: underline;
+}
+
+.mapmonitor-popup .mapmonitor-popup-others {
+  font-size: 11px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+/* Hide AMap's default logo + copyright watermark (bottom-left white text). */
+.mapmonitor-map-wrap .amap-logo,
+.mapmonitor-map-wrap .amap-copyright {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* AMap zoom controls themed for dark mode. */
+.dark .amap-controls .amap-toolbar {
+  background: var(--card);
+  border-color: var(--border);
+}
+
+.dark .amap-controls .amap-toolbar .amap-ctrl-group {
+  background: var(--card);
+  border-color: var(--border);
+}
+
+.dark .amap-controls .amap-toolbar .amap-ctrl-group button {
+  color: var(--fg-muted);
+}
+
+.dark .amap-controls .amap-toolbar .amap-ctrl-group button:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+.mapmonitor-map .leaflet-container {
+  width: 100%;
+  height: 100%;
+  font-family: var(--font-ui);
+  background: var(--bg-inset);
+}
+
+/* HTML dot markers (constant size during flyTo). */
+.mapmonitor-pin {
+  background: transparent;
+  border: none;
+}
+
+.mapmonitor-dot {
+  width: 14px;
+  height: 14px;
+  display: block;
+  border-radius: 50%;
+  background: var(--dot-color, #4f46e5);
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--dot-color, #4f46e5) 35%, transparent), 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+.mapmonitor-dot.edge {
+  width: 10px;
+  height: 10px;
+}
+
+@keyframes mapmonitor-edge-pop {
+  from {
+    transform: scale(0);
+    opacity: 0;
+  }
+
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Lit = red + pulse: the active single stop, or every edge city of a
+   multi-edge (anycast) stop. */
+.mapmonitor-dot.lit {
+  background: #dc2626;
+  border: 2px solid #ffffff;
+  animation: mapmonitor-pulse 1.8s ease-out infinite;
+}
+
+/* Edge cities pop in once, then pulse in sync. */
+.mapmonitor-dot.edge.lit {
+  animation: mapmonitor-edge-pop 0.45s ease-out, mapmonitor-pulse 1.8s 0.45s ease-out infinite;
+}
+
+@keyframes mapmonitor-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.45), 0 1px 3px rgba(0, 0, 0, 0.25);
+  }
+
+  70% {
+    box-shadow: 0 0 0 12px rgba(220, 38, 38, 0), 0 1px 3px rgba(0, 0, 0, 0.25);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0), 0 1px 3px rgba(0, 0, 0, 0.25);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mapmonitor-dot.lit,
+  .mapmonitor-dot.edge.lit {
+    animation: none;
+  }
+}
+
+/* Live pin wrapper: kind dot with the live meta row underneath (latency
+   label first, status dot to its right). The wrapper keeps a fixed 16px box
+   so marker anchoring stays centered on the dot while the meta row overflows
+   below. */
+.mapmonitor-pin-wrap {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.mapmonitor-pin-wrap .mapmonitor-dot {
+  margin: 1px;
+}
+
+/* Meta row centered under the dot: [142ms] [●]. */
+.mapmonitor-pin-meta {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: none;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Median latency label (gateway probe or bucket "tcping"). */
+.mapmonitor-latency {
+  padding: 1px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--fg);
+  background: color-mix(in srgb, var(--card) 85%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+/* Online / offline / unknown dot to the right of the latency label. */
+.mapmonitor-status {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid #ffffff;
+  background: #a1a1aa;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.mapmonitor-status.online {
+  background: #16a34a;
+}
+
+.mapmonitor-status.offline {
+  background: #dc2626;
+}
+
+/* The meta row only renders from LABEL_ZOOM up so the world view stays
+   clean; each engine toggles this class on the map element when the zoom
+   changes (AMap: zoomchange/zoomend · Leaflet: zoomend). */
+.mapmonitor-map.mapmonitor-zoom-labels .mapmonitor-pin-meta {
+  display: flex;
+}
+
+.dark .mapmonitor-map .leaflet-tile {
+  filter: brightness(0.82) contrast(1.05);
+}
+
+/* "Now touring" overlay card on the map. */
+.mapmonitor-focus-card {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1100;
+  width: 264px;
+  padding: 12px 14px;
+  display: grid;
+  gap: 5px;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.14);
+}
+
+.mapmonitor-focus-kicker {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+
+.mapmonitor-focus-card b {
+  font-size: 0.9rem;
+  line-height: 1.25;
+}
+
+.mapmonitor-focus-kind {
+  justify-self: start;
+  padding: 1px 8px;
+  font-size: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--fg-muted);
+  background: var(--bg);
+}
+
+.mapmonitor-focus-kind[data-kind="ipfs-gateway"] {
+  color: #4f46e5;
+  border-color: color-mix(in srgb, #4f46e5 35%, transparent);
+  background: #eef2ff;
+}
+
+.mapmonitor-focus-kind[data-kind="s3-provider"] {
+  color: #b45309;
+  border-color: color-mix(in srgb, #b45309 35%, transparent);
+  background: #fffbeb;
+}
+
+.mapmonitor-focus-kind[data-kind="byos-bucket"] {
+  color: #0369a1;
+  border-color: color-mix(in srgb, #0369a1 35%, transparent);
+  background: #f0f9ff;
+}
+
+.mapmonitor-focus-card code {
+  font-size: 0.72rem;
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mapmonitor-focus-note {
+  font-size: 0.74rem;
+  color: var(--fg-muted);
+}
+
+/* Bottom-right floating board: aggregate + per-endpoint storage counters.
+   Mirrors the top-right focus card's width and edge margins exactly. */
+.mapmonitor-stats-card {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 1100;
+  width: 264px;
+  padding: 12px 14px;
+  display: grid;
+  gap: 8px;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.14);
+}
+
+.mapmonitor-stats-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mapmonitor-stats-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.mapmonitor-stats-refresh:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.mapmonitor-stats-refresh:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.mapmonitor-stats-refresh svg.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+.mapmonitor-stats-total {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.mapmonitor-stats-total span {
+  display: grid;
+  gap: 1px;
+  padding: 8px 10px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.mapmonitor-stats-total b {
+  font-size: 1.25rem;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.mapmonitor-stats-total small {
+  font-size: 0.68rem;
+  color: var(--fg-faint);
+}
+
+.mapmonitor-stats-endpoints {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 3px;
+}
+
+.mapmonitor-stats-endpoints li {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) 42px 42px;
+  gap: 7px;
+  align-items: center;
+  font-size: 0.74rem;
+}
+
+.mapmonitor-stats-endpoints li i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.mapmonitor-stats-endpoints li span {
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mapmonitor-stats-endpoints li b {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.mapmonitor-stats-endpoints .mapmonitor-stats-head span {
+  color: var(--fg-faint);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mapmonitor-stats-endpoints .mapmonitor-stats-head b {
+  color: var(--fg-faint);
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.mapmonitor-stats-note {
+  font-size: 0.68rem;
+  color: var(--fg-faint);
+  border-top: 1px dashed var(--border);
+  padding-top: 7px;
+}
+
+/* Two-column grid of the lit APAC edge cities (replaces the endpoint code
+   line while a multi-edge stop is touring). */
+.mapmonitor-focus-edges-list {
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px 10px;
+}
+
+.mapmonitor-focus-edges-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.74rem;
+  color: var(--fg);
+  white-space: nowrap;
+}
+
+.mapmonitor-focus-edges-list li i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #dc2626;
+  flex: 0 0 7px;
+}
+
+.mapmonitor-marquee {
+  position: relative;
+  overflow: hidden;
+  padding: 4px 0 2px;
+}
+
+.mapmonitor-marquee::before,
+.mapmonitor-marquee::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 56px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.mapmonitor-marquee::before {
+  left: 0;
+  background: linear-gradient(90deg, var(--bg), transparent);
+}
+
+.mapmonitor-marquee::after {
+  right: 0;
+  background: linear-gradient(-90deg, var(--bg), transparent);
+}
+
+.mapmonitor-marquee-track {
+  display: flex;
+  width: max-content;
+  animation: mapmonitor-scroll 70s linear infinite;
+  will-change: transform;
+}
+
+.mapmonitor-marquee:hover .mapmonitor-marquee-track,
+.mapmonitor-marquee:focus-within .mapmonitor-marquee-track {
+  animation-play-state: paused;
+}
+
+.mapmonitor-marquee-group {
+  display: flex;
+  gap: 16px;
+  padding-right: 16px;
+}
+
+.mapmonitor-marquee-item {
+  width: 300px;
+  flex: 0 0 auto;
+}
+
+.mapmonitor-marquee-item .monitor-source-card,
+.mapmonitor-marquee-item .monitor-gateway-card,
+.mapmonitor-marquee-item .monitor-node-card,
+.mapmonitor-marquee-item .monitor-metric-card {
+  height: 100%;
+}
+
+@keyframes mapmonitor-scroll {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mapmonitor-marquee-track {
+    animation: none;
+  }
+}

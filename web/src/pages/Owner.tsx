@@ -115,11 +115,11 @@ export default function Owner() {
               </div>
             )}
             {filtered.map((r) => (
-              <div className="repo-list-item" key={r.name}>
+              <div className="repo-list-item" key={`${r.name}-v${r.suite_version ?? "x"}`}>
                 <div className="repo-list-icon"><GitBranch size={15} /></div>
                 <div className="repo-list-content">
                   <h3>
-                    <Link to={`/${owner}/${r.name}`}>{r.name}</Link>
+                    <Link to={`/${owner}/${r.name}${r.suite_version != null ? `?suite=${r.suite_version}` : ""}`}>{r.name}</Link>
                     <ContractTypeBadge kind="evm-v2" suiteVersion={r.suite_version} />
                     <span className={`badge ${r.moderation_status}`}>{r.moderation_status}</span>
                     {r.forked_from && <span className="badge">fork</span>}

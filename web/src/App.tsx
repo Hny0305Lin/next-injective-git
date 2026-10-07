@@ -9,6 +9,7 @@ import {
   Gauge,
   LayoutDashboard,
   LoaderCircle,
+  Map as MapIcon,
   Moon,
   Search,
   Settings as SettingsIcon,
@@ -41,6 +42,7 @@ const LazyOwner = lazy(() => import("./pages/Owner"));
 const LazyRepo = lazy(() => import("./pages/Repo/index"));
 const LazyExplorer = lazy(() => import("./pages/Explorer"));
 const LazyMonitor = lazy(() => import("./pages/Monitor"));
+const LazyMapMonitor = lazy(() => import("./pages/MapMonitor"));
 const LazyIpfsExplorer = lazy(() => import("./pages/IpfsExplorer"));
 const LazyArchive = lazy(() => import("./pages/Archive"));
 const LazyArchiveOwner = lazy(() => import("./pages/ArchiveOwner"));
@@ -48,6 +50,7 @@ const LazyArchiveOwner = lazy(() => import("./pages/ArchiveOwner"));
 const primaryNav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/monitor", label: "Monitor", icon: Gauge },
+  { to: "/mapmonitor", label: "MapMonitor", icon: MapIcon },
   { to: "/explorer", label: "Activity", icon: Activity },
   { to: "/ipfs", label: "IPFS", icon: HardDrive },
   { to: "/archive/cosmwasm-v1", label: "V1 Archive", icon: ArchiveIcon },
@@ -80,7 +83,10 @@ export default function App() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const cfg = useMemo(() => loadConfig(), [configRevision]);
   const isArchiveRoute = isCosmWasmV1ArchivePath(location.pathname);
-  const isMonitorRoute = location.pathname === "/monitor";
+  // Monitor and MapMonitor are read-only public pages that must stay usable
+  // before a SuiteDirectory is configured, like the archive routes.
+  const isMonitorRoute = location.pathname === "/monitor" || location.pathname === "/mapmonitor";
+  const isMapMonitorRoute = location.pathname === "/mapmonitor";
 
   useEffect(() => {
     const refreshConfig = () => setConfigRevision((revision) => revision + 1);
@@ -359,7 +365,7 @@ export default function App() {
             })}
           </nav>
 
-          <main className="content">
+          <main className={isMapMonitorRoute ? "content content-mapmonitor" : "content"}>
             {!isArchiveRoute && !isMonitorRoute && suiteReadiness !== "ready" && (
               <div className={`suite-alert suite-${suiteReadiness}`} role="status">
                 {suiteReadiness === "checking"
@@ -385,6 +391,7 @@ export default function App() {
                 <Route path="/" element={<Home />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/monitor" element={<Suspense fallback={<RouteSpinner />}><LazyMonitor /></Suspense>} />
+                <Route path="/mapmonitor" element={<Suspense fallback={<RouteSpinner />}><LazyMapMonitor /></Suspense>} />
                 <Route path="/explorer" element={<Suspense fallback={<RouteSpinner />}><LazyExplorer /></Suspense>} />
                 <Route path="/ipfs" element={<Suspense fallback={<RouteSpinner />}><LazyIpfsExplorer /></Suspense>} />
                 <Route path="/archive/cosmwasm-v1" element={<Suspense fallback={<RouteSpinner />}><LazyArchive /></Suspense>} />
