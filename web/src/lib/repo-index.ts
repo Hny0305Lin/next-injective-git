@@ -253,6 +253,15 @@ export function searchRepoEntries(entries: readonly RepoIndexEntry[], rawQuery: 
   const ownerHint = slash >= 0 ? query.slice(0, slash) : "";
   const nameQuery = slash >= 0 ? query.slice(slash + 1) : query;
   if (!nameQuery) return [];
+  // A bare address query also matches repositories by exact owner.
+  let ownerExact: string | null = null;
+  if (slash < 0) {
+    try {
+      ownerExact = toInjectiveAddress(query);
+    } catch {
+      ownerExact = null;
+    }
+  }
   const scored: { entry: RepoIndexEntry; score: number }[] = [];
   for (const entry of entries) {
     if (entry.status === 2) continue; // delisted repositories stay out of search
@@ -262,7 +271,13 @@ export function searchRepoEntries(entries: readonly RepoIndexEntry[], rawQuery: 
     if (name === nameQuery) score = 0;
     else if (name.startsWith(nameQuery)) score = 1;
     else if (name.includes(nameQuery)) score = 2;
-    if (score < 0) continue;
+    if (score < 0) {
+      if (ownerExact && entry.owner.toLowerCase() === ownerExact.toLowerCase()) {
+        score = 3;
+      } else {
+        continue;
+      }
+    }
     scored.push({ entry, score });
   }
   scored.sort((left, right) =>

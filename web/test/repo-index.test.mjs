@@ -237,3 +237,17 @@ test("explorerLogsUrl builds an etherscan-style logs query", async () => {
   const url = explorerLogsUrl("https://testnet.blockscout.injective.network/", "0xabc", "0xtopic");
   assert.equal(url, "https://testnet.blockscout.injective.network/api?module=logs&action=getLogs&address=0xabc&fromBlock=0&toBlock=latest&topic0=0xtopic");
 });
+test("searchRepoEntries matches a bare address query by exact owner", () => {
+  const owner = toInjectiveAddress(OWNER_A);
+  const entries = [
+    entry("0x" + "01".repeat(32), "alpha", 100),
+    entry("0x" + "02".repeat(32), "beta", 90),
+  ].map((item, index) => ({ ...item, owner: index === 0 ? owner : toInjectiveAddress(OWNER_B) }));
+  const hits = searchRepoEntries(entries, owner);
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].name, "alpha");
+  const evmForm = toInjectiveAddress(OWNER_B);
+  assert.equal(searchRepoEntries(entries, evmForm)[0].name, "beta");
+  const stranger = toInjectiveAddress("0x9999999999999999999999999999999999999999");
+  assert.equal(searchRepoEntries(entries, stranger).length, 0);
+});
