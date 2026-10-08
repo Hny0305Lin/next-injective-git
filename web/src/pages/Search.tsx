@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { ChevronDown, GitFork, LoaderCircle, User } from "lucide-react";
+import { Activity, Archive as ArchiveIcon, ChevronDown, Gauge, GitFork, HardDrive, LayoutDashboard, LoaderCircle, Map as MapIcon, Settings as SettingsIcon, User } from "lucide-react";
 import {
   repoIndexShared,
   resolveEntryTarget,
@@ -10,6 +10,7 @@ import {
 } from "../lib/repo-index";
 import { ContractTypeBadge } from "../components/ContractTypeBadge";
 import { resolveRepo } from "../lib/registry";
+import { matchPageSuggestion, type PageSuggestion } from "../lib/search";
 import {
   formatCosmWasmV1Error,
   listCosmWasmV1Repos,
@@ -59,6 +60,16 @@ function statusName(status: number): "active" | "frozen" | "delisted" {
 function moderationToStatus(moderation: string): number {
   return moderation === "frozen" ? 1 : moderation === "delisted" ? 2 : 0;
 }
+
+const SUGGESTION_ICONS: Record<string, typeof LayoutDashboard> = {
+  Dashboard: LayoutDashboard,
+  Monitor: Gauge,
+  MapMonitor: MapIcon,
+  Activity: Activity,
+  IPFS: HardDrive,
+  "V1 Archive": ArchiveIcon,
+  Settings: SettingsIcon,
+};
 
 /**
  * GitHub-style repository search page: /search?q=<term>&type=repositories.
@@ -195,6 +206,8 @@ const boot = query ? searchSnapshots.get(query) : undefined;
     };
   }, [archiveOpen, query]);
 
+  const pageSuggestion = useMemo<PageSuggestion | null>(() => matchPageSuggestion(query), [query]);
+
   const results = useMemo(() => {
     if (!query) return [];
     const hits = searchRepoEntries(repoIndexShared(cfg).entries, query, 50);
@@ -254,6 +267,22 @@ const boot = query ? searchSnapshots.get(query) : undefined;
           </span>
         )}
       </div>
+
+      {pageSuggestion && (() => {
+        const SuggestIcon = SUGGESTION_ICONS[pageSuggestion.label] ?? LayoutDashboard;
+        return (
+          <button
+            type="button"
+            className="card search-exact-card"
+            onClick={() => nav(pageSuggestion.to)}
+          >
+            <SuggestIcon size={15} aria-hidden="true" />
+            <span>
+              Did you mean <b>{pageSuggestion.label}</b>?
+            </span>
+          </button>
+        );
+      })()}
 
       {exact && (
         <button

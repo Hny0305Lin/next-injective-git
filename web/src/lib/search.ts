@@ -46,3 +46,41 @@ export function buildSearchPath(raw: string): string | null {
   const target = parts.slice(0, 2).map((part) => encodeURIComponent(part)).join("/");
   return `${prefix}/${target}`;
 }
+
+/**
+ * Built-in app pages that a query may be aiming for. Suggesting them keeps
+ * searches like "settings" or "ipfs" working even when the keyword collides
+ * with a registered username or repository name.
+ */
+export interface PageSuggestion {
+  label: string;
+  to: string;
+  keywords: readonly string[];
+}
+
+export const PAGE_SUGGESTIONS: readonly PageSuggestion[] = [
+  { label: "Dashboard", to: "/", keywords: ["dashboard", "home"] },
+  { label: "Monitor", to: "/monitor", keywords: ["monitor"] },
+  { label: "MapMonitor", to: "/mapmonitor", keywords: ["mapmonitor", "map monitor", "map"] },
+  { label: "Activity", to: "/explorer", keywords: ["explorer", "activity"] },
+  { label: "IPFS", to: "/ipfs", keywords: ["ipfs"] },
+  { label: "V1 Archive", to: "/archive/cosmwasm-v1", keywords: ["archive", "v1 archive", "cosmwasm"] },
+  { label: "Settings", to: "/settings", keywords: ["settings", "setting"] },
+];
+
+/**
+ * Match a query against built-in page keywords: exact, query-prefix (sett ->
+ * settings), or page-prefix for 3+ character queries (map -> mapmonitor).
+ */
+export function matchPageSuggestion(raw: string): PageSuggestion | null {
+  const query = raw.trim().toLowerCase();
+  if (query.length < 2) return null;
+  for (const suggestion of PAGE_SUGGESTIONS) {
+    for (const keyword of suggestion.keywords) {
+      if (query === keyword) return suggestion;
+      if (query.startsWith(keyword)) return suggestion;
+      if (query.length >= 3 && keyword.startsWith(query)) return suggestion;
+    }
+  }
+  return null;
+}

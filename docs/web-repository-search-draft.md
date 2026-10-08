@@ -166,3 +166,4 @@
 - 第五轮改进：加载指示改为结果区边框的 conic-gradient 旋转动画（@property 角度动画，去掉零散转圈符号）；结果非空时在下方显示 View other V1 Archive results 折叠链接（ChevronDown 旋转指示，参考 MapMonitor 折叠卡片交互），点击后原地展开加载 V1 归档结果（resolveCosmWasmV1Owner + listCosmWasmV1Repos，关键词查询无对应 owner 时行内提示），严禁跳转归档页面；归档结果行直达 /archive/cosmwasm-v1/:owner/:repo；
 - 第五轮修订（用户反馈）：撤下结果区边框旋转动画（过于扎眼），改为搜索页右上角 Searching... 小号加载提示（探测/索引/解析期间显示）；V1 归档区去掉内衬边框容器，折叠按钮改为全宽头部样式并内嵌 CosmWasm V1 徽章，展开行与 EVM 结果行完全同宽同距对齐；
 - 第六轮改进（用户反馈）：搜索页增加会话内快照缓存（searchSnapshots，按查询词键控，10 分钟信任期，上限 20 条）——从仓库页返回时立即恢复结果与归档展开态（实测 8ms），后台静默再验证且仅右上角提示、不影响布局，最新数据到达即刻替换；V1 归档折叠按钮移除 CosmWasm V1 徽章，徽章仅保留在仓库结果卡片上；
+- 第七轮改进：内置页面联想——matchPageSuggestion（lib/search.ts，纯函数含单测）按精确/前缀匹配 Dashboard、Monitor、MapMonitor、Activity(Explorer)、IPFS、V1 Archive、Settings 及别名（sett/map/explorer/home/archive 等），搜索页顶部显示 Did you mean 卡片（带对应图标）点击直达；即使关键词与注册用户名/仓库名冲突也不影响进入内置页面；

@@ -6,7 +6,7 @@ import {
   SuiteVerificationError,
   formatResourceError,
 } from "../src/lib/errors.ts";
-import { buildSearchPath, parseSearchQuery } from "../src/lib/search.ts";
+import { buildSearchPath, matchPageSuggestion, parseSearchQuery } from "../src/lib/search.ts";
 
 test("global search normalizes schemes and display-prefixed usernames", () => {
   assert.deepEqual(parseSearchQuery("  igit://@alice/demo  "), {
@@ -37,4 +37,23 @@ test("resource errors explain Suite configuration failures", () => {
     formatResourceError(new Error("UsernameNotFound(alice)"), "owner"),
     /Could not find this owner.*address or username/i,
   );
+});
+
+test("page suggestions match built-in app pages", () => {
+  assert.deepEqual(matchPageSuggestion("settings"), { label: "Settings", to: "/settings", keywords: ["settings", "setting"] });
+  assert.equal(matchPageSuggestion("  SETTINGS ").label, "Settings");
+  assert.equal(matchPageSuggestion("sett").label, "Settings");
+  assert.equal(matchPageSuggestion("set").label, "Settings");
+  assert.equal(matchPageSuggestion("se"), null);
+  assert.equal(matchPageSuggestion("map").label, "MapMonitor");
+  assert.equal(matchPageSuggestion("mapmonitor").label, "MapMonitor");
+  assert.equal(matchPageSuggestion("monitor").label, "Monitor");
+  assert.equal(matchPageSuggestion("explorer").label, "Activity");
+  assert.equal(matchPageSuggestion("activity").label, "Activity");
+  assert.equal(matchPageSuggestion("ipfs").label, "IPFS");
+  assert.equal(matchPageSuggestion("dashboard").label, "Dashboard");
+  assert.equal(matchPageSuggestion("archive").label, "V1 Archive");
+  assert.equal(matchPageSuggestion("demo"), null);
+  assert.equal(matchPageSuggestion(""), null);
+  assert.equal(matchPageSuggestion("x"), null);
 });
