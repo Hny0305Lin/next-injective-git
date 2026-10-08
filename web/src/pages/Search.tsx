@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ChevronDown, GitFork, LoaderCircle, User } from "lucide-react";
 import {
@@ -39,6 +39,19 @@ type ArchiveState =
   | { phase: "done"; repos: RepoInfo[]; owner: string | null }
   | { phase: "error"; message: string };
 
+/** Rendered state cached per query so returning from a repository page is instant. */
+interface SearchSnapshot {
+  ownerMatch: OwnerMatch | null;
+  exact: { owner: string; name: string } | null;
+  archive: ArchiveState;
+  archiveOpen: boolean;
+  savedAt: number;
+}
+
+const SEARCH_SNAPSHOT_TRUST_MS = 10 * 60_000;
+const SEARCH_SNAPSHOT_LIMIT = 20;
+const searchSnapshots = new Map<string, SearchSnapshot>();
+
 function statusName(status: number): "active" | "frozen" | "delisted" {
   return status === 1 ? "frozen" : status === 2 ? "delisted" : "active";
 }
@@ -60,12 +73,16 @@ export default function SearchPage() {
   const query = (params.get("q") ?? "").trim();
   const cfg = useMemo(() => loadConfig(), []);
   const [status, setStatus] = useState<RepoIndexStatus | null>(null);
-  const [ownerMatch, setOwnerMatch] = useState<OwnerMatch | null>(null);
-  const [exact, setExact] = useState<{ owner: string; name: string } | null>(null);
+const boot = query ? searchSnapshots.get(query) : undefined;
+  const bootFresh = boot !== undefined && Date.now() - boot.savedAt < SEARCH_SNAPSHOT_TRUST_MS;
+  const [ownerMatch, setOwnerMatch] = useState<OwnerMatch | null>(bootFresh ? boot.ownerMatch : null);
+  const [exact, setExact] = useState<{ owner: string; name: string } | null>(bootFresh ? boot.exact : null);
   const [probing, setProbing] = useState(false);
   const [opening, setOpening] = useState<string | null>(null);
-  const [archiveOpen, setArchiveOpen] = useState(false);
-  const [archive, setArchive] = useState<ArchiveState>({ phase: "idle" });
+  const [archiveOpen, setArchiveOpen] = useState(bootFresh ? boot.archiveOpen : false);
+  const [archive, setArchive] = useState<ArchiveState>(bootFresh ? boot.archive : { phase: "idle" });
+
+  const firstRun = useRef(true);
 
   useEffect(() => {
     const indexer = repoIndexShared(cfg);
@@ -77,10 +94,18 @@ export default function SearchPage() {
   }, [cfg]);
 
   useEffect(() => {
-    setOwnerMatch(null);
-    setExact(null);
-    setArchiveOpen(false);
-    setArchive({ phase: "idle" });
+    // Returning from a repository page restores the cached snapshot instantly
+    // and revalidates in the background; a changed query restores or clears.
+    if (firstRun.current) {
+      firstRun.current = false;
+    } else {
+      const cached = searchSnapshots.get(query);
+      const fresh = cached !== undefined && Date.now() - cached.savedAt < SEARCH_SNAPSHOT_TRUST_MS;
+      setOwnerMatch(fresh ? cached.ownerMatch : null);
+      setExact(fresh ? cached.exact : null);
+      setArchiveOpen(fresh ? cached.archiveOpen : false);
+      setArchive(fresh ? cached.archive : { phase: "idle" });
+    }
     if (!query) return;
     let cancelled = false;
     const slash = query.indexOf("/");
@@ -140,7 +165,7 @@ export default function SearchPage() {
   useEffect(() => {
     if (!archiveOpen || !query) return;
     let cancelled = false;
-    setArchive({ phase: "loading" });
+    setArchive((previous) => (previous.phase === "idle" ? { phase: "loading" } : previous));
     void (async () => {
       try {
         await prepareCosmWasmV1Snapshot();
@@ -197,6 +222,16 @@ export default function SearchPage() {
   // Loading is shown as a rotating border on the results area instead of a
   // loose spinner widget.
   const resultsLoading = probing || (status?.building ?? false) || opening !== null;
+
+  useEffect(() => {
+    if (!query || probing) return;
+    if (archiveOpen && archive.phase === "loading") return;
+    if (searchSnapshots.size >= SEARCH_SNAPSHOT_LIMIT) {
+      const oldest = searchSnapshots.keys().next().value;
+      if (oldest !== undefined) searchSnapshots.delete(oldest);
+    }
+    searchSnapshots.set(query, { ownerMatch, exact, archive, archiveOpen, savedAt: Date.now() });
+  }, [query, ownerMatch, exact, archive, archiveOpen, probing]);
 
   const open = async (entry: RepoIndexEntry) => {
     setOpening(`${entry.suiteDirectory}:${entry.repoId ?? entry.name}`);
@@ -281,7 +316,6 @@ export default function SearchPage() {
             onClick={() => setArchiveOpen((open) => !open)}
             aria-expanded={archiveOpen}
           >
-            <ContractTypeBadge kind="cosmwasm-v1" />
             <span className="search-archive-toggle-label">View other V1 Archive results</span>
             <ChevronDown
               size={14}
