@@ -63,6 +63,55 @@ Published profiles intentionally leave `SuiteDirectory` empty until real
 deployment and cutover evidence is approved. Do not add an address from a test,
 example, source artifact, or unreviewed deployment.
 
+## Documentation System
+
+Documentation lives in a two-repository layout. This repository is the
+content source of truth (`docs/`, plus the canonical rules in this file);
+the bilingual Docusaurus 3 site (Node >= 24) lives in the separate
+`next-injective-git-docs` repository (`docs-site/` toolchain plus a
+read-only mirror of this repo's `docs/`). Never move, rename, or rewrite
+existing `docs/` files here (new files are allowed). English is the single
+source of truth; Simplified Chinese is served through Docusaurus i18n under
+`/zh/` and must never run ahead of the English status wording.
+
+- Content flow: edit `docs/` in this repo → in the docs repo run
+  `npm run sync:docs` (mirrors `docs/`; the docs repo's `docs/` folder is
+  generated output, never hand-edited) → `npm run build` → commit and push
+  to `next-injective-git-docs` `main`, which triggers its CI and Vercel
+  deployment. This repo's `.gitignore` intentionally excludes `docs-site/`.
+- Adding/changing a page: author the English page in `docs/`, register it in
+  the docs repo's `docs-site/sidebars.js` (explicit list; no front matter on
+  evidence files), run `npm run gen:zh-stubs`, then replace the stub with a
+  real translation. Check `docs/glossary.md` before translating; if a term
+  is missing, extend the glossary first. Untranslated pages must keep an
+  explicit "Translation in progress" stub - never silently missing.
+- Terminology boundaries: Suite v3 = legacy IPFS/Kubo; Suite v4 = BYOS
+  successor (production configuration: Amazon S3 and Cloudflare R2 only).
+  The six mainland-China S3-compatible providers tracked in
+  `docs/roadmap-byos-providers.md` are **roadmap candidates only**: no page
+  (any language) may describe them as supported/integrated, and their
+  endpoints must not appear in configuration examples, CLI flags, or
+  production guidance until implementation and approval evidence lands.
+- Brand assets: docs repo `docs-site/static/img/` (copy of the read-only
+  original `D:\inj\igit-image.png`). Site images stay local in `static/`; the
+  only remote-image exception is contributor avatars from
+  `avatars.githubusercontent.com`.
+- Contributors: `docs-site/src/generated/contributors.json` (docs repo) is
+  generated only by `npm run fetch:contributors` (build-time GitHub API
+  against this repository, optional `GITHUB_TOKEN` env var; never hand-edit,
+  never fetch at browser runtime; on failure fall back to the committed
+  cache, else hide the homepage section).
+- CI gate: the docs repo's `.github/workflows/docs.yml` builds the site on
+  changes to `docs-site/**`, `docs/**` (the mirror), and itself. Do not
+  modify this repo's `ci.yml`/`release.yml` or Required Checks scripts for
+  documentation work.
+- Deployment: user-operated Vercel (imports `next-injective-git-docs`) +
+  Cloudflare DNS per the docs repo's `docs-site/DEPLOYMENT.md`. Agents
+  produce static build output, commits, and guidance only - no Vercel/
+  Cloudflare account operations, no deployment credentials.
+  `archive/cosmwasm-v1` never enters site navigation, build dependencies,
+  or runtime paths.
+
 ## Required Checks
 
 ```sh
