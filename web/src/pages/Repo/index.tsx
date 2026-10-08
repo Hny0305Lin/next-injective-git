@@ -365,10 +365,10 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
         <section className="legacy-migration-alert" role="status" aria-labelledby="legacy-migration-title">
           <AlertTriangle size={18} aria-hidden="true" />
           <div>
-            <strong id="legacy-migration-title">Migration to EVM V2 required</strong>
+            <strong id="legacy-migration-title">Migration to EVM V2 or newer required</strong>
             <span id="legacy-migration-copy">
               This repository remains readable from the CosmWasm V1 archive. Editing and current
-              repository features require a future migration to the EVM Suite.
+              repository features require a future migration to the EVM V2 or newer Suite.
             </span>
           </div>
           <button type="button" disabled aria-describedby="legacy-migration-copy" title="Repository migration is not available yet">
