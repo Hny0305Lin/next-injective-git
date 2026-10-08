@@ -102,6 +102,11 @@ igit clone igit://alice/my-repo
 
 The remote helper supports normal Git push, clone, fetch, pull, and ref delete.
 Historical locators resolve through immutable aliases to the canonical repo ID.
+Progress output is tiered: `-q` (or `IGIT_QUIET=1`) keeps warnings only, the
+default prints one milestone line per phase, and `-v` (or `IGIT_VERBOSE=1`)
+shows every step. `igit clone` takes git flags after the repository
+(`igit clone <owner>/<repo> -q`); the environment overrides work in any
+position (`IGIT_QUIET=1 igit clone <owner>/<repo>`).
 
 ## Development
 

@@ -39,6 +39,19 @@ func TestSHA256File(t *testing.T) {
 	}
 }
 
+// A leading flag would otherwise be mistaken for the repository name and
+// turned into a bogus igit:// URL. The error message is bilingual, so the
+// assertion matches only the locale-neutral command form and flag.
+func TestCloneRejectsLeadingFlagWithUsageHint(t *testing.T) {
+	err := cmdClone(config.Config{}, []string{"-q", "owner/repo"})
+	if err == nil {
+		t.Fatal("expected usage error for a leading flag")
+	}
+	if msg := err.Error(); !strings.Contains(msg, "igit clone") || !strings.Contains(msg, "-q") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestVisibleReposHidesModeratedRepositoriesByDefault(t *testing.T) {
 	repos := []chain.RepoInfo{
 		{Name: "active", ModerationStatus: "active"},
