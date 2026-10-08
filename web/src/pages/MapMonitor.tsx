@@ -617,6 +617,9 @@ function createAMapEngine(A: any, element: HTMLElement, cb: EngineCallbacks): Ma
     viewMode: "2D",
     zooms: [3, 18],
     mapStyle: styleFor(),
+    // Basemap label language: 'zh_cn' (Chinese), 'zh_en' (bilingual), 'en'
+    // (English). The page UI itself is already English-only.
+    lang: "en",
   });
 
   // Swap the basemap style when the app theme toggles.

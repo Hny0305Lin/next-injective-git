@@ -57,6 +57,10 @@ const primaryNav = [
   { to: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
+// Entries beyond this index render in the top nav only on wide viewports
+// (see the .topnav-link-more media query); side/mobile nav always show all.
+const primaryTopnavCount = 4;
+
 type SuiteReadiness = "unconfigured" | "checking" | "ready" | "error";
 type CacheNotification = "refreshing" | "refreshed" | null;
 
@@ -200,12 +204,14 @@ export default function App() {
         </Link>
 
         <nav className="topnav" aria-label="Primary navigation">
-          {primaryNav.slice(0, 4).map((item) => (
+          {primaryNav.map((item, index) => (
             <NavLink
               key={item.to}
               to={item.to}
               end={item.end}
-              className={({ isActive }) => `topnav-link${isActive ? " on" : ""}`}
+              className={({ isActive }) =>
+                `topnav-link${index >= primaryTopnavCount ? " topnav-link-more" : ""}${isActive ? " on" : ""}`
+              }
             >
               {item.label}
             </NavLink>
