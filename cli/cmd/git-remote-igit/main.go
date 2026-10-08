@@ -100,6 +100,10 @@ func run() error {
 
 	var ic *ipfs.Client
 	var replicationAuth replication.Authorizer
+	// Startup notices are queued on the helper instead of printed here: git
+	// delivers its `option verbosity` commands only after this process has
+	// started, and the deferred lines then honor -q/-v retroactively.
+	var startupSteps, startupDetails []string
 	if byosService == nil {
 		// URLs may carry a registered username instead of a bech32 address (§4)
 		if !repoURL.OwnerIsAddress() {
@@ -107,9 +111,8 @@ func run() error {
 			if err != nil {
 				return err
 			}
-			if quiet, _ := remote.EnvVerbosityOverrides(); !quiet {
-				fmt.Fprintf(os.Stderr, "git-remote-igit: "+i18n.Text("%s -> %s\n", "%s -> %s（已解析）\n"), repoURL.Owner, owner)
-			}
+			startupSteps = append(startupSteps, fmt.Sprintf(
+				i18n.Text("%s -> %s", "%s -> %s（已解析）"), repoURL.Owner, owner))
 			repoURL.Owner = owner
 		}
 		gateways, health := ipfs.SelectGateways(context.Background(), cfg.EffectiveGateways())
@@ -119,10 +122,12 @@ func run() error {
 		}
 		urls = append(urls, cfg.EffectiveReadFallbacks()...)
 		ic = ipfs.NewWithGateways(cfg.IPFSAPI, urls)
-		if len(gateways) > 0 && remote.EnvVerboseOverride() {
+		if len(gateways) > 0 {
 			for _, result := range health {
 				if result.Err == nil && result.Gateway.URL == gateways[0].URL {
-					fmt.Fprintf(os.Stderr, "git-remote-igit: "+i18n.Text("gateway %s selected (%s)\n", "已选择网关 %s（%s）\n"), result.Gateway.Name, result.Latency.Round(time.Millisecond))
+					startupDetails = append(startupDetails, fmt.Sprintf(
+						i18n.Text("gateway %s selected (%s)", "已选择网关 %s（%s）"),
+						result.Gateway.Name, result.Latency.Round(time.Millisecond)))
 					break
 				}
 			}
@@ -139,6 +144,12 @@ func run() error {
 		gitRepo,
 		os.Stdin, os.Stdout, os.Stderr,
 	)
+	for _, notice := range startupSteps {
+		helper.DeferStep(notice)
+	}
+	for _, notice := range startupDetails {
+		helper.DeferDetail(notice)
+	}
 	helper.SetByosStorage(byosService)
 	helper.SetPushPreflight(func(needsKubo bool) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)

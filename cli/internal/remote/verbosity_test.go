@@ -75,3 +75,62 @@ func TestEnvVerboseBeatsGitQuietOption(t *testing.T) {
 		t.Fatalf("IGIT_VERBOSE push printed %d progress lines, want 8: %q", got, log)
 	}
 }
+
+func TestOptionDryRunReportsSuccessWithoutSideEffects(t *testing.T) {
+	c, i, r := &fakeChain{}, &fakeIPFS{}, &fakeAuthorizer{}
+	var out, logBuf bytes.Buffer
+	input := "capabilities\noption verbosity 1\noption dry-run true\nlist for-push\npush refs/heads/main:refs/heads/main\n\n"
+	h := NewHelper(RepoURL{Owner: "inj1owner", Repo: "repo"}, c, i, r,
+		[]string{"/dns4/us.example/tcp/4001/p2p/peer"}, fakeGit{},
+		strings.NewReader(input), &out, &logBuf)
+	if err := h.Run(); err != nil {
+		t.Fatalf("dry-run push conversation: %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "ok refs/heads/main") {
+		t.Fatalf("dry-run protocol output = %q", got)
+	}
+	if c.updates != 0 || c.deletes != 0 || i.add != 0 || i.swarm != 0 || i.gc != 0 || r.authorized != 0 {
+		t.Fatalf("dry-run had side effects: updates=%d deletes=%d add=%d swarm=%d gc=%d authorized=%d",
+			c.updates, c.deletes, i.add, i.swarm, i.gc, r.authorized)
+	}
+	if got := progressLines(logBuf.String()); got != 0 {
+		t.Fatalf("dry-run push printed %d progress lines: %q", got, logBuf.String())
+	}
+}
+
+func TestOptionCloningIsAccepted(t *testing.T) {
+	out, _ := runOptionPush(t, "option cloning true\noption verbosity 0\n")
+	if strings.Contains(out, "unsupported") {
+		t.Fatalf("option cloning must be accepted: %q", out)
+	}
+}
+
+func TestDeferredStartupNoticesHonorVerbosity(t *testing.T) {
+	run := func(options string) string {
+		c, i, r := &fakeChain{}, &fakeIPFS{}, &fakeAuthorizer{}
+		var out, logBuf bytes.Buffer
+		h := NewHelper(RepoURL{Owner: "inj1owner", Repo: "repo"}, c, i, r,
+			[]string{"/dns4/us.example/tcp/4001/p2p/peer"}, fakeGit{},
+			strings.NewReader("capabilities\n"+options+"list for-push\npush refs/heads/main:refs/heads/main\n\n"), &out, &logBuf)
+		h.DeferStep("alice -> inj1resolved")
+		h.DeferDetail("gateway hk selected (12ms)")
+		if err := h.Run(); err != nil {
+			t.Fatalf("conversation: %v", err)
+		}
+		return logBuf.String()
+	}
+	// quiet: both startup notices are silenced
+	if log := run("option verbosity 0\n"); strings.Contains(log, "alice") || strings.Contains(log, "gateway") {
+		t.Fatalf("quiet startup notices leaked: %q", log)
+	}
+	// default: only the step-level notice appears
+	log := run("option verbosity 1\n")
+	if !strings.Contains(log, "alice -> inj1resolved") || strings.Contains(log, "gateway") {
+		t.Fatalf("default startup notices = %q", log)
+	}
+	// verbose: both appear
+	log = run("option verbosity 2\n")
+	if !strings.Contains(log, "alice -> inj1resolved") || !strings.Contains(log, "gateway hk selected") {
+		t.Fatalf("verbose startup notices = %q", log)
+	}
+}

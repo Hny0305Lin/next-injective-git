@@ -44,8 +44,16 @@ type Helper struct {
 
 	// verbosity filters progress lines; envPinned records an IGIT_QUIET /
 	// IGIT_VERBOSE override, which must win over git's option command.
+	// dryRun mirrors git's `option dry-run`: push batches report success
+	// without any storage or chain side effect.
 	verbosity int
 	envPinned bool
+	dryRun    bool
+
+	// deferred holds pre-rendered startup notices that cannot respect the
+	// verbosity level yet because git sends its option commands only after
+	// the helper process has already started.
+	deferred []deferredNotice
 
 	in  *bufio.Scanner
 	out io.Writer
@@ -113,9 +121,6 @@ func EnvVerbosityOverrides() (quiet, verbose bool) {
 	return envFlag("IGIT_QUIET"), envFlag("IGIT_VERBOSE")
 }
 
-// EnvVerboseOverride reports whether IGIT_VERBOSE=1 pins the verbose level.
-func EnvVerboseOverride() bool { return envFlag("IGIT_VERBOSE") }
-
 func envFlag(name string) bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
 	case "1", "true", "yes", "on":
@@ -125,9 +130,10 @@ func envFlag(name string) bool {
 }
 
 // applyOption handles the option command. verbosity carries the -q/-v level
-// git forwards to helpers; progress is accepted because git always sends it
-// but carries no extra level information. Unknown options are unsupported so
-// git can fall back to its own behavior.
+// git forwards to helpers; dry-run switches push batches to reporting-only
+// mode. progress and cloning are accepted because git always sends them but
+// carry no behavior change here (cloning only marks the clone context).
+// Unknown options are reported unsupported per gitremote-helpers(7).
 func (h *Helper) applyOption(arg string) bool {
 	name, value, ok := strings.Cut(strings.TrimSpace(arg), " ")
 	if !ok {
@@ -146,11 +152,48 @@ func (h *Helper) applyOption(arg string) bool {
 			h.verbosity = level
 		}
 		return true
-	case "progress":
+	case "progress", "cloning":
 		_, err := strconv.ParseBool(strings.TrimSpace(value))
 		return err == nil
+	case "dry-run":
+		on, err := strconv.ParseBool(strings.TrimSpace(value))
+		if err != nil {
+			return false
+		}
+		h.dryRun = on
+		return true
 	}
 	return false
+}
+
+// deferredNotice is a pre-rendered startup line plus the verbosity level it
+// needs to be shown at.
+type deferredNotice struct {
+	text         string
+	minVerbosity int
+}
+
+// DeferStep queues a startup notice for the default verbosity level and
+// above. git-remote-igit uses this for lines produced before git's option
+// commands arrive, so `git push -q` can silence them retroactively.
+func (h *Helper) DeferStep(text string) {
+	h.deferred = append(h.deferred, deferredNotice{text: text, minVerbosity: verbosityDefault})
+}
+
+// DeferDetail queues a startup notice shown only at the verbose level.
+func (h *Helper) DeferDetail(text string) {
+	h.deferred = append(h.deferred, deferredNotice{text: text, minVerbosity: verbosityVerbose})
+}
+
+// flushDeferred emits queued startup notices once, after git's option
+// commands have settled the final verbosity level.
+func (h *Helper) flushDeferred() {
+	for _, notice := range h.deferred {
+		if h.verbosity >= notice.minVerbosity {
+			fmt.Fprintf(h.log, "git-remote-igit: %s\n", notice.text)
+		}
+	}
+	h.deferred = nil
 }
 
 func (h *Helper) printf(format string, args ...any) {
@@ -181,6 +224,11 @@ func (h *Helper) detail(english, chinese string, args ...any) {
 func (h *Helper) Run() error {
 	for h.in.Scan() {
 		line := strings.TrimRight(h.in.Text(), "\n")
+		if line != "" && line != "capabilities" && !strings.HasPrefix(line, "option ") {
+			// The first real command means git's option commands are done;
+			// startup notices can now honor the settled verbosity level.
+			h.flushDeferred()
+		}
 		switch {
 		case line == "capabilities":
 			h.printf("fetch\npush\noption\n\n")
@@ -408,6 +456,16 @@ func (h *Helper) cmdPushBatch(first string) error {
 			h.printf("\n")
 			return nil
 		}
+	}
+
+	// dry-run (`git push --dry-run`) reports the would-be result without any
+	// pack, storage or chain side effect.
+	if h.dryRun {
+		for _, spec := range specs {
+			h.printf("ok %s\n", spec.dst)
+		}
+		h.printf("\n")
+		return nil
 	}
 
 	for _, spec := range specs {
