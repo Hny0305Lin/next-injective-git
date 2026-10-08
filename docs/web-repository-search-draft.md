@@ -41,6 +41,7 @@
 | 多目录支持：`parseSuiteDirectories`（逗号分隔），内置 profile 含两个 SuiteDirectory | `web/src/lib/profile.ts` |
 | 同名仓库跨代并存，dedupe 键为 `owner/name/suite_version` | `web/src/lib/registry.ts`（`listRepos` 合并逻辑） |
 | Owner 页对仓库列表有本地过滤，但依赖已知 owner | `web/src/pages/Owner.tsx` |
+| 公共测试网 RPC 的 `eth_getLogs` 对旧区块静默裁剪：对 -244k 块单块查询返回空且无报错（2026-10-09 实测，Blockscout 佐证事件存在） | 实测记录；催生 4.2 的吸收层设计 |
 
 ## 4. 方案设计
 
@@ -54,13 +55,17 @@
 
 事件扫描复用/抽取 `activity.ts` 的分段与二分逻辑，落到独立的 `web/src/lib/repo-index.ts`（扫描与解析为纯函数，便于单测）。
 
-### 4.2 存储与增量
+### 4.2 存储与增量（按实测调整，2026-10-09）
 
-- localStorage 键：`igit.repo-index.v1.<chainId>.<hash(suiteDirList)>`，值为 `{ cursorBlock, entries[] }`；
-- 首次构建两阶段：先“近窗口”（最近 `EVM_ACTIVITY_BLOCK_WINDOW` 块，倒序扫，立即可用），再后台“回填”（从部署块/创世正序扫，推进 cursorBlock）；
-- 增量更新：从 `cursorBlock+1` 扫到 latest；为防 reorg，落 cursor 前回退若干确认块（如 64）重扫，并以 `(txHash, logIndex)` 去重；
-- 容量上限：条目数与字节上限（如 50k 条 / 4MB），超限降级为“仅近窗口”并在 UI 提示；
-- 索引可随时丢弃重建（清缓存即恢复），不承诺完整性：**best-effort 导航提示**。
+- localStorage 键：`igit.repo-index.v1.<chainId>`，内容为各 SuiteDirectory 分片（事件索引 + 走查游标）与吸收层条目；
+- 索引来源三路合并：
+  1. 头窗口事件扫描：最近 `REPO_INDEX_RECENT_WINDOW`（100k）块的 `eth_getLogs`，结果立即可用；
+  2. 历史走查：从头窗口下界向创世方向降序分块扫描（10k 块/查询，8 路并发，16 块/tick），条目按最新事件位置守卫，乱序合并正确；连续 4 轮全空或连续 3 次硬错误即自适应暂停（下个会话可续）；
+  3. 吸收层：打开 Owner 页或连接钱包时，经 `listRepositoriesPage` 按 owner 合约枚举并入索引（不依赖日志，不受 RPC 日志裁剪影响），同 owner/name 跨代仓库按键含 suiteVersion 共存；
+- 增量更新：头游标 `cursor+1` 起扫到 latest，回退 96 块 overlap 防 reorg；
+- 已知限制：Injective 公共测试网 RPC 对旧区块日志存在静默裁剪（实测对 -244k 块的单块 `eth_getLogs` 也返回空），因此老仓库依赖吸收层覆盖；自建/归档 RPC 上走查可达全量历史；
+- 容量上限：50k 条 / 4MB，超限停止扩充历史层；
+- 索引可随时丢弃重建（清 localStorage 即恢复），不承诺完整性：best-effort 导航提示，点击结果仍以合约读取为准。
 
 ### 4.3 触发与性能
 
@@ -126,8 +131,14 @@
 3. 结果排序权重：更新时间 vs 字典序 vs 前缀命中优先；
 4. localStorage 容量预算的最终数值（浏览器约 5MB）。
 
-## 9. 实现影响面（预计）
-
+## 9. 实现影响面（已实施）
 - 新增：`web/src/lib/repo-index.ts`、`web/test/repo-index.test.mjs`；
-- 修改：`web/src/App.tsx`（搜索框交互）、`web/src/lib/activity.ts`（抽出可复用扫描）、`web/src/lib/search.ts`（如需匹配辅助）、`web/test/search.test.mjs`、相关样式；
-- 不改：合约、CLI、内置 profile 的 Suite 地址。
+- 修改：`web/src/App.tsx`（搜索框交互与钱包吸收）、`web/src/pages/Owner.tsx`（页面吸收）、`web/src/lib/activity.ts`（导出扫描辅助并支持 topics 过滤）、`web/src/styles.css`（结果样式）；
+- 未改：`web/src/lib/search.ts`（既有路径跳转行为保持不变）、合约、CLI、内置 profile 的 Suite 地址。
+
+
+## 10. 实施结果（2026-10-09）
+
+- 代码与测试落地：`npm run test:api` 163/163 通过（含 8 个 repo-index 单测）、`npm run typecheck` 与 `npm run build` 通过；
+- 真实测试网端到端验证（Playwright + Chromium，本地 dev server）：访问 Owner 页吸收 3 个仓库（demo-showcase v3/v4、demo-showcase-byos v4）后，全局搜索输入 dem 下拉命中 3 条，方向键加回车跳转 `/:owner/:repo` 成功；截图存于会话 scratch 目录（1-owner-page.png / 2-search-dropdown.png / 3-repo-page.png）；
+- 安全边界复核：索引仅为导航提示，点击后经 `repoInfoById`（有 repoId 时）或 `resolveRepo`（吸收条目）做权威解析；不新增模块地址、不发交易、不部署合约；delisted 条目不出现在结果中。

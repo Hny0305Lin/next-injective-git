@@ -302,12 +302,10 @@ code, pre, .mono {
 }
 
 @media (max-width: 768px) {
+  /* Suite verification toasts pinned themselves over mobile content;
+     keep the notification desktop-only. */
   .cache-notification {
-    position: fixed;
-    top: 60px;
-    right: 12px;
-    left: 12px;
-    width: auto;
+    display: none;
   }
 }
 
@@ -3019,6 +3017,13 @@ html.dark .action-badge.a-award_badge {
     overflow-x: auto;
     border-bottom: 1px solid var(--border);
     background: var(--bg);
+    /* Keep swipe scrolling but hide the scrollbar. */
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .mobile-nav::-webkit-scrollbar {
+    display: none;
   }
 
   .mobile-nav-item {
@@ -5079,4 +5084,155 @@ html.dark .action-badge.a-award_badge {
   .mapmonitor-marquee-track {
     animation: none;
   }
+}
+
+/* MapMonitor overlay-card responsive collapse.
+ *
+ * Desktop keeps the original always-expanded cards: the toggle chips are
+ * hidden and the body wrappers are layout-transparent (display: contents).
+ * Under the compact breakpoint (COMPACT_OVERLAY_QUERY in MapMonitor.tsx —
+ * keep in sync) both right-side cards collapse to a corner chip row; the
+ * card body animates open/closed, and the component state keeps only one
+ * card open at a time.
+ *
+ * Animation timing: expand 300ms height + 220ms fade-in (60ms delay);
+ * collapse 240ms height + 160ms fade-out; chevron rotates 220ms. */
+.mapmonitor-card-chip {
+  display: none;
+}
+
+.mapmonitor-card-body {
+  display: contents;
+}
+
+.mapmonitor-focus-card.compact,
+.mapmonitor-stats-card.compact {
+  width: min(300px, calc(100% - 24px));
+  padding: 5px;
+  gap: 0;
+}
+
+.mapmonitor-focus-card.compact .mapmonitor-card-chip,
+.mapmonitor-stats-card.compact .mapmonitor-card-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: none;
+  border-radius: calc(var(--radius-lg) - 5px);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mapmonitor-stats-card.compact .mapmonitor-card-chip {
+  flex: 1 1 auto;
+}
+
+.mapmonitor-card-chip:hover {
+  background: var(--bg-hover);
+}
+
+.mapmonitor-card-chip > svg:first-child {
+  flex: none;
+  color: var(--fg-muted);
+}
+
+.mapmonitor-card-chip-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mapmonitor-card-chev {
+  flex: none;
+  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mapmonitor-focus-card.open .mapmonitor-card-chev,
+.mapmonitor-stats-card.open .mapmonitor-card-chev {
+  transform: rotate(180deg);
+}
+
+/* Compact stats header shows the chip instead of the kicker text; the
+ * refresh button stays beside it in both states. */
+.mapmonitor-stats-card.compact .mapmonitor-focus-kicker {
+  display: none;
+}
+
+/* Collapsed (and transitioning) bodies in compact mode. Grid keeps the
+ * original card spacing rules; only height/opacity/padding animate. */
+.mapmonitor-focus-card.compact .mapmonitor-card-body,
+.mapmonitor-stats-card.compact .mapmonitor-card-body {
+  display: grid;
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  padding: 0 6px;
+  margin-top: 0;
+  transition:
+    max-height 0.24s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.16s ease,
+    padding 0.24s cubic-bezier(0.4, 0, 0.2, 1),
+    margin-top 0.24s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mapmonitor-focus-card.compact .mapmonitor-card-body {
+  gap: 5px;
+}
+
+.mapmonitor-stats-card.compact .mapmonitor-card-body {
+  gap: 8px;
+}
+
+.mapmonitor-focus-card.compact.open .mapmonitor-card-body,
+.mapmonitor-stats-card.compact.open .mapmonitor-card-body {
+  max-height: 440px;
+  opacity: 1;
+  padding: 2px 6px 6px;
+  margin-top: 4px;
+  transition:
+    max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.22s ease 0.06s,
+    padding 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    margin-top 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mapmonitor-focus-card.compact .mapmonitor-card-body,
+  .mapmonitor-stats-card.compact .mapmonitor-card-body,
+  .mapmonitor-card-chev {
+    transition: none;
+  }
+}
+
+/* Global search: repository index results */
+.search-repo-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.search-repo-item .search-repo-name {
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+.search-repo-item .search-repo-meta {
+  font-size: 0.72rem;
+  color: var(--fg-muted);
+}
+.search-history-item.search-repo-pending {
+  color: var(--fg-muted);
+  cursor: default;
+}
+.search-history-item.on,
+.search-history-item.on:hover {
+  background: var(--bg-hover);
 }

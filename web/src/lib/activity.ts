@@ -42,7 +42,7 @@ export interface TxDetail {
   events: { type: string; attributes: { key: string; value: string }[] }[];
 }
 
-interface RpcLog {
+export interface RpcLog {
   address: Address;
   topics: Hex[];
   data: Hex;
@@ -89,11 +89,11 @@ const EVENT_ACTIONS: Record<string, string> = {
   BadgeAwarded: "award_badge",
 };
 
-function quantity(value: Hex): bigint {
+export function quantity(value: Hex): bigint {
   return BigInt(value);
 }
 
-function blockTag(value: bigint): Hex {
+export function blockTag(value: bigint): Hex {
   return `0x${value.toString(16)}`;
 }
 
@@ -161,24 +161,26 @@ function isLogRangeError(error: unknown): boolean {
  * Reads one bounded span, halving it when the provider still reports a range or
  * result cap. Returns logs in ascending block order.
  */
-async function logsInSpan(
+export async function logsInSpan(
   cfg: AppConfig,
   addresses: readonly Address[],
   from: bigint,
   to: bigint,
   depth = 0,
+  topics?: readonly (readonly Hex[])[],
 ): Promise<RpcLog[]> {
   try {
     return await rpcRequest<RpcLog[]>(cfg, "eth_getLogs", [{
       address: addresses,
       fromBlock: blockTag(from),
       toBlock: blockTag(to),
+      ...(topics ? { topics: topics.map((group) => [...group]) } : {}),
     }]);
   } catch (error) {
     if (from >= to || depth >= LOG_RANGE_SPLIT_DEPTH || !isLogRangeError(error)) throw error;
     const middle = from + (to - from) / 2n;
-    const head = await logsInSpan(cfg, addresses, from, middle, depth + 1);
-    const tail = await logsInSpan(cfg, addresses, middle + 1n, to, depth + 1);
+    const head = await logsInSpan(cfg, addresses, from, middle, depth + 1, topics);
+    const tail = await logsInSpan(cfg, addresses, middle + 1n, to, depth + 1, topics);
     return [...head, ...tail];
   }
 }

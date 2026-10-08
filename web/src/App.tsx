@@ -26,8 +26,13 @@ import { Button } from "./components/ui/button";
 import { WalletModal } from "./components/WalletModal";
 import { useWallet } from "./lib/WalletContext";
 import { buildSearchPath } from "./lib/search";
+
+import { repoIndexShared, searchRepoEntries, type RepoIndexEntry, type RepoIndexStatus } from "./lib/repo-index";
+import { repoInfoById, resolveRepo } from "./lib/registry";
+import { truncateAddress } from "./lib/utils";
 import {
   CONFIG_CHANGED_EVENT,
+  listRepos,
   isSuiteDirectoryConfigured,
   loadConfig,
   verifySuite,
@@ -74,6 +79,9 @@ export default function App() {
   const [q, setQ] = useState("");
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState<string[]>([]);
+  const [repoResults, setRepoResults] = useState<RepoIndexEntry[]>([]);
+  const [indexStatus, setIndexStatus] = useState<RepoIndexStatus | null>(null);
+  const [highlight, setHighlight] = useState(-1);
   const [configRevision, setConfigRevision] = useState(0);
   const [suiteReadiness, setSuiteReadiness] = useState<SuiteReadiness>("checking");
   const [cacheNotification, setCacheNotification] = useState<CacheNotification>(null);
@@ -82,7 +90,7 @@ export default function App() {
     if (saved === "light" || saved === "dark") return saved;
     return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   });
-  const { connected, walletModalOpen, openWalletModal, closeWalletModal } = useWallet();
+  const { address, connected, walletModalOpen, openWalletModal, closeWalletModal } = useWallet();
   const searchRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const cfg = useMemo(() => loadConfig(), [configRevision]);
@@ -147,6 +155,36 @@ export default function App() {
     } catch {}
   }, []);
 
+  useEffect(() => {
+    const indexer = repoIndexShared(cfg);
+    setIndexStatus(indexer.getStatus());
+    const unsubscribe = indexer.subscribe(setIndexStatus);
+    indexer.ensureStarted();
+    return unsubscribe;
+  }, [cfg]);
+  useEffect(() => {
+    if (!address) return;
+    let cancelled = false;
+    // Enumerate the connected wallet's repositories by contract reads so they
+    // are searchable regardless of log retention.
+    listRepos(cfg, address)
+      .then((repos) => {
+        if (cancelled) return;
+        repoIndexShared(cfg).absorbOwnerRepos(repos.map((repo) => ({
+          owner: repo.owner,
+          name: repo.name,
+          moderation: repo.moderation_status,
+          suiteVersion: repo.suite_version != null ? Number(repo.suite_version) : undefined,
+        })));
+      })
+      .catch(() => {
+        // Enumeration is best-effort; search keeps its other sources.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [address, cfg]);
+
   const addToHistory = useCallback((query: string) => {
     setHistory((previous) => {
       const next = [query, ...previous.filter((item) => item !== query)].slice(0, 5);
@@ -178,6 +216,42 @@ export default function App() {
     return () => window.removeEventListener("keydown", focusSearch);
   }, []);
 
+  useEffect(() => {
+    const query = q.trim();
+    if (query.length < 2) {
+      setRepoResults([]);
+      setHighlight(-1);
+      return;
+    }
+    const timer = setTimeout(() => {
+      const indexer = repoIndexShared(cfg);
+      setRepoResults(searchRepoEntries(indexer.entries, query, 7));
+      setHighlight(-1);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [q, cfg, indexStatus]);
+
+  const openRepo = async (entry: RepoIndexEntry) => {
+    let owner = entry.owner;
+    let name = entry.name;
+    try {
+      // The index is navigation-only; the contract read is authoritative.
+      const info = entry.repoId
+        ? await repoInfoById({ ...cfg, suiteDirectory: entry.suiteDirectory }, entry.repoId)
+        : (await resolveRepo(cfg, entry.owner, entry.name)).info;
+      if (info.owner) owner = info.owner;
+      if (info.name) name = info.name;
+    } catch {
+      // Fall back to the indexed owner/name when resolution fails.
+    }
+    addToHistory(`${owner}/${name}`);
+    nav(`/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`);
+    setQ("");
+    setShowHistory(false);
+    setRepoResults([]);
+    setHighlight(-1);
+  };
+
   const submitSearch = (rawQuery = q) => {
     const query = rawQuery.trim();
     if (!query) return;
@@ -193,6 +267,8 @@ export default function App() {
     setHistory([]);
     localStorage.removeItem("search_history");
   };
+
+  const indexBuilding = q.trim().length >= 2 && (indexStatus?.building ?? false);
 
   return (
     <div className="app">
@@ -232,27 +308,77 @@ export default function App() {
               onChange={(event) => setQ(event.target.value)}
               onFocus={() => setShowHistory(true)}
               onKeyDown={(event) => {
+                const optionCount = repoResults.length + history.length;
+                if ((event.key === "ArrowDown" || event.key === "ArrowUp") && optionCount > 0) {
+                  event.preventDefault();
+                  setHighlight((current) => {
+                    const delta = event.key === "ArrowDown" ? 1 : -1;
+                    const next = current + delta;
+                    if (next < 0) return optionCount - 1;
+                    if (next >= optionCount) return 0;
+                    return next;
+                  });
+                  return;
+                }
+                if (event.key === "Escape") {
+                  setShowHistory(false);
+                  return;
+                }
                 if (event.key === "Enter" && !event.nativeEvent.isComposing) {
                   event.preventDefault();
-                  submitSearch();
+                  if (highlight >= 0 && highlight < repoResults.length) {
+                    void openRepo(repoResults[highlight]);
+                  } else if (highlight >= repoResults.length && highlight - repoResults.length < history.length) {
+                    submitSearch(history[highlight - repoResults.length]);
+                  } else {
+                    submitSearch();
+                  }
                 }
               }}
-              placeholder="Search owner, repository, address..."
-              aria-label="Search owner, repository, or address"
+              placeholder="Search repositories, owners, addresses..."
+              aria-label="Search repositories, owners, or addresses"
               spellCheck={false}
             />
           </form>
-          {showHistory && history.length > 0 && (
+          {showHistory && (history.length > 0 || repoResults.length > 0 || indexBuilding) && (
             <div className="search-history" role="listbox">
+              {repoResults.length === 0 && indexBuilding && (
+                <div className="search-history-item search-repo-pending">Building repository index from chain...</div>
+              )}
+              {repoResults.length > 0 && (
+                <>
+                  <div className="search-history-head">
+                    <span className="muted small">Repositories</span>
+                    {indexBuilding && <span className="muted small">indexing...</span>}
+                  </div>
+                  {repoResults.map((entry, index) => (
+                    <button
+                      key={`${entry.suiteDirectory}:${entry.repoId ?? `${entry.owner}/${entry.name}/v${entry.suiteVersion}`}`}
+                      type="button"
+                      className={`search-history-item search-repo-item${highlight === index ? " on" : ""}`}
+                      role="option"
+                      aria-selected={highlight === index}
+                      onMouseEnter={() => setHighlight(index)}
+                      onClick={() => void openRepo(entry)}
+                    >
+                      <span className="search-repo-name">{entry.name}</span>
+                      <span className="search-repo-meta">
+                        {truncateAddress(entry.owner, 12)} - V{entry.suiteVersion}
+                        {entry.status === 1 ? " - frozen" : ""}
+                      </span>
+                    </button>
+                  ))}
+                </>
+              )}
               <div className="search-history-head">
                 <span className="muted small">Recent</span>
                 <button type="button" className="search-history-clear" onClick={clearHistory}>Clear</button>
               </div>
-              {history.map((item) => (
+              {history.map((item, index) => (
                 <button
                   key={item}
                   type="button"
-                  className="search-history-item"
+                  className={`search-history-item${highlight === repoResults.length + index ? " on" : ""}`}
                   onClick={() => submitSearch(item)}
                   role="option"
                 >

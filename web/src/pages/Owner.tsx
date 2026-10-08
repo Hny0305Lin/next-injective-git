@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Award, GitBranch } from "lucide-react";
 import { ContractTypeBadge } from "../components/ContractTypeBadge";
+import { repoIndexShared } from "../lib/repo-index";
 import {
   addressUsername,
   badgesByRecipient,
@@ -32,7 +33,15 @@ export default function Owner() {
       try {
         const a = await resolveOwner(cfg, owner);
         setAddr(a);
-        setRepos(await listRepos(cfg, a));
+        const repos = await listRepos(cfg, a);
+        setRepos(repos);
+        // Visited owners feed the global repository search index.
+        repoIndexShared(cfg).absorbOwnerRepos(repos.map((repo) => ({
+          owner: repo.owner,
+          name: repo.name,
+          moderation: repo.moderation_status,
+          suiteVersion: repo.suite_version != null ? Number(repo.suite_version) : undefined,
+        })));
         setAlias(owner.startsWith("inj1") ? await addressUsername(cfg, a) : owner);
         setBadges(await badgesByRecipient(cfg, a).catch(() => []));
       } catch (e) {

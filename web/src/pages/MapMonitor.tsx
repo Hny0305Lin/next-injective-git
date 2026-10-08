@@ -5,10 +5,12 @@ import {
   Activity,
   Archive as ArchiveIcon,
   Box,
+  ChevronDown,
   Clock3,
   Cloud,
   Database,
   Map as MapIcon,
+  MapPin,
   RefreshCw,
   Server,
 } from "lucide-react";
@@ -130,6 +132,12 @@ const TOUR_ZOOM = 7;
 // Grace window after a user marker click before the auto-tour moves on;
 // every further click re-arms it.
 const TOUR_CLICK_PAUSE_MS = 10_000;
+
+// Viewports where the two right-side overlay cards would cover most of the
+// map (phones in portrait, short landscape windows) switch the cards into
+// compact chip mode. Must stay in sync with the `.compact` CSS in
+// MapMonitorCards.css.
+const COMPACT_OVERLAY_QUERY = "(max-width: 900px), (max-height: 560px)";
 
 // The marquee re-runs the Monitor page's read-only probes on the Monitor
 // page's own refresh cadence.
@@ -863,6 +871,29 @@ export default function MapMonitor() {
   const pauseUntilRef = useRef(0);
   const [mapReady, setMapReady] = useState(false);
   const [mapEngine, setMapEngine] = useState<"amap" | "osm">(AMAP_KEY ? "amap" : "osm");
+
+  // Compact overlay cards for small viewports: both cards start collapsed as
+  // corner chips, only one stays expanded at a time (opening one closes the
+  // other), and crossing the compact breakpoint always collapses them again
+  // so a fresh orientation starts clean.
+  const [compact, setCompact] = useState(
+    () => window.matchMedia(COMPACT_OVERLAY_QUERY).matches,
+  );
+  const [openCard, setOpenCard] = useState<"focus" | "stats" | null>(null);
+
+  useEffect(() => {
+    const mq = window.matchMedia(COMPACT_OVERLAY_QUERY);
+    const onChange = () => {
+      setCompact(mq.matches);
+      setOpenCard(null);
+    };
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  const toggleCard = useCallback((id: "focus" | "stats") => {
+    setOpenCard((prev) => (prev === id ? null : id));
+  }, []);
   const current = INFRA_POINTS[activeIndex];
 
   const [configRevision, setConfigRevision] = useState(0);
@@ -1300,26 +1331,56 @@ export default function MapMonitor() {
       <div className="mapmonitor-map-wrap">
         <div ref={mapElementRef} className="mapmonitor-map" aria-label="World map with igit infrastructure endpoints" />
         {mapEngine === "osm" && <span className="mapmonitor-map-credit">© OpenStreetMap · dev fallback</span>}
-        <div className="mapmonitor-focus-card" aria-live="polite">
-          <span className="mapmonitor-focus-kicker">Now touring</span>
-          <b>{current.name}</b>
-          <span className="mapmonitor-focus-kind" data-kind={current.kind}>{KIND_META[current.kind].label}</span>
-          {current.edges != null ? (
-            <ul className="mapmonitor-focus-edges-list" aria-label="Lit APAC edge nodes">
-              {current.edges.map((edge) => (
-                <li key={edge.name}><i aria-hidden="true" />{edge.name}</li>
-              ))}
-            </ul>
-          ) : (
-            <code title={current.endpoint}>{current.endpoint}</code>
-          )}
-          <span className="mapmonitor-focus-note">{current.description}</span>
+        <div
+          className={`mapmonitor-focus-card${compact ? " compact" : ""}${openCard === "focus" ? " open" : ""}`}
+          aria-live="polite"
+        >
+          <button
+            type="button"
+            className="mapmonitor-card-chip"
+            onClick={() => toggleCard("focus")}
+            aria-expanded={openCard === "focus"}
+            aria-label={`Now touring: ${current.name}. Tap to ${openCard === "focus" ? "collapse" : "expand"}.`}
+          >
+            <MapPin size={13} aria-hidden="true" />
+            <span className="mapmonitor-card-chip-label">{current.name}</span>
+            <ChevronDown size={14} className="mapmonitor-card-chev" aria-hidden="true" />
+          </button>
+          <div className="mapmonitor-card-body">
+            <span className="mapmonitor-focus-kicker">Now touring</span>
+            <b>{current.name}</b>
+            <span className="mapmonitor-focus-kind" data-kind={current.kind}>{KIND_META[current.kind].label}</span>
+            {current.edges != null ? (
+              <ul className="mapmonitor-focus-edges-list" aria-label="Lit APAC edge nodes">
+                {current.edges.map((edge) => (
+                  <li key={edge.name}><i aria-hidden="true" />{edge.name}</li>
+                ))}
+              </ul>
+            ) : (
+              <code title={current.endpoint}>{current.endpoint}</code>
+            )}
+            <span className="mapmonitor-focus-note">{current.description}</span>
+          </div>
         </div>
 
         {/* Bottom-right board: totals plus per-endpoint file/repo counters. */}
-        <div className="mapmonitor-stats-card" aria-label="Storage overview">
+        <div
+          className={`mapmonitor-stats-card${compact ? " compact" : ""}${openCard === "stats" ? " open" : ""}`}
+          aria-label="Storage overview"
+        >
           <div className="mapmonitor-stats-header">
             <span className="mapmonitor-focus-kicker">Storage overview</span>
+            <button
+              type="button"
+              className="mapmonitor-card-chip"
+              onClick={() => toggleCard("stats")}
+              aria-expanded={openCard === "stats"}
+              aria-label={`Storage overview. Tap to ${openCard === "stats" ? "collapse" : "expand"}.`}
+            >
+              <Database size={13} aria-hidden="true" />
+              <span className="mapmonitor-card-chip-label">Storage overview</span>
+              <ChevronDown size={14} className="mapmonitor-card-chev" aria-hidden="true" />
+            </button>
             <button
               type="button"
               className="mapmonitor-stats-refresh"
@@ -1331,7 +1392,8 @@ export default function MapMonitor() {
               <RefreshCw size={11} className={board.state === "loading" ? "spin" : undefined} />
             </button>
           </div>
-          <div className="mapmonitor-stats-total">
+          <div className="mapmonitor-card-body">
+            <div className="mapmonitor-stats-total">
             <span>
               <b>{totalPacks != null ? totalPacks.toLocaleString("en-US") : "—"}</b>
               <small>Packfiles</small>
@@ -1379,6 +1441,7 @@ export default function MapMonitor() {
             {board.state === "ready" &&
               `${board.cached ? `Cached ${sampleAgeLabel(board.data.sampledAt)}` : "Live"} · ${board.data.observedOwners} owners · ${board.data.repos}/${board.data.reposDiscovered} EVM + ${board.data.v1.repos} V1 repos${board.data.truncated ? " · bounded" : ""}`}
           </span>
+          </div>
         </div>
       </div>
 
