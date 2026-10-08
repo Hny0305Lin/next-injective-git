@@ -1,0 +1,199 @@
+# 09 · Developer Guide
+
+Status: manual chapter. Audience: developers. Last updated: 2026-10-05.
+
+This chapter is for anyone building the stack locally, extending a client, or
+contributing: repository layout, build and test loops for the CLI, Web, and
+contracts, the protocol test vectors, how to add support for a future suite
+version, and the documentation and evidence rules the project runs on.
+
+## Repository layout
+
+| Path | Contents |
+|---|---|
+| `contracts/evm-v2/` | Suite v3 — nine Solidity contracts, Foundry config, checked-in `abi/`, `artifacts/`, `out/` |
+| `contracts/evm-v2-successor/` | Suite v4 — evolved `RepositoryCore.sol`; the other eight sources byte-identical to v3 |
+| `cli/` | `igit` (`cmd/igit`), `git-remote-igit` (`cmd/git-remote-igit`), suite deployment and migration tools, `internal/` packages |
+| `web/` | React + Vite browser application (viem for Suite reads and legacy EVM transactions) |
+| `protocol/` | Shared protocol material — `packmanifest/vectors.json` canonical-JSON cross-vectors |
+| `scripts/` | Source, release, migration-evidence, IPFS replication, and operations gates |
+| `archive/cosmwasm-v1/` | Isolated read-only V1 source, protocol material, and evidence tools — **not** part of default builds |
+| `docs/` | The documentation content source (this manual lives here) |
+
+## Toolchain
+
+| Tool | Version | Needed for |
+|---|---|---|
+| Go | 1.22+ | CLI and tools |
+| Node.js | 24+ | Web app and the documentation site |
+| Foundry (`forge`) | current | Optional contract tests; see the Foundry note below |
+| Git | any recent | everything |
+
+`injectived` and WSL2 are not part of any workflow.
+
+## Building and testing the CLI
+
+```console
+$ cd cli
+$ go build -o igit             ./cmd/igit
+$ go build -o git-remote-igit  ./cmd/git-remote-igit
+
+$ go vet ./...
+$ go test ./...
+```
+
+Put both binaries on `PATH`; they must come from the same build because the
+helper and the CLI speak a versioned protocol. Tests run fully offline: the
+successor chain is exercised through `cli/internal/chain/successor/fakechain`
+(a contract-faithful fake), cloud stores through fake transports, and Git
+through real local fixtures. Native Kubo integration tests are opt-in via
+`IGIT_RUN_NATIVE_KUBO_INTEGRATION=1` and skip otherwise.
+
+Useful packages when extending storage or chain behavior:
+`internal/packmanifest` (canonical JSON), `internal/packstore` (writer/reader
+adapters, `aws-s3` in `packstore/s3store`, IPFS in `packstore/ipfsstore`),
+`internal/storageconfig` (the storage reference file), `internal/safehttp`
+(SSRF-hardened transport), `internal/byos` (the successor push/fetch service),
+`internal/remote` (the Git remote helper with v3/v4 dispatch).
+
+## Building and testing the Web application
+
+```console
+$ cd web
+$ npm ci
+$ npm run dev            # Vite dev server
+$ npm run test:api       # API-level test suite
+$ npm run typecheck
+$ npm run build
+
+$ npm run test:storage-cross   # Go ⇄ TS canonical-JSON cross-vectors
+$ npm run test:e2e             # Playwright browser tests
+```
+
+Local environment variables (copy from `.env.example`):
+`VITE_WALLETCONNECT_PROJECT_ID` (a public Reown project identifier whose
+allowlist contains your origin) and, only for the MapMonitor page, the AMap
+key/security code. Never commit real keys.
+
+## Building and testing the contracts
+
+Solidity is pinned to **`0.8.24`** exactly (not `^`), with the optimizer and
+`via_ir` enabled and **no external dependencies**. The portable gate compiles
+with the locked solc, rejects forbidden upgrade primitives
+(`delegatecall`, `selfdestruct`), enforces EIP-170/EIP-3860 limits, and — for
+the successor — verifies the "unchanged from v3" file set and the checked-in
+`abi/` / `artifacts/` parity:
+
+```console
+$ npm ci --prefix contracts/evm-v2
+$ npm run check --prefix contracts/evm-v2           # or --write-abi / --write-artifacts
+
+$ npm ci --prefix contracts/evm-v2-successor
+$ npm run check --prefix contracts/evm-v2-successor
+```
+
+With Foundry installed you can additionally run the suite's state-machine
+tests, bootstrap-ordering, policy-hook, capability, gas-report, and invariant
+checks:
+
+```console
+$ cd contracts/evm-v2 && forge build && forge test -vvv
+```
+
+> **Foundry note.** The project's own machines currently have no `forge` on
+> `PATH`, so Foundry gates are recorded as **BLOCKED (R04)** in project status
+> — the portable solc gate is the always-available check. If you have Foundry,
+> run it; do not substitute solc output for Foundry results when evidence is
+> requested.
+
+Go bindings for the successor live in `cli/internal/chain/successor`; the
+embedded ABIs must stay identical to `abi/*.json`, and a build-time test fails
+on drift.
+
+## Protocol vectors
+
+`protocol/packmanifest/vectors.json` holds the canonical-JSON cross-vectors
+(positive and rejection cases, including duplicate keys, Unicode, ordering,
+uint256 extremes, and over-limit inputs) generated by the real TypeScript
+implementation and independently verified by the Go implementation. Run the
+cross-check from `web/` with `npm run test:storage-cross`. Regenerate fixtures
+(`npm run fixtures:storage`) **only** when intentionally changing the schema —
+never to make a failing case pass.
+
+## Adding support for a future suite version
+
+The clients dispatch on the chain's `suiteVersion()`; unknown versions (v5+)
+already verify and read through the latest known ABI with a warning. To teach
+a client an explicitly new version:
+
+1. **Web** — update `web/src/lib/suite-compat.ts`: add the version to
+   `KNOWN_VERSIONS`, extend the reader ABI table, and — only if the ref ABI
+   actually changed — add a decoder in `registry.ts` and a reader in
+   `gitstore.ts`.
+2. **CLI** — update the version probe/dispatch in
+   `cli/cmd/git-remote-igit/main.go` and the ABI surfaces in
+   `cli/internal/chain` (`suite_abi.go`, successor bindings).
+3. **Contracts** — a changed ref shape means a **fresh suite**, never an
+   upgrade of a live one; see [Chapter 07](manual-protocol-contracts.md).
+   Follow the ADR process and keep the version matrix
+   (`docs/suite-version-compatibility.md`) authoritative.
+
+## Release and cutover gates (summary)
+
+Tagged releases publish `igit` and `git-remote-igit` for Linux, macOS, and
+Windows plus `checksums.txt`. The release workflow requires Go vet/tests and
+race tests, Web API/type/build tests, fixed `solc 0.8.24` compilation, Foundry
+suite tests, checked ABI and artifact parity, immutable profile guards, and
+deterministic asset checksums. The public CLI/Web profile guards intentionally
+require an **empty** `SuiteDirectory` until a separately reviewed cutover
+changes both profiles — see [release and cutover](release.md) for the full
+evidence list a cutover must present.
+
+## Working on the documentation
+
+The documentation is a dual-repository system:
+
+- **Content source of truth**: `docs/` in the main repository (English is the
+  single source; Chinese is a translation layer that must never run ahead of
+  English).
+- **Site**: `next-injective-git-docs` hosts the Docusaurus 3 toolchain under
+  `docs-site/` plus a **read-only mirror** of `docs/` produced by
+  `npm run sync:docs` — never hand-edit the mirror.
+
+The standard flow for a new or changed page:
+
+```console
+# 1. edit/create the English page in the main repo's docs/
+# 2. register it in docs-site/sidebars.js
+# 3. generate Chinese placeholders for untranslated pages
+npm --prefix docs-site run gen:zh-stubs
+# 4. mirror and verify
+npm --prefix docs-site run sync:docs
+npm --prefix docs-site run build
+```
+
+Check the [glossary](glossary.md) before writing or translating anything; the
+status vocabulary (`PASS`, `FAIL`, `BLOCKED`, `NOT PROVEN`, `HISTORICAL`) is
+used verbatim and must not be softened. Immutable evidence — ADRs, deployment
+artifacts, plans, manifests, journals, receipts — is never edited or
+retrofitted.
+
+## Evidence discipline
+
+The project separates claims from evidence, and contributions are expected to
+keep that separation:
+
+- A passing claim is bound to a command, an output, and (for releases) a
+  commit SHA. Plans are not evidence; mocks are not real-environment proof.
+- `NOT PROVEN` and `BLOCKED` are legitimate terminal states for a window of
+  work — report them; never fabricate the missing result.
+- Testnet addresses are test addresses. They are not official addresses and
+  must not be committed into published profiles.
+
+## Where to look next
+
+- Contract model → [Chapter 07](manual-protocol-contracts.md)
+- Storage protocol → [Chapter 08](manual-byos-storage.md)
+- Architecture decisions → [ADR index](adr/)
+- Current state of work → [project status](project-status.md),
+  [backlog](backlog.md), [delivery roadmap](delivery-roadmap.md)
