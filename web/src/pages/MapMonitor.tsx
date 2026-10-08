@@ -606,25 +606,30 @@ function createAMapEngine(A: any, element: HTMLElement, cb: EngineCallbacks): Ma
     return [lng, lat];
   };
 
-  // Dark theme follows the app toggle (igit_theme in localStorage); AMap has
-  // built-in dark/normal styles that match the dashboard's light/dark mode.
-  const isDark = () => document.documentElement.classList.contains("dark");
-  const styleFor = () => (isDark() ? "amap://styles/dark" : "amap://styles/normal");
+  // English basemap. AMap JS API 2.0's language switches (the documented
+  // `lang` Map option and the internal `languageCode`) only work through the
+  // multi-language VECTOR tiles, which the server gates behind key privileges
+  // (web_map/get_tile answers infocode 10012 INSUFFICIENT_PRIVILEGES for this
+  // key, for both 'en' and 'zh_en'). The classic raster tiles instead carry
+  // the language in the URL and need no privilege, so the vector base is
+  // replaced with lang=en raster tiles (verified: same tile differs from
+  // lang=zh_cn). They are GCJ-02 like the vector base, so marker positions
+  // keep matching. The raster map stays light in both app themes (same as the
+  // OSM dev fallback); dark vector styling cannot show English labels without
+  // a privileged key.
+  const englishBase = new A.TileLayer({
+    tileUrl:
+      "https://wprd0{1,2,3,4}.is.autonavi.com/appmaptile?x=[x]&y=[y]&z=[z]&lang=en&size=1&scale=1&style=7",
+    zooms: [3, 18],
+  });
 
   const map = new A.Map(element, {
     zoom: 3,
     center: pos([20, 10]),
     viewMode: "2D",
     zooms: [3, 18],
-    mapStyle: styleFor(),
-    // Basemap label language: 'zh_cn' (Chinese), 'zh_en' (bilingual), 'en'
-    // (English). The page UI itself is already English-only.
-    lang: "en",
+    layers: [englishBase],
   });
-
-  // Swap the basemap style when the app theme toggles.
-  const themeObserver = new MutationObserver(() => map.setMapStyle(styleFor()));
-  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
 
   // isCustom:true removes AMap's default white InfoWindow shell; our own
   // .mapmonitor-popup class uses CSS variables that flip with the app theme.
@@ -752,7 +757,6 @@ function createAMapEngine(A: any, element: HTMLElement, cb: EngineCallbacks): Ma
     },
     destroy() {
       window.clearTimeout(infoTimer);
-      themeObserver.disconnect();
       try { map.destroy(); } catch { /* already torn down */ }
     },
   };
