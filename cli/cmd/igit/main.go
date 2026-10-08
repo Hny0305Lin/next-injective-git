@@ -32,6 +32,8 @@ Usage:
   igit clone <owner>/<repo> [dir]      clone a repo (igit://owner/repo also ok)
   igit push [remote] [refspec...]      push current repo on-chain (wraps git)
   igit pull [remote] [refspec...]      pull from chain (wraps git)
+  (push/pull/clone: -q silences igit progress lines, -v shows every step;
+   or export IGIT_QUIET=1 / IGIT_VERBOSE=1)
   igit clone-url <name>                print the igit:// URL of your repo
 	igit repos [--all] [owner]           list active repositories of an owner
   igit refs <owner> <repo>             list on-chain refs of a repository
@@ -112,6 +114,8 @@ const usageChinese = `igit - Next Injective Git（Injective + IPFS）
   igit clone <owner>/<repo> [dir]      克隆仓库（也支持 igit://owner/repo）
   igit push [remote] [refspec...]      推送当前仓库到链上（封装 git）
   igit pull [remote] [refspec...]      从链上拉取（封装 git）
+  （push/pull/clone：-q 静默 igit 进度行，-v 显示全部步骤；
+   也可导出 IGIT_QUIET=1 / IGIT_VERBOSE=1）
   igit clone-url <name>                输出仓库的 igit:// URL
 	igit repos [--all] [owner]           列出所有者的活跃仓库
   igit refs <owner> <repo>             列出仓库的链上 refs

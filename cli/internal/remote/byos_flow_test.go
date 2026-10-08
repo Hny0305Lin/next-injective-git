@@ -302,3 +302,58 @@ func storeSnapshot(m *byosMemStore) map[string][]byte {
 	}
 	return snapshot
 }
+
+// TestSetByosStorageRoutesProgressThroughVerbosity verifies the helper-owned
+// verbosity sink is installed into a byos service constructed with a nil
+// reporter: the default level keeps the three push milestones, and git's
+// quiet option silences them.
+func TestSetByosStorageRoutesProgressThroughVerbosity(t *testing.T) {
+	dir := t.TempDir()
+	byosLocalGit(t, dir, "init", "--object-format=sha1", "-b", "main")
+	if err := os.WriteFile(filepath.Join(dir, "history.txt"), []byte("verbosity"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	byosLocalGit(t, dir, "add", ".")
+	byosLocalGit(t, dir, "commit", "-m", "first")
+
+	inner := successor.NewFakeChain(common.HexToAddress("0xa11ce00000000000000000000000000000000001"), big.NewInt(1439), common.HexToAddress("0x4444000000000000000000000000000000000444"))
+	repoID, err := inner.CreateRepository("demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chain := &byosFakeChain{inner: inner, view: successor.RepositoryView{RepoID: repoID, OwnerHex: "0xa11ce00000000000000000000000000000000001", Name: "demo", DefaultBranch: "main"}}
+	store := &byosMemStore{objects: map[string][]byte{}}
+	service, err := byos.NewService(chain, &gitio.Repo{GitDir: filepath.Join(dir, ".git")}, byosMemFactory{store}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runPush := func(options string) string {
+		var out, logBuf bytes.Buffer
+		h := NewHelper(RepoURL{Owner: "inj1owner", Repo: "demo"}, nil, nil, nil, nil, nil,
+			strings.NewReader("capabilities\n"+options+"list for-push\npush refs/heads/main:refs/heads/main\n\n"), &out, &logBuf)
+		h.SetByosStorage(service)
+		if err := h.Run(); err != nil {
+			t.Fatalf("push conversation: %v", err)
+		}
+		if !strings.Contains(out.String(), "ok refs/heads/main") {
+			t.Fatalf("push output: %q", out.String())
+		}
+		return logBuf.String()
+	}
+
+	// default level: pack / upload / broadcast milestones, ref name visible
+	log := runPush("")
+	if got := progressLines(log); got != 3 {
+		t.Fatalf("default byos push printed %d progress lines, want 3: %q", got, log)
+	}
+	if !strings.Contains(log, "refs/heads/main") {
+		t.Fatalf("milestone lines lost ref name: %q", log)
+	}
+
+	// quiet level: the already-published notice is a milestone and is silenced
+	log = runPush("option verbosity 0\n")
+	if got := progressLines(log); got != 0 {
+		t.Fatalf("quiet byos push printed %d progress lines: %q", got, log)
+	}
+}

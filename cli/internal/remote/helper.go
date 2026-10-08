@@ -9,6 +9,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +18,16 @@ import (
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/chain"
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/i18n"
 	"github.com/Hny0305Lin/next-injective-git/cli/internal/replication"
+)
+
+// Progress verbosity tiers mirror git's `option verbosity` values: 0 (`git
+// push -q` / `git clone -q`) keeps warnings and errors only, 1 (default)
+// prints one milestone line per phase, >=2 (`git -v`) keeps every diagnostic
+// detail line.
+const (
+	verbosityQuiet   = 0
+	verbosityDefault = 1
+	verbosityVerbose = 2
 )
 
 // Helper runs the remote-helper conversation over in/out.
@@ -29,6 +41,11 @@ type Helper struct {
 	preflight   func(needsKubo bool) error
 	byos        *byos.Service
 	tmp         string
+
+	// verbosity filters progress lines; envPinned records an IGIT_QUIET /
+	// IGIT_VERBOSE override, which must win over git's option command.
+	verbosity int
+	envPinned bool
 
 	in  *bufio.Scanner
 	out io.Writer
@@ -63,7 +80,7 @@ type gitRepo interface {
 func NewHelper(url RepoURL, cc chain.RepoRegistryBackend, ic ipfsClient, rc replication.Authorizer, uploadPeers []string, git gitRepo, in io.Reader, out, log io.Writer) *Helper {
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	return &Helper{
+	h := &Helper{
 		url:         url,
 		chain:       cc,
 		ipfs:        ic,
@@ -73,16 +90,91 @@ func NewHelper(url RepoURL, cc chain.RepoRegistryBackend, ic ipfsClient, rc repl
 		in:          sc,
 		out:         out,
 		log:         log,
+		verbosity:   verbosityDefault,
 		remoteRefs:  map[string]chain.RefInfo{},
 	}
+	if quiet, verbose := EnvVerbosityOverrides(); quiet || verbose {
+		// An explicit environment override must survive later `option
+		// verbosity` commands from git.
+		h.envPinned = true
+		if quiet {
+			h.verbosity = verbosityQuiet
+		} else {
+			h.verbosity = verbosityVerbose
+		}
+	}
+	return h
+}
+
+// EnvVerbosityOverrides reports the IGIT_QUIET=1 / IGIT_VERBOSE=1 overrides.
+// They let users force a level git itself cannot express (e.g. a quiet
+// `igit clone` that does not pass -q through to the helper).
+func EnvVerbosityOverrides() (quiet, verbose bool) {
+	return envFlag("IGIT_QUIET"), envFlag("IGIT_VERBOSE")
+}
+
+// EnvVerboseOverride reports whether IGIT_VERBOSE=1 pins the verbose level.
+func EnvVerboseOverride() bool { return envFlag("IGIT_VERBOSE") }
+
+func envFlag(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
+
+// applyOption handles the option command. verbosity carries the -q/-v level
+// git forwards to helpers; progress is accepted because git always sends it
+// but carries no extra level information. Unknown options are unsupported so
+// git can fall back to its own behavior.
+func (h *Helper) applyOption(arg string) bool {
+	name, value, ok := strings.Cut(strings.TrimSpace(arg), " ")
+	if !ok {
+		return false
+	}
+	switch name {
+	case "verbosity":
+		level, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil {
+			return false
+		}
+		if level < verbosityQuiet {
+			level = verbosityQuiet
+		}
+		if !h.envPinned {
+			h.verbosity = level
+		}
+		return true
+	case "progress":
+		_, err := strconv.ParseBool(strings.TrimSpace(value))
+		return err == nil
+	}
+	return false
 }
 
 func (h *Helper) printf(format string, args ...any) {
 	fmt.Fprintf(h.out, format, args...)
 }
 
+// progress writes one raw stderr line regardless of verbosity. Warnings and
+// errors use it; informational lines go through step or detail instead.
 func (h *Helper) progress(english, chinese string, args ...any) {
 	fmt.Fprintf(h.log, "igit: "+i18n.Text(english, chinese)+"\n", args...)
+}
+
+// step prints a milestone line at the default level and above.
+func (h *Helper) step(english, chinese string, args ...any) {
+	if h.verbosity >= verbosityDefault {
+		h.progress(english, chinese, args...)
+	}
+}
+
+// detail prints a diagnostic line only at the verbose level.
+func (h *Helper) detail(english, chinese string, args ...any) {
+	if h.verbosity >= verbosityVerbose {
+		h.progress(english, chinese, args...)
+	}
 }
 
 // Run processes commands until stdin closes.
@@ -93,8 +185,13 @@ func (h *Helper) Run() error {
 		case line == "capabilities":
 			h.printf("fetch\npush\noption\n\n")
 		case strings.HasPrefix(line, "option "):
-			// accept-and-ignore keeps git happy (verbosity, progress, ...)
-			h.printf("ok\n")
+			// Known options (verbosity, progress) shape the progress output;
+			// unknown ones are reported unsupported per gitremote-helpers(7).
+			if h.applyOption(line[len("option "):]) {
+				h.printf("ok\n")
+			} else {
+				h.printf("unsupported\n")
+			}
 		case line == "list":
 			if h.byos != nil {
 				if err := h.byosList(); err != nil {
@@ -235,7 +332,7 @@ func (h *Helper) cmdFetchBatch(first string) error {
 	}
 
 	for i, uri := range uris {
-		h.progress("downloading packfile %d/%d (%s)", "正在下载 packfile %d/%d（%s）", i+1, len(uris), uri)
+		h.step("downloading packfile %d/%d (%s)", "正在下载 packfile %d/%d（%s）", i+1, len(uris), uri)
 		body, err := h.fetchPack(uri)
 		if err != nil {
 			return err
@@ -339,7 +436,7 @@ func (h *Helper) pushOne(spec pushSpec) error {
 
 	// empty src means delete the remote ref
 	if spec.src == "" {
-		h.progress("deleting %s on chain", "正在从链上删除 %s", spec.dst)
+		h.step("deleting %s on chain", "正在从链上删除 %s", spec.dst)
 		return h.chain.DeleteRef(h.url.Owner, h.url.Repo, spec.dst)
 	}
 
@@ -365,7 +462,7 @@ func (h *Helper) pushOne(spec pushSpec) error {
 		}
 	}
 
-	h.progress("packing objects for %s", "正在为 %s 打包对象", spec.dst)
+	h.step("packing objects for %s", "正在为 %s 打包对象", spec.dst)
 	pack, err := h.git.PackObjects(localSha, exclude)
 	if err != nil {
 		return err
@@ -381,20 +478,20 @@ func (h *Helper) pushOne(spec pushSpec) error {
 		if prev, ok := h.remoteRefs[spec.dst]; ok {
 			cids = prev.PackURIs
 		} else {
-			h.progress("no new objects; building self-contained pack for %s", "没有新对象，正在为 %s 创建自包含 pack", spec.dst)
+			h.detail("no new objects; building self-contained pack for %s", "没有新对象，正在为 %s 创建自包含 pack", spec.dst)
 			if pack, err = h.git.PackObjects(localSha, nil); err != nil {
 				return err
 			}
 		}
 	}
 	if len(cids) == 0 {
-		h.progress("uploading packfile (%d bytes) to IPFS", "正在将 packfile（%d 字节）上传到 IPFS", len(pack))
+		h.step("uploading packfile (%d bytes) to IPFS", "正在将 packfile（%d 字节）上传到 IPFS", len(pack))
 		cid, err := h.ipfs.AddTemporary(spec.dst+".pack", bytes.NewReader(pack))
 		if err != nil {
 			return err
 		}
 		cids = append(cids, "ipfs://"+cid)
-		h.progress("temporary local pack added: %s", "临时本地 pack 已添加：%s", cid)
+		h.detail("temporary local pack added: %s", "临时本地 pack 已添加：%s", cid)
 		if len(h.uploadPeers) == 0 || strings.TrimSpace(h.uploadPeers[0]) == "" {
 			return i18n.Errorf("US Kubo swarm peer is not configured; set upload.us_peer to the US service multiaddr", "未配置 US Kubo swarm peer；请将 upload.us_peer 设为 US 服务的 multiaddr")
 		}
@@ -407,7 +504,7 @@ func (h *Helper) pushOne(spec pushSpec) error {
 				continue
 			}
 			if err := h.ipfs.SwarmConnect(peer); err != nil {
-				h.progress("optional upload peer connection failed: %v", "可选上传节点连接失败：%v", err)
+				h.progress("warning: optional upload peer connection failed: %v", "警告：可选上传节点连接失败：%v", err)
 			}
 		}
 		if h.replication == nil {
@@ -423,19 +520,19 @@ func (h *Helper) pushOne(spec pushSpec) error {
 			PackSHA256: fmt.Sprintf("%x", sum), Size: int64(len(pack)),
 			ExpiresAt: time.Now().Add(30 * time.Minute).Unix(),
 		}
-		h.progress("requesting CID-bound upload authorization for %s", "正在请求绑定 CID 的上传授权：%s", cid)
+		h.detail("requesting CID-bound upload authorization for %s", "正在请求绑定 CID 的上传授权：%s", cid)
 		scopedReplication, err := h.replication.Authorize(replicationRequest)
 		if err != nil {
 			return err
 		}
-		h.progress("requesting US Kubo replication and Pin confirmation for %s", "正在请求 US Kubo 复制和 Pin 确认：%s", cid)
+		h.detail("requesting US Kubo replication and Pin confirmation for %s", "正在请求 US Kubo 复制和 Pin 确认：%s", cid)
 		if _, err := scopedReplication.Confirm(replicationRequest); err != nil {
 			return err
 		}
-		h.progress("US Kubo confirmed durable Pin: %s", "US Kubo 已确认持久 Pin：%s", cid)
+		h.step("US Kubo confirmed durable Pin: %s", "US Kubo 已确认持久 Pin：%s", cid)
 	}
 
-	h.progress("broadcasting update_ref tx for %s -> %s", "正在广播 update_ref 交易：%s -> %s", spec.dst, localSha[:8])
+	h.step("broadcasting update_ref tx for %s -> %s", "正在广播 update_ref 交易：%s -> %s", spec.dst, localSha[:8])
 	if err := h.chain.UpdateRef(
 		h.url.Owner, h.url.Repo, spec.dst, localSha, cids, expectedSha, spec.force,
 	); err != nil {
@@ -444,9 +541,9 @@ func (h *Helper) pushOne(spec pushSpec) error {
 		return err
 	}
 	if err := h.ipfs.GC(); err != nil {
-		h.progress("update_ref succeeded; local temporary GC failed: %v", "update_ref 成功；本地临时 GC 失败：%v", err)
+		h.progress("warning: update_ref succeeded; local temporary GC failed: %v", "警告：update_ref 成功；本地临时 GC 失败：%v", err)
 	} else {
-		h.progress("update_ref succeeded; local unpinned temporary blocks GC completed", "update_ref 成功；本地未 Pin 的临时区块 GC 已完成")
+		h.detail("update_ref succeeded; local unpinned temporary blocks GC completed", "update_ref 成功；本地未 Pin 的临时区块 GC 已完成")
 	}
 	return nil
 }

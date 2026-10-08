@@ -133,6 +133,16 @@ func NewService(chain Chain, git GitRepo, stores StoreFactory, progress Progress
 	return service, nil
 }
 
+// SetProgress replaces the progress reporter after construction. The remote
+// helper uses it to install its verbosity-aware sink into a service that was
+// built with a nil reporter.
+func (s *Service) SetProgress(progress Progress) {
+	if progress == nil {
+		progress = func(string, string, ...any) {}
+	}
+	s.progress = progress
+}
+
 // RefListing is one advertised ref: the commit OID is read from the verified
 // manifest (the successor suite does not store it on-chain).
 type RefListing struct {

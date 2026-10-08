@@ -107,7 +107,9 @@ func run() error {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(os.Stderr, "git-remote-igit: "+i18n.Text("%s -> %s\n", "%s -> %s（已解析）\n"), repoURL.Owner, owner)
+			if quiet, _ := remote.EnvVerbosityOverrides(); !quiet {
+				fmt.Fprintf(os.Stderr, "git-remote-igit: "+i18n.Text("%s -> %s\n", "%s -> %s（已解析）\n"), repoURL.Owner, owner)
+			}
 			repoURL.Owner = owner
 		}
 		gateways, health := ipfs.SelectGateways(context.Background(), cfg.EffectiveGateways())
@@ -117,7 +119,7 @@ func run() error {
 		}
 		urls = append(urls, cfg.EffectiveReadFallbacks()...)
 		ic = ipfs.NewWithGateways(cfg.IPFSAPI, urls)
-		if len(gateways) > 0 {
+		if len(gateways) > 0 && remote.EnvVerboseOverride() {
 			for _, result := range health {
 				if result.Err == nil && result.Gateway.URL == gateways[0].URL {
 					fmt.Fprintf(os.Stderr, "git-remote-igit: "+i18n.Text("gateway %s selected (%s)\n", "已选择网关 %s（%s）\n"), result.Gateway.Name, result.Latency.Round(time.Millisecond))

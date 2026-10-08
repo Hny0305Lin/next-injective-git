@@ -12,8 +12,25 @@ import (
 
 // SetByosStorage installs the storage-neutral successor path. When set, list,
 // fetch and push speak the successor ABI and verified BYOS storage instead of
-// the legacy IPFS flow; the legacy path is untouched otherwise.
-func (h *Helper) SetByosStorage(service *byos.Service) { h.byos = service }
+// the legacy IPFS flow; the legacy path is untouched otherwise. The service's
+// progress is rerouted through the helper so both paths honor the same
+// verbosity levels.
+func (h *Helper) SetByosStorage(service *byos.Service) {
+	h.byos = service
+	if service != nil {
+		service.SetProgress(h.byosProgress)
+	}
+}
+
+// byosProgress classifies service progress: warning-prefixed messages always
+// reach the user, everything else is a milestone line.
+func (h *Helper) byosProgress(english, chinese string, args ...any) {
+	if strings.HasPrefix(english, "warning:") {
+		h.progress(english, chinese, args...)
+		return
+	}
+	h.step(english, chinese, args...)
+}
 
 func (h *Helper) byosActive() bool { return h.byos != nil }
 
@@ -46,7 +63,7 @@ func (h *Helper) byosFetch(wanted []string) error {
 			return i18n.Errorf("malformed fetch command: %q", "格式错误的 fetch 命令：%q", w)
 		}
 		sha, refName := parts[1], parts[2]
-		h.progress("fetching verified manifest and packs for %s", "正在获取 %s 的已验证 manifest 与 pack", refName)
+		h.step("fetching verified manifest and packs for %s", "正在获取 %s 的已验证 manifest 与 pack", refName)
 		if err := h.byos.FetchRef(ctx, h.url.Owner, h.url.Repo, refName, sha, h.tmpDir()); err != nil {
 			return err
 		}
