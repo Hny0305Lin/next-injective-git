@@ -1,7 +1,6 @@
 import {
   Activity,
   AlertTriangle,
-  Archive as ArchiveIcon,
   CheckCircle2,
   Database,
   GitFork,
@@ -60,7 +59,8 @@ const primaryNav = [
   { to: "/mapmonitor", label: "MapMonitor", icon: MapIcon },
   { to: "/explorer", label: "Activity", icon: Activity },
   { to: "/ipfs", label: "IPFS", icon: HardDrive },
-  { to: "/archive/cosmwasm-v1", label: "V1 Archive", icon: ArchiveIcon },
+  // V1 Archive is reachable at /archive/cosmwasm-v1 (direct URL, search, and
+  // monitor links) but no longer has a nav entry; Search covers discovery.
   { to: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
