@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { GitFork, LoaderCircle, User } from "lucide-react";
+import { ChevronDown, GitFork, User } from "lucide-react";
 import {
   repoIndexShared,
   resolveEntryTarget,
@@ -10,7 +10,13 @@ import {
 } from "../lib/repo-index";
 import { ContractTypeBadge } from "../components/ContractTypeBadge";
 import { resolveRepo } from "../lib/registry";
-import { addressUsername, listRepos, loadConfig, resolveOwner } from "../lib/chain";
+import {
+  formatCosmWasmV1Error,
+  listCosmWasmV1Repos,
+  prepareCosmWasmV1Snapshot,
+  resolveCosmWasmV1Owner,
+} from "../lib/cosmwasm-v1";
+import { addressUsername, listRepos, loadConfig, resolveOwner, timeAgo, type RepoInfo } from "../lib/chain";
 import { truncateAddress } from "../lib/utils";
 
 /** One repository row contributed by a resolved owner query. */
@@ -27,6 +33,12 @@ interface OwnerMatch {
   repos: OwnerRepoRow[];
 }
 
+type ArchiveState =
+  | { phase: "idle" }
+  | { phase: "loading" }
+  | { phase: "done"; repos: RepoInfo[]; owner: string | null }
+  | { phase: "error"; message: string };
+
 function statusName(status: number): "active" | "frozen" | "delisted" {
   return status === 1 ? "frozen" : status === 2 ? "delisted" : "active";
 }
@@ -40,7 +52,7 @@ function moderationToStatus(moderation: string): number {
  * Results come from the client-side index (chain head events, history walk,
  * absorbed owner listings, and the public explorer fallback) plus the
  * repositories of a resolved owner/username; opening a result always
- * re-resolves it on-chain.
+ * re-resolves it on-chain. V1 archive matches expand inline below.
  */
 export default function SearchPage() {
   const [params] = useSearchParams();
@@ -52,6 +64,8 @@ export default function SearchPage() {
   const [exact, setExact] = useState<{ owner: string; name: string } | null>(null);
   const [probing, setProbing] = useState(false);
   const [opening, setOpening] = useState<string | null>(null);
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [archive, setArchive] = useState<ArchiveState>({ phase: "idle" });
 
   useEffect(() => {
     const indexer = repoIndexShared(cfg);
@@ -65,6 +79,8 @@ export default function SearchPage() {
   useEffect(() => {
     setOwnerMatch(null);
     setExact(null);
+    setArchiveOpen(false);
+    setArchive({ phase: "idle" });
     if (!query) return;
     let cancelled = false;
     const slash = query.indexOf("/");
@@ -119,10 +135,43 @@ export default function SearchPage() {
     };
   }, [query, cfg]);
 
+  // The V1 archive section expands in place: results load below the EVM
+  // results without ever navigating to the archive pages.
+  useEffect(() => {
+    if (!archiveOpen || !query) return;
+    let cancelled = false;
+    setArchive({ phase: "loading" });
+    void (async () => {
+      try {
+        await prepareCosmWasmV1Snapshot();
+        const slash = query.indexOf("/");
+        const ownerPart = slash > 0 ? query.slice(0, slash) : query;
+        const namePart = slash > 0 ? query.slice(slash + 1) : "";
+        let owner: string;
+        try {
+          owner = await resolveCosmWasmV1Owner(ownerPart);
+        } catch {
+          if (!cancelled) setArchive({ phase: "done", repos: [], owner: null });
+          return;
+        }
+        const repos = await listCosmWasmV1Repos(owner);
+        if (cancelled) return;
+        const needle = namePart.trim().toLowerCase();
+        const filtered = needle
+          ? repos.filter((repo) => repo.name.toLowerCase().includes(needle))
+          : repos;
+        if (!cancelled) setArchive({ phase: "done", repos: filtered, owner });
+      } catch (cause) {
+        if (!cancelled) setArchive({ phase: "error", message: formatCosmWasmV1Error(cause, "owner") });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [archiveOpen, query]);
+
   const results = useMemo(() => {
     if (!query) return [];
-    // Keyword hits from the index, then the resolved owner's repositories,
-    // deduplicated by owner/name/suite generation.
     const hits = searchRepoEntries(repoIndexShared(cfg).entries, query, 50);
     const seen = new Set(hits.map((entry) => `${entry.owner}/${entry.name}/v${entry.suiteVersion}`));
     const ownerRows: RepoIndexEntry[] = [];
@@ -144,6 +193,10 @@ export default function SearchPage() {
     }
     return [...hits, ...ownerRows];
   }, [query, cfg, status, ownerMatch]);
+
+  // Loading is shown as a rotating border on the results area instead of a
+  // loose spinner widget.
+  const resultsLoading = probing || (status?.building ?? false) || opening !== null;
 
   const open = async (entry: RepoIndexEntry) => {
     setOpening(`${entry.suiteDirectory}:${entry.repoId ?? entry.name}`);
@@ -185,7 +238,11 @@ export default function SearchPage() {
         </Link>
       )}
 
-      <div className="search-results" role="list">
+      <div
+        className={`search-results${resultsLoading ? " loading" : ""}`}
+        role="list"
+        aria-busy={resultsLoading}
+      >
         {results.map((entry) => {
           const key = `${entry.suiteDirectory}:${entry.repoId ?? `${entry.owner}/${entry.name}/v${entry.suiteVersion}`}`;
           return (
@@ -206,11 +263,70 @@ export default function SearchPage() {
                 {truncateAddress(entry.owner, 16)}
                 {entry.repoId ? " - chain event" : " - owner listing"}
               </span>
-              {opening === key && <LoaderCircle className="h-3 w-3 animate-spin" size={12} />}
             </button>
           );
         })}
       </div>
+
+      {results.length > 0 && (
+        <div className="search-archive">
+          <button
+            type="button"
+            className="search-archive-toggle"
+            onClick={() => setArchiveOpen((open) => !open)}
+            aria-expanded={archiveOpen}
+          >
+            <span>View other V1 Archive results</span>
+            <ChevronDown
+              size={14}
+              className={`search-archive-chev${archiveOpen ? " open" : ""}`}
+              aria-hidden="true"
+            />
+          </button>
+          {archiveOpen && (
+            <div
+              className={`search-archive-body${archive.phase === "loading" ? " loading" : ""}`}
+              aria-busy={archive.phase === "loading"}
+            >
+              {archive.phase === "loading" && (
+                <div className="search-archive-note muted small">Loading V1 archive results...</div>
+              )}
+              {archive.phase === "error" && (
+                <div className="search-archive-note muted small">{archive.message}</div>
+              )}
+              {archive.phase === "done" && archive.owner === null && (
+                <div className="search-archive-note muted small">
+                  This query does not resolve to a V1 archive owner.
+                </div>
+              )}
+              {archive.phase === "done" && archive.owner !== null && archive.repos.length === 0 && (
+                <div className="search-archive-note muted small">
+                  No V1 archive repositories match this query.
+                </div>
+              )}
+              {archive.phase === "done" && archive.repos.map((repo) => (
+                <button
+                  key={`${repo.owner}/${repo.name}`}
+                  type="button"
+                  className="search-result card"
+                  onClick={() => nav(
+                    `/archive/cosmwasm-v1/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`,
+                  )}
+                >
+                  <span className="search-result-title">
+                    <b>{repo.name}</b>
+                    <ContractTypeBadge kind="cosmwasm-v1" />
+                    <span className={`badge ${repo.moderation_status}`}>{repo.moderation_status}</span>
+                  </span>
+                  <span className="search-result-meta muted small">
+                    {truncateAddress(repo.owner, 16)} - updated {timeAgo(repo.updated_at)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {query && results.length === 0 && !status?.building && !probing && (
         <div className="search-empty">

@@ -163,3 +163,4 @@
 - 回归验证：Playwright 全新会话中 /search?q=demo-showcase-byos 命中 1 条并直达仓库页；输入 Settings 停留在 /search 不再进入设置页；npm run test:api 165/165、typecheck、build 全部通过。
 - 第三轮修复（线上反馈）：纯地址/用户名查询时，owner 探测结果除卡片外，其仓库列表直接并入结果（GitHub 搜索用户名即列出其仓库），消除误报的 No repositories found；搜索页移除索引状态脚注（状态仅保留在内部状态机）；探测进行中不再闪现空态；searchRepoEntries 支持裸地址按 owner 精确匹配（顶栏下拉同样受益）；
 - 第四轮修复（线上反馈）：治理状态过期——浏览器回填源此前只拉 core 模块事件、缺少 ModerationModule 的 RepositoryStatusSet，且回填条目遮蔽了吸收层的新鲜 effectiveStatus；现回填源同时拉取状态事件并按区块位置排序折叠，mergeEntriesForSearch 让吸收层（合约直读）状态覆盖事件重放状态，两条路径（关键词/地址）均实时反映 frozen/delisted；
+- 第五轮改进：加载指示改为结果区边框的 conic-gradient 旋转动画（@property 角度动画，去掉零散转圈符号）；结果非空时在下方显示 View other V1 Archive results 折叠链接（ChevronDown 旋转指示，参考 MapMonitor 折叠卡片交互），点击后原地展开加载 V1 归档结果（resolveCosmWasmV1Owner + listCosmWasmV1Repos，关键词查询无对应 owner 时行内提示），严禁跳转归档页面；归档结果行直达 /archive/cosmwasm-v1/:owner/:repo；
