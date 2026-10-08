@@ -202,3 +202,38 @@ test("absorbed repositories are searchable but delisted ones stay hidden", () =>
   const results = searchRepoEntries([...absorbed.values()], "repo");
   assert.deepEqual(results.map((item) => item.name), ["alpha-repo"]);
 });
+test("explorer log items parse into index events", async () => {
+  const { toExplorerRpcLogForTest } = await import("../src/lib/repo-index.ts");
+  const encoded = makeLog({
+    abi: coreAbi,
+    eventName: "RepositoryCreated",
+    args: { repoId: REPO_ID, owner: OWNER_A, name: "demo-repo", forkedFrom: ZERO_BYTES32 },
+    blockNumber: 142557286,
+    logIndex: 3,
+  });
+  const item = {
+    address: "0x" + "33".repeat(20),
+    topics: encoded.topics,
+    data: encoded.data,
+    blockNumber: `0x${(142557286).toString(16)}`,
+    transactionHash: "0x" + "9f".repeat(32),
+    logIndex: "0x3",
+  };
+  const log = toExplorerRpcLogForTest(item);
+  assert.ok(log);
+  const event = decodeRepoEvent(log);
+  assert.equal(event.kind, "created");
+  assert.equal(event.repoId, REPO_ID);
+  assert.equal(event.name, "demo-repo");
+  assert.equal(event.owner, toInjectiveAddress(OWNER_A));
+  assert.equal(event.blockNumber, 142557286);
+  assert.equal(event.logIndex, 3);
+  assert.equal(toExplorerRpcLogForTest({ ...item, topics: [] }), null);
+  assert.equal(toExplorerRpcLogForTest({ ...item, blockNumber: "abc" }), null);
+});
+
+test("explorerLogsUrl builds an etherscan-style logs query", async () => {
+  const { explorerLogsUrl } = await import("../src/lib/repo-index.ts");
+  const url = explorerLogsUrl("https://testnet.blockscout.injective.network/", "0xabc", "0xtopic");
+  assert.equal(url, "https://testnet.blockscout.injective.network/api?module=logs&action=getLogs&address=0xabc&fromBlock=0&toBlock=latest&topic0=0xtopic");
+});

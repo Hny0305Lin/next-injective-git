@@ -18,7 +18,8 @@ import { decodeEventLog, encodeEventTopics, type Address, type Hex } from "viem"
 import { coreAbi, moderationAbi } from "./abis";
 import { toInjectiveAddress } from "./address";
 import { EVM_LOG_RANGE_LIMIT, logsInSpan, quantity, type RpcLog } from "./activity";
-import { parseSuiteDirectories, type AppConfig } from "./profile";
+import { networkProfile, parseSuiteDirectories, type AppConfig } from "./profile";
+import { repoInfoById, resolveRepo } from "./registry";
 import { rpcRequest, verifySuite, type SuiteBinding } from "./transport";
 
 /** Head window size (blocks) scanned first for immediately usable results. */
@@ -362,6 +363,95 @@ function trimEntries(all: RepoIndexEntry[], shardMaps: Map<string, RepoIndexEntr
   return keep;
 }
 
+export interface ExplorerSourceStatus {
+  state: "idle" | "loading" | "ok" | "unavailable";
+  events?: number;
+  error?: string;
+}
+
+function explorerQuantity(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    if (/^0x[0-9a-fA-F]+$/.test(value)) return Number(BigInt(value));
+    if (/^\d+$/.test(value)) return Number(value);
+  }
+  throw new Error(`explorer log has an invalid quantity: ${String(value)}`);
+}
+
+export function toExplorerRpcLogForTest(item: Record<string, unknown>): RpcLog | null {
+  return toExplorerRpcLog(item);
+}
+
+function toExplorerRpcLog(item: Record<string, unknown>): RpcLog | null {
+  const address = String(item.address ?? "");
+  const topics = item.topics;
+  const data = String(item.data ?? "0x");
+  const transactionHash = String(item.transactionHash ?? "");
+  if (!/^0x[0-9a-fA-F]{40}$/.test(address) || !Array.isArray(topics) || topics.length === 0) return null;
+  try {
+    return {
+      address: address as Address,
+      topics: topics as Hex[],
+      data: data as Hex,
+      blockNumber: `0x${explorerQuantity(item.blockNumber).toString(16)}`,
+      transactionHash: transactionHash as Hex,
+      logIndex: `0x${explorerQuantity(item.logIndex).toString(16)}`,
+    };
+  } catch {
+    // Malformed explorer quantities are skipped, not fatal.
+    return null;
+  }
+}
+
+/** Etherscan-style explorer URL for one topic0 on one module address. */
+export function explorerLogsUrl(explorerBase: string, address: string, topic0: Hex): string {
+  const base = explorerBase.replace(/\/+$/, "");
+  return `${base}/api?module=logs&action=getLogs&address=${address}&fromBlock=0&toBlock=latest&topic0=${topic0}`;
+}
+
+/**
+ * Best-effort pull of repository events from the configured public block
+ * explorer. The public RPC silently prunes old eth_getLogs ranges, so the
+ * explorer (which indexes full history) fills that gap for search hints.
+ * Throws on network/HTTP failures; the caller treats that as "unavailable".
+ */
+export async function fetchExplorerRepoEvents(
+  explorerBase: string,
+  coreAddress: string,
+): Promise<{ events: RepoEvent[]; logs: RpcLog[] }> {
+  const topics = repoEventTopics()[0];
+  const createdTopic = topics[0];
+  const transferTopic = topics[1];
+  const urls = [
+    explorerLogsUrl(explorerBase, coreAddress, createdTopic),
+    explorerLogsUrl(explorerBase, coreAddress, transferTopic),
+  ];
+  const logs: RpcLog[] = [];
+  for (const url of urls) {
+    // Bound the external call; a hung explorer must not stall the search page.
+    const response = await fetch(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(12_000) });
+    if (!response.ok) throw new Error(`explorer logs HTTP ${response.status}`);
+    const body = (await response.json()) as { status?: unknown; message?: unknown; result?: unknown };
+    const status = String(body.status ?? "");
+    if (status !== "1") {
+      const message = String(body.message ?? "");
+      if (/no (records|logs)/i.test(message)) continue;
+      throw new Error(`explorer logs rejected: ${message || status}`);
+    }
+    if (!Array.isArray(body.result)) continue;
+    for (const item of body.result) {
+      const log = toExplorerRpcLog(item as Record<string, unknown>);
+      if (log) logs.push(log);
+    }
+  }
+  const events: RepoEvent[] = [];
+  for (const log of logs) {
+    const event = decodeRepoEvent(log);
+    if (event) events.push(event);
+  }
+  return { events, logs };
+}
+
 function browserStorage(): Storage | null {
   try {
     return typeof localStorage === "undefined" ? null : localStorage;
@@ -382,6 +472,7 @@ export class RepoIndexer {
   private chunkFailures = 0;
   private emptyRounds = 0;
   private historyPaused = false;
+  private explorerPromise: Promise<ExplorerSourceStatus> | null = null;
 
   constructor(private readonly cfg: AppConfig) {
     this.key = `${cfg.evmChainId}|${parseSuiteDirectories(cfg.suiteDirectory).join(",")}`;
@@ -465,6 +556,52 @@ export class RepoIndexer {
 
   private statusLike(): { building: boolean; phase: RepoIndexStatus["phase"]; error?: string } {
     return { building: this.status.building, phase: this.status.phase, error: this.status.error };
+  }
+
+  /**
+   * Pull full-history repository events from the configured public block
+   * explorer (read-only, navigation hints only). Idempotent per indexer.
+   */
+  ensureExplorerIndexed(): Promise<ExplorerSourceStatus> {
+    if (this.explorerPromise) return this.explorerPromise;
+    this.explorerPromise = (async (): Promise<ExplorerSourceStatus> => {
+      const explorer = networkProfile(this.cfg).evmExplorer;
+      if (!explorer) return { state: "unavailable", error: "no explorer configured" };
+      let applied = 0;
+      for (const directory of parseSuiteDirectories(this.cfg.suiteDirectory)) {
+        try {
+          const binding = await verifySuite({ ...this.cfg, suiteDirectory: directory });
+          // The explorer pull may run before the head scan creates the shard;
+          // create it on demand so events are never silently dropped.
+          let shard = this.shards.get(directory);
+          if (!shard) {
+            shard = {
+              directory,
+              suiteDirectory: directory,
+              suiteVersion: Number(binding.version),
+              cursor: 0,
+              walkNext: -1,
+              walkFloor: 0,
+              entries: new Map(),
+            };
+            this.shards.set(directory, shard);
+          }
+          const { events } = await fetchExplorerRepoEvents(explorer, binding.modules.core);
+          for (const event of events) {
+            const before = shard.entries.size;
+            applyRepoEvent(shard, event);
+            if (shard.entries.size > before) applied += 1;
+          }
+        } catch (error) {
+          console.warn(`repo index: explorer source failed for ${directory}`, error);
+          return { state: "unavailable", error: error instanceof Error ? error.message : String(error) };
+        }
+      }
+      this.persist();
+      this.setStatus({ building: this.historyRemaining() > 0, phase: this.status.phase === "error" ? "error" : this.historyRemaining() > 0 ? "history" : "idle", entries: this.countEntries() });
+      return { state: "ok", events: applied };
+    })();
+    return this.explorerPromise;
   }
 
   subscribe(listener: (status: RepoIndexStatus) => void): () => void {
@@ -625,6 +762,31 @@ export class RepoIndexer {
     this.setStatus({ building: remaining > 0, phase: remaining > 0 ? "history" : "idle", entries: this.countEntries() });
     if (remaining > 0) this.scheduleNextTick();
   }
+}
+
+/**
+ * Resolve an index entry to its authoritative on-chain owner/name. The index
+ * is navigation-only; this performs the real contract read (or falls back to
+ * the indexed values when resolution fails).
+ */
+export async function resolveEntryTarget(
+  cfg: AppConfig,
+  entry: RepoIndexEntry,
+): Promise<{ owner: string; name: string }> {
+  try {
+    if (entry.repoId) {
+      const info = await repoInfoById({ ...cfg, suiteDirectory: entry.suiteDirectory }, entry.repoId);
+      if (info.owner && info.name) return { owner: info.owner, name: info.name };
+    } else {
+      const resolved = await resolveRepo(cfg, entry.owner, entry.name);
+      if (resolved.info.owner && resolved.info.name) {
+        return { owner: resolved.info.owner, name: resolved.info.name };
+      }
+    }
+  } catch {
+    // Fall back to the indexed owner/name when resolution fails.
+  }
+  return { owner: entry.owner, name: entry.name };
 }
 
 const sharedIndexers = new Map<string, RepoIndexer>();

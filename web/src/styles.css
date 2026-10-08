@@ -5236,3 +5236,108 @@ html.dark .action-badge.a-award_badge {
 .search-history-item.on:hover {
   background: var(--bg-hover);
 }
+/* Dedicated search page (/search) */
+.search-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.search-page-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.search-page-head h1 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+.search-exact-card,
+.search-owner-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  text-align: left;
+  cursor: pointer;
+  color: var(--fg);
+  text-decoration: none;
+}
+.search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.search-result {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 14px;
+  text-align: left;
+  cursor: pointer;
+  color: var(--fg);
+}
+.search-result:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.search-result-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+.search-result-meta {
+  font-size: 0.75rem;
+}
+.badge-plain {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 0.65rem;
+  padding: 1px 7px;
+  color: var(--fg-muted);
+}
+.badge-frozen {
+  border-color: #d97706;
+  color: #b45309;
+}
+.search-empty p {
+  margin: 4px 0;
+}
+.search-meta {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.search-repo-action .search-action-label {
+  color: var(--fg-muted);
+}
+/* Mobile: keep horizontal swipe scrolling on tab strips, code blocks, diffs,
+   tables, and command lines, but hide the visible scrollbar. */
+@media (max-width: 768px) {
+  .tabs,
+  .markdown-body pre,
+  .diff-body,
+  .tx-msg pre,
+  .settings-wallets-scroll,
+  .code-body,
+  .table-scroll,
+  .command-line,
+  .monitor-tabs-list,
+  .error-details pre {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .tabs::-webkit-scrollbar,
+  .markdown-body pre::-webkit-scrollbar,
+  .diff-body::-webkit-scrollbar,
+  .tx-msg pre::-webkit-scrollbar,
+  .settings-wallets-scroll::-webkit-scrollbar,
+  .code-body::-webkit-scrollbar,
+  .table-scroll::-webkit-scrollbar,
+  .command-line::-webkit-scrollbar,
+  .monitor-tabs-list::-webkit-scrollbar,
+  .error-details pre::-webkit-scrollbar {
+    display: none;
+  }
+}

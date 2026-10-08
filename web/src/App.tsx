@@ -25,10 +25,10 @@ import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert";
 import { Button } from "./components/ui/button";
 import { WalletModal } from "./components/WalletModal";
 import { useWallet } from "./lib/WalletContext";
-import { buildSearchPath } from "./lib/search";
+import { buildSearchPath, parseSearchQuery } from "./lib/search";
 
-import { repoIndexShared, searchRepoEntries, type RepoIndexEntry, type RepoIndexStatus } from "./lib/repo-index";
-import { repoInfoById, resolveRepo } from "./lib/registry";
+import { repoIndexShared, resolveEntryTarget, searchRepoEntries, type RepoIndexEntry, type RepoIndexStatus } from "./lib/repo-index";
+
 import { truncateAddress } from "./lib/utils";
 import {
   CONFIG_CHANGED_EVENT,
@@ -39,6 +39,7 @@ import {
   onVerificationEvent,
 } from "./lib/chain";
 import Home from "./pages/Home";
+import SearchPage from "./pages/Search";
 import Settings from "./pages/Settings";
 import { isCosmWasmV1ArchivePath } from "./pages/Repo/useRepoViews";
 import "./lib/architecture-icons";
@@ -232,18 +233,8 @@ export default function App() {
   }, [q, cfg, indexStatus]);
 
   const openRepo = async (entry: RepoIndexEntry) => {
-    let owner = entry.owner;
-    let name = entry.name;
-    try {
-      // The index is navigation-only; the contract read is authoritative.
-      const info = entry.repoId
-        ? await repoInfoById({ ...cfg, suiteDirectory: entry.suiteDirectory }, entry.repoId)
-        : (await resolveRepo(cfg, entry.owner, entry.name)).info;
-      if (info.owner) owner = info.owner;
-      if (info.name) name = info.name;
-    } catch {
-      // Fall back to the indexed owner/name when resolution fails.
-    }
+    // The index is navigation-only; the contract read is authoritative.
+    const { owner, name } = await resolveEntryTarget(cfg, entry);
     addToHistory(`${owner}/${name}`);
     nav(`/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`);
     setQ("");
@@ -255,10 +246,15 @@ export default function App() {
   const submitSearch = (rawQuery = q) => {
     const query = rawQuery.trim();
     if (!query) return;
-    const path = buildSearchPath(query);
-    if (!path) return;
     addToHistory(query);
-    nav(path);
+    // Archive schemes keep their direct paths; everything else goes to the
+    // dedicated search route so keywords never collide with app routes.
+    const parsed = parseSearchQuery(query);
+    const target = parsed.archive && parsed.parts.length > 0
+      ? buildSearchPath(query)
+      : `/search?q=${encodeURIComponent(query)}`;
+    if (!target) return;
+    nav(target);
     setQ("");
     setShowHistory(false);
   };
@@ -340,8 +336,18 @@ export default function App() {
               spellCheck={false}
             />
           </form>
-          {showHistory && (history.length > 0 || repoResults.length > 0 || indexBuilding) && (
+          {showHistory && (q.trim().length > 0 || history.length > 0 || repoResults.length > 0 || indexBuilding) && (
             <div className="search-history" role="listbox">
+              {q.trim().length > 0 && (
+                <button
+                  type="button"
+                  className="search-history-item search-repo-action"
+                  onClick={() => submitSearch()}
+                  role="option"
+                >
+                  <span className="search-action-label">Search for</span> <span className="mono">{q.trim()}</span>
+                </button>
+              )}
               {repoResults.length === 0 && indexBuilding && (
                 <div className="search-history-item search-repo-pending">Building repository index from chain...</div>
               )}
@@ -462,11 +468,11 @@ export default function App() {
             <div className="side-nav-label">Architecture</div>
             <div className="side-nav-meta">
               <span className="side-nav-meta-icon"><IconifyIcon icon="mdi:ethereum" width={14} height={14} aria-hidden="true" /></span>
-              <span><b>EVM V2/V3</b><small>Current repositories · packs on IPFS</small></span>
+              <span><b>EVM V2/V3</b><small>Current repositories 路 packs on IPFS</small></span>
             </div>
             <div className="side-nav-meta">
               <span className="side-nav-meta-icon"><Database size={14} aria-hidden="true" /></span>
-              <span><b>EVM V4</b><small>Successor suite · BYOS storage buckets</small></span>
+              <span><b>EVM V4</b><small>Successor suite 路 BYOS storage buckets</small></span>
             </div>
             <div className="side-nav-meta">
               <span className="side-nav-meta-icon"><IconifyIcon icon="token:cosmos" width={14} height={14} aria-hidden="true" /></span>
@@ -521,6 +527,7 @@ export default function App() {
             <ErrorBoundary>
               <Routes>
                 <Route path="/" element={<Home />} />
+                <Route path="/search" element={<SearchPage />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/monitor" element={<Suspense fallback={<RouteSpinner />}><LazyMonitor /></Suspense>} />
                 <Route path="/mapmonitor" element={<Suspense fallback={<RouteSpinner />}><LazyMapMonitor /></Suspense>} />
