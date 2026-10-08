@@ -31,6 +31,16 @@ import { rpcRequest, verifySuite } from "./transport";
 
 export type StorageProvider = PackLocation["provider"];
 
+// Per-owner slice of the storage observation: the bounded name samples and
+// counters the MapMonitor popup renders. Owner keys are lowercase inj1
+// bech32 addresses so lookups from the connected wallet always match.
+export interface OwnerRepoSamples {
+  reposByProvider: Record<string, number>;
+  reposByHost: Record<string, number>;
+  repoNamesByProvider: Record<string, string[]>;
+  repoNamesByHost: Record<string, string[]>;
+}
+
 export interface StorageStats {
   observedOwners: number;
   repos: number;
@@ -41,12 +51,15 @@ export interface StorageStats {
   packsByHost: Record<string, number>;
   reposByHost: Record<string, number>;
   /**
-   * Bounded repo-name samples backing the MapMonitor popup lists. At most
-   * MAX_REPO_NAMES_PER_KEY names per key; the aggregate counts above tell the
-   * UI how many further repositories exist ("+ N others").
+   * Owner-scoped repository samples backing the MapMonitor popup lists:
+   * per-owner repo counters plus at most MAX_REPO_NAMES_PER_KEY bounded
+   * names per provider/host key. Names are keyed BY OWNER so the popup can
+   * only ever render repositories owned by the wallet that is currently
+   * connected; switching wallets (even with stale localStorage) must never
+   * surface the previous wallet's repository names. The aggregate counters
+   * above stay anonymous and never feed the wallet-gated name lists.
    */
-  repoNamesByProvider: Record<StorageProvider, string[]>;
-  repoNamesByHost: Record<string, string[]>;
+  ownerSamples: Record<string, OwnerRepoSamples>;
   /** Read-only CosmWasm V1 archive observations (separate trust root). */
   v1: { owners: number; repos: number; packs: number };
   sampledAt: number;
@@ -65,16 +78,25 @@ const MAX_REPO_NAMES_PER_KEY = 10;
 
 // Board results are cached for one week (keyed by the configured suite
 // directories); the card's refresh button re-queries on demand.
-const STATS_CACHE_PREFIX = "igit-mapmonitor-stats:";
+// v2: cached stats carry owner-scoped repo-name samples. The pre-v2 format
+// merged repository names across every observed owner, so a legacy cache
+// saved while another wallet was connected could leak those names after a
+// wallet switch. Legacy entries are therefore deleted on sight, never read.
+const STATS_CACHE_PREFIX = "igit-mapmonitor-stats:v2:";
+const STATS_CACHE_LEGACY_PREFIX = "igit-mapmonitor-stats:";
 const STATS_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 export function loadCachedStorageStats(cfg: AppConfig): StorageStats | null {
   try {
+    localStorage.removeItem(STATS_CACHE_LEGACY_PREFIX + cfg.suiteDirectory);
     const raw = localStorage.getItem(STATS_CACHE_PREFIX + cfg.suiteDirectory);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as { sampledAt?: number; stats?: StorageStats };
     if (typeof parsed.sampledAt !== "number") return null;
     if (Date.now() - parsed.sampledAt > STATS_CACHE_TTL_MS) return null;
+    // Shape guard: a payload without owner-scoped samples cannot serve the
+    // wallet-gated popup safely and must not be used.
+    if (parsed.stats?.ownerSamples == null || typeof parsed.stats.ownerSamples !== "object") return null;
     return parsed.stats ?? null;
   } catch {
     return null;
@@ -113,8 +135,7 @@ function emptyStats(): StorageStats {
     reposByProvider: { ipfs: 0, "aws-s3": 0, "cloudflare-r2": 0 },
     packsByHost: {},
     reposByHost: {},
-    repoNamesByProvider: { ipfs: [], "aws-s3": [], "cloudflare-r2": [] },
-    repoNamesByHost: {},
+    ownerSamples: {},
     v1: { owners: 0, repos: 0, packs: 0 },
     sampledAt: Date.now(),
     truncated: false,
@@ -176,6 +197,27 @@ function countRepo(stats: StorageStats, providers: Set<StorageProvider>, hosts: 
   for (const host of hosts) stats.reposByHost[host] = (stats.reposByHost[host] ?? 0) + 1;
 }
 
+// Owner-scoped repo counters for the popup lists (same keying as the
+// aggregate counts, but attributed to exactly one owner).
+function ownerBucket(stats: StorageStats, owner: string): OwnerRepoSamples {
+  const key = owner.toLowerCase();
+  let bucket = stats.ownerSamples[key];
+  if (bucket == null) {
+    bucket = { reposByProvider: {}, reposByHost: {}, repoNamesByProvider: {}, repoNamesByHost: {} };
+    stats.ownerSamples[key] = bucket;
+  }
+  return bucket;
+}
+
+function countOwnerRepo(bucket: OwnerRepoSamples, providers: Set<StorageProvider>, hosts: Set<string>): void {
+  for (const provider of providers) {
+    bucket.reposByProvider[provider] = (bucket.reposByProvider[provider] ?? 0) + 1;
+  }
+  for (const host of hosts) {
+    bucket.reposByHost[host] = (bucket.reposByHost[host] ?? 0) + 1;
+  }
+}
+
 // Keeps a bounded, de-duplicated name sample per key for the popup lists.
 function rememberRepoNames(target: Record<string, string[]>, key: string, name: string): void {
   const list = target[key];
@@ -185,6 +227,34 @@ function rememberRepoNames(target: Record<string, string[]>, key: string, name: 
   }
   if (list.length >= MAX_REPO_NAMES_PER_KEY || list.includes(name)) return;
   list.push(name);
+}
+
+// Wallet-scoped popup sample: the ONLY supported way to read repository
+// names for the MapMonitor popups. Names and the "+ N others" total come
+// exclusively from the given owner's bucket, so a wallet switch can never
+// render the previous wallet's repositories -- not from fresh walks, and
+// not from the week cache saved while another wallet was connected.
+export function ownerRepoSample(
+  stats: StorageStats | null,
+  owner: string | null,
+  keys: { provider?: StorageProvider; host?: string },
+): { names: readonly string[]; total: number | null } {
+  if (stats == null || owner == null || owner === "") return { names: [], total: null };
+  const bucket = stats.ownerSamples?.[owner.toLowerCase()];
+  if (bucket == null) return { names: [], total: null };
+  if (keys.provider != null) {
+    return {
+      names: bucket.repoNamesByProvider?.[keys.provider] ?? [],
+      total: bucket.reposByProvider?.[keys.provider] ?? 0,
+    };
+  }
+  if (keys.host != null) {
+    return {
+      names: bucket.repoNamesByHost?.[keys.host] ?? [],
+      total: bucket.reposByHost?.[keys.host] ?? 0,
+    };
+  }
+  return { names: [], total: null };
 }
 
 // Owners via the public block explorer's transaction index: every sender
@@ -220,8 +290,11 @@ async function sampleV3Ref(cfg: AppConfig, repo: RepoInfo, stats: StorageStats):
   for (let index = 0; index < packs; index++) {
     countPack(stats, new Set<StorageProvider>(["ipfs"]), new Set<string>());
   }
-  countRepo(stats, new Set<StorageProvider>(["ipfs"]), new Set<string>());
-  rememberRepoNames(stats.repoNamesByProvider, "ipfs", repo.name);
+  const providers = new Set<StorageProvider>(["ipfs"]);
+  countRepo(stats, providers, new Set<string>());
+  const bucket = ownerBucket(stats, repo.owner);
+  countOwnerRepo(bucket, providers, new Set<string>());
+  rememberRepoNames(bucket.repoNamesByProvider, "ipfs", repo.name);
 }
 
 async function sampleV4Ref(cfg: AppConfig, repo: RepoInfo, stats: StorageStats): Promise<void> {
@@ -242,8 +315,10 @@ async function sampleV4Ref(cfg: AppConfig, repo: RepoInfo, stats: StorageStats):
     countPack(stats, packProviders, packHosts);
   }
   countRepo(stats, providers, hosts);
-  for (const provider of providers) rememberRepoNames(stats.repoNamesByProvider, provider, repo.name);
-  for (const host of hosts) rememberRepoNames(stats.repoNamesByHost, host, repo.name);
+  const bucket = ownerBucket(stats, repo.owner);
+  countOwnerRepo(bucket, providers, hosts);
+  for (const provider of providers) rememberRepoNames(bucket.repoNamesByProvider, provider, repo.name);
+  for (const host of hosts) rememberRepoNames(bucket.repoNamesByHost, host, repo.name);
 }
 
 // V1 archive sampling reuses the EVM activity owners: username migration kept

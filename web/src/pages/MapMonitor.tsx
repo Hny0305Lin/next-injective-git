@@ -24,6 +24,7 @@ import {
   collectStorageStats,
   latestEvmBlock,
   loadCachedStorageStats,
+  ownerRepoSample,
   saveCachedStorageStats,
   type StorageStats,
 } from "../lib/storage-stats";
@@ -155,10 +156,11 @@ const LABEL_ZOOM = 6;
 // median latency stayed under this ceiling.
 const GATEWAY_ONLINE_LATENCY_MS = 5_000;
 
-// The chain currently has a single suite owner; its Owner page is where the
-// wallet-gated popup link points. With more observed owners the popup shows
-// the observed owner count instead of a direct link.
-const OBSERVED_OWNER_PATH = "/inj1sh4v00qgzjy25a73mqheew8q200punaglrzec5";
+// The wallet-gated popup lists ONLY repositories owned by the currently
+// connected wallet, and links to that wallet's Owner page. Names resolve
+// exclusively from the owner's sample bucket, so switching wallets -- with
+// or without cleared storage -- can never render the previous wallet's
+// repository names.
 
 // The popup lists at most this many repository rows before the "others" line.
 const POPUP_REPO_ROW_LIMIT = 10;
@@ -537,33 +539,23 @@ function sampleAgeLabel(sampledAt: number): string {
 // Repo-name samples behind the popup list for each tour endpoint (same keying
 // as liveBoardRow): the HK stop reports the v3 IPFS layer, bucket rows key off
 // their manifest location hosts, and R2 reports every cloudflare-r2 location.
-// Names come from the bounded board walk; totals come from its aggregate
-// counts, so the popup can render "+ N others" without extra requests. The
-// optional chains keep week-old cached stats (saved before the name fields
-// existed) rendering as an empty list instead of crashing.
+// PRIVACY: names resolve through ownerRepoSample for the CONNECTED wallet
+// only -- the previous wallet's cached names are structurally unreachable,
+// and a wallet with no repositories here renders an empty sample.
 function livePointRepos(
   id: string,
   data: StorageStats | null,
+  owner: string | null,
 ): { names: readonly string[]; total: number | null } {
-  if (data == null) return { names: [], total: null };
   switch (id) {
     case "hk-gateway":
-      return { names: data.repoNamesByProvider?.ipfs ?? [], total: data.reposByProvider.ipfs };
+      return ownerRepoSample(data, owner, { provider: "ipfs" });
     case "filebase":
-      return {
-        names: data.repoNamesByHost?.["s3.filebase.com"] ?? [],
-        total: data.reposByHost["s3.filebase.com"] ?? 0,
-      };
+      return ownerRepoSample(data, owner, { host: "s3.filebase.com" });
     case "filone":
-      return {
-        names: data.repoNamesByHost?.["us-east-1.s3.fil.one"] ?? [],
-        total: data.reposByHost["us-east-1.s3.fil.one"] ?? 0,
-      };
+      return ownerRepoSample(data, owner, { host: "us-east-1.s3.fil.one" });
     case "r2":
-      return {
-        names: data.repoNamesByProvider?.["cloudflare-r2"] ?? [],
-        total: data.reposByProvider["cloudflare-r2"],
-      };
+      return ownerRepoSample(data, owner, { provider: "cloudflare-r2" });
     default:
       return { names: [], total: null };
   }
@@ -862,6 +854,10 @@ function createLeafletEngine(element: HTMLElement, cb: EngineCallbacks): MapEngi
 export default function MapMonitor() {
   const wallet = useWallet();
   const walletConnected = wallet.connected != null;
+  // inj1 identity of the CURRENT session. Repository-name popups resolve
+  // strictly against this address (null while disconnected), so a wallet
+  // switch immediately re-scopes every popup to the new wallet.
+  const walletAddress = wallet.connected?.address ?? null;
 
   // `?stop=<id>` deep-links the tour to a specific endpoint for demos.
   const [activeIndex, setActiveIndex] = useState(() => {
@@ -1222,38 +1218,39 @@ export default function MapMonitor() {
     [pointStatuses],
   );
 
-  // Popup body: base tour info, then (wallet-gated) a short sample of the
-  // owner's repositories observed at this endpoint, then the owner link.
-  // With more than one observed owner the popup reports the count instead of
-  // guessing which owner's repositories to list.
-  const ownerCount = boardData?.observedOwners ?? null;
+  // Popup body: base tour info, then (wallet-gated) a sample of the
+  // CONNECTED wallet's own repositories observed at this endpoint, then the
+  // link to that wallet's Owner page. Names come solely from the owner's
+  // sample bucket, so no other wallet's repositories -- cached or live --
+  // can ever be listed here.
   const pointRepos = useMemo(() => {
     const rows = new Map<string, { names: readonly string[]; total: number | null }>();
-    for (const point of INFRA_POINTS) rows.set(point.id, livePointRepos(point.id, boardData));
+    for (const point of INFRA_POINTS) rows.set(point.id, livePointRepos(point.id, boardData, walletAddress));
     return rows;
-  }, [boardData]);
+  }, [boardData, walletAddress]);
   const buildPopup = useCallback(
     (point: InfraPoint): string => {
       const base = point.edges != null && point.edges.length > 0
         ? `<strong>${point.name}</strong><br/>${KIND_META[point.kind].label} · ${point.edges.length} APAC edges<br/>${point.edges.map((edge) => `· ${edge.name}`).join("<br/>")}`
         : `<strong>${point.name}</strong><br/>${KIND_META[point.kind].label} · ${point.endpoint}`;
-      if (!walletConnected) return base;
-      if (ownerCount != null && ownerCount > 1) {
-        return `${base}<br/><span class="mapmonitor-popup-meta">${ownerCount} owners observed</span>`;
-      }
+      if (!walletConnected || walletAddress == null) return base;
+      const ownerPath = `/${encodeURIComponent(walletAddress)}`;
       const repos = pointRepos.get(point.id) ?? { names: [], total: null };
       const shown = repos.names.slice(0, POPUP_REPO_ROW_LIMIT);
+      if ((repos.total ?? 0) === 0 && shown.length === 0) {
+        return `${base}<br/><span class="mapmonitor-popup-meta">No repositories of yours observed here</span>`;
+      }
       const rows = shown
-        .map((name) => `<a class="mapmonitor-popup-repo" href="${OBSERVED_OWNER_PATH}/${encodeURIComponent(name)}" target="_blank" rel="noreferrer" title="${escapeHtml(name)}">${escapeHtml(name)}</a>`)
+        .map((name) => `<a class="mapmonitor-popup-repo" href="${ownerPath}/${encodeURIComponent(name)}" target="_blank" rel="noreferrer" title="${escapeHtml(name)}">${escapeHtml(name)}</a>`)
         .join("");
       const others = Math.max(0, (repos.total ?? shown.length) - shown.length);
       const othersRow = others > 0 ? `<span class="mapmonitor-popup-others">+ ${others} others…</span>` : "";
       const list = rows !== "" || othersRow !== ""
         ? `<div class="mapmonitor-popup-repos">${rows}${othersRow}</div>`
         : "";
-      return `${base}<br/>${list}<a class="mapmonitor-popup-link" href="${OBSERVED_OWNER_PATH}" target="_blank" rel="noreferrer">View owner repos →</a>`;
+      return `${base}<br/>${list}<a class="mapmonitor-popup-link" href="${ownerPath}" target="_blank" rel="noreferrer">View owner repos →</a>`;
     },
-    [walletConnected, ownerCount, pointRepos],
+    [walletConnected, walletAddress, pointRepos],
   );
 
   // The engines are built once; fresh callbacks reach them through refs, and
