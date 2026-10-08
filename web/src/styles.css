@@ -4873,35 +4873,6 @@ html.dark .action-badge.a-award_badge {
   gap: 8px;
 }
 
-.mapmonitor-stats-refresh {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  min-height: 0;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg);
-  color: var(--fg-muted);
-  cursor: pointer;
-}
-
-.mapmonitor-stats-refresh:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--fg);
-}
-
-.mapmonitor-stats-refresh:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.mapmonitor-stats-refresh svg.spin {
-  animation: spin 0.9s linear infinite;
-}
-
 .mapmonitor-stats-total {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -5156,9 +5127,19 @@ html.dark .action-badge.a-award_badge {
   transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.mapmonitor-focus-card.open .mapmonitor-card-chev,
-.mapmonitor-stats-card.open .mapmonitor-card-chev {
+/* Chevrons show where the panel moves on tap: the top-anchored focus card
+ * expands downward (collapsed = down), while the bottom-anchored stats card
+ * expands upward (collapsed = up, open = down). */
+.mapmonitor-stats-card.compact .mapmonitor-card-chev {
   transform: rotate(180deg);
+}
+
+.mapmonitor-focus-card.compact.open .mapmonitor-card-chev {
+  transform: rotate(180deg);
+}
+
+.mapmonitor-stats-card.compact.open .mapmonitor-card-chev {
+  transform: rotate(360deg);
 }
 
 /* Compact stats header shows the chip instead of the kicker text; the

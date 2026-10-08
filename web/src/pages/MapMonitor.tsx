@@ -11,7 +11,6 @@ import {
   Database,
   Map as MapIcon,
   MapPin,
-  RefreshCw,
   Server,
 } from "lucide-react";
 import { Badge } from "../components/ui/badge";
@@ -138,6 +137,11 @@ const TOUR_CLICK_PAUSE_MS = 10_000;
 // compact chip mode. Must stay in sync with the `.compact` CSS in
 // MapMonitorCards.css.
 const COMPACT_OVERLAY_QUERY = "(max-width: 900px), (max-height: 560px)";
+
+// Cooldown for the compact stats card's silent refresh: expanding the card
+// re-queries in the background (the manual refresh button is gone), but never
+// more often than this while the user keeps toggling it open.
+const SILENT_REFRESH_COOLDOWN_MS = 5 * 60_000;
 
 // The marquee re-runs the Monitor page's read-only probes on the Monitor
 // page's own refresh cadence.
@@ -947,6 +951,19 @@ export default function MapMonitor() {
     return () => window.removeEventListener(CONFIG_CHANGED_EVENT, refresh);
   }, []);
 
+  // Silent refresh for the compact stats card: expanding it re-queries chain,
+  // manifests, and archive in the background (no button, no blocking); the
+  // week cache still renders instantly, and the cooldown stops rapid toggles
+  // from hammering the walk.
+  const lastSilentRefreshRef = useRef(0);
+  useEffect(() => {
+    if (!compact || openCard !== "stats") return;
+    if (board.state === "loading") return;
+    if (Date.now() - lastSilentRefreshRef.current < SILENT_REFRESH_COOLDOWN_MS) return;
+    lastSilentRefreshRef.current = Date.now();
+    collect(true);
+  }, [compact, openCard, board.state, collect]);
+
   const boardData = board.state === "ready" ? board.data : null;
   const totalPacks = boardData != null ? boardData.totalPacks + boardData.v1.packs : null;
   const totalRepos = boardData != null ? boardData.repos + boardData.v1.repos : null;
@@ -1380,16 +1397,6 @@ export default function MapMonitor() {
               <Database size={13} aria-hidden="true" />
               <span className="mapmonitor-card-chip-label">Storage overview</span>
               <ChevronDown size={14} className="mapmonitor-card-chev" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              className="mapmonitor-stats-refresh"
-              onClick={() => collect(true)}
-              disabled={board.state === "loading"}
-              title="Re-query chain, manifests, and archive (bypasses the weekly cache)"
-              aria-label="Refresh storage stats"
-            >
-              <RefreshCw size={11} className={board.state === "loading" ? "spin" : undefined} />
             </button>
           </div>
           <div className="mapmonitor-card-body">
