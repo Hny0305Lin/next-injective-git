@@ -1,5 +1,4 @@
 import {
-  Activity,
   AlertTriangle,
   CheckCircle2,
   Database,
@@ -46,7 +45,6 @@ import "./lib/architecture-icons";
 
 const LazyOwner = lazy(() => import("./pages/Owner"));
 const LazyRepo = lazy(() => import("./pages/Repo/index"));
-const LazyExplorer = lazy(() => import("./pages/Explorer"));
 const LazyMonitor = lazy(() => import("./pages/Monitor"));
 const LazyMapMonitor = lazy(() => import("./pages/MapMonitor"));
 const LazyIpfsExplorer = lazy(() => import("./pages/IpfsExplorer"));
@@ -57,7 +55,6 @@ const primaryNav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/monitor", label: "Monitor", icon: Gauge },
   { to: "/mapmonitor", label: "MapMonitor", icon: MapIcon },
-  { to: "/explorer", label: "Activity", icon: Activity },
   { to: "/ipfs", label: "IPFS", icon: HardDrive },
   // V1 Archive is reachable at /archive/cosmwasm-v1 (direct URL, search, and
   // monitor links) but no longer has a nav entry; Search covers discovery.

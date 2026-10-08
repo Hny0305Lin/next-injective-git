@@ -2957,7 +2957,7 @@ html.dark .action-badge.a-award_badge {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
 }
 
-/* The full top nav (IPFS, Settings included) fits wide viewports;
+/* The full top nav (Settings included) fits wide viewports;
    narrower ones keep the four primary links and rely on the side/mobile nav. */
 @media (max-width: 1120px) {
   .topnav-link-more {
