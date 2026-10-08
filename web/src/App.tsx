@@ -481,7 +481,7 @@ export default function App() {
               <span><b>EVM V4</b><small>Successor suite · BYOS storage buckets</small></span>
             </div>
             <div className="side-nav-meta">
-              <span className="side-nav-meta-icon"><IconifyIcon icon="token:cosmos" width={14} height={14} aria-hidden="true" /></span>
+              <span className="side-nav-meta-icon"><IconifyIcon icon="brand:cosmwasm" width={14} height={14} aria-hidden="true" /></span>
               <span><b>CosmWasm V1</b><small>Read-only repository archive</small></span>
             </div>
             <div className="side-nav-meta">
