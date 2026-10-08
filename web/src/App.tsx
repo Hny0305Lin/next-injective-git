@@ -27,6 +27,7 @@ import { WalletModal } from "./components/WalletModal";
 import { useWallet } from "./lib/WalletContext";
 import { buildSearchPath, parseSearchQuery } from "./lib/search";
 
+import { ContractTypeBadge } from "./components/ContractTypeBadge";
 import { repoIndexShared, resolveEntryTarget, searchRepoEntries, type RepoIndexEntry, type RepoIndexStatus } from "./lib/repo-index";
 
 import { truncateAddress } from "./lib/utils";
@@ -367,10 +368,15 @@ export default function App() {
                       onMouseEnter={() => setHighlight(index)}
                       onClick={() => void openRepo(entry)}
                     >
-                      <span className="search-repo-name">{entry.name}</span>
+                      <span className="search-repo-name">
+                        {entry.name}
+                        <ContractTypeBadge kind="evm-v2" suiteVersion={BigInt(entry.suiteVersion)} />
+                      </span>
                       <span className="search-repo-meta">
-                        {truncateAddress(entry.owner, 12)} - V{entry.suiteVersion}
-                        {entry.status === 1 ? " - frozen" : ""}
+                        {truncateAddress(entry.owner, 12)}
+                        <span className={`badge ${entry.status === 1 ? "frozen" : entry.status === 2 ? "delisted" : "active"}`}>
+                          {entry.status === 1 ? "frozen" : entry.status === 2 ? "delisted" : "active"}
+                        </span>
                       </span>
                     </button>
                   ))}
@@ -468,11 +474,11 @@ export default function App() {
             <div className="side-nav-label">Architecture</div>
             <div className="side-nav-meta">
               <span className="side-nav-meta-icon"><IconifyIcon icon="mdi:ethereum" width={14} height={14} aria-hidden="true" /></span>
-              <span><b>EVM V2/V3</b><small>Current repositories 路 packs on IPFS</small></span>
+              <span><b>EVM V2/V3</b><small>Current repositories · packs on IPFS</small></span>
             </div>
             <div className="side-nav-meta">
               <span className="side-nav-meta-icon"><Database size={14} aria-hidden="true" /></span>
-              <span><b>EVM V4</b><small>Successor suite 路 BYOS storage buckets</small></span>
+              <span><b>EVM V4</b><small>Successor suite · BYOS storage buckets</small></span>
             </div>
             <div className="side-nav-meta">
               <span className="side-nav-meta-icon"><IconifyIcon icon="token:cosmos" width={14} height={14} aria-hidden="true" /></span>

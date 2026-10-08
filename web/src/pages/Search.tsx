@@ -9,6 +9,7 @@ import {
   type RepoIndexEntry,
   type RepoIndexStatus,
 } from "../lib/repo-index";
+import { ContractTypeBadge } from "../components/ContractTypeBadge";
 import { resolveRepo } from "../lib/registry";
 import { addressUsername, listRepos, loadConfig, resolveOwner } from "../lib/chain";
 import { truncateAddress } from "../lib/utils";
@@ -19,8 +20,8 @@ interface OwnerMatch {
   repos: number;
 }
 
-function suiteBadge(entry: RepoIndexEntry): string {
-  return entry.suiteVersion === 4 ? "V4" : entry.suiteVersion === 3 ? "V3" : `V${entry.suiteVersion}`;
+function statusName(status: number): "active" | "frozen" | "delisted" {
+  return status === 1 ? "frozen" : status === 2 ? "delisted" : "active";
 }
 
 /**
@@ -154,8 +155,8 @@ export default function SearchPage() {
             >
               <span className="search-result-title">
                 <b>{entry.name}</b>
-                <span className="badge-plain">{suiteBadge(entry)}</span>
-                {entry.status === 1 && <span className="badge-plain badge-frozen">frozen</span>}
+                <ContractTypeBadge kind="evm-v2" suiteVersion={BigInt(entry.suiteVersion)} />
+                <span className={`badge ${statusName(entry.status)}`}>{statusName(entry.status)}</span>
               </span>
               <span className="search-result-meta muted small">
                 {truncateAddress(entry.owner, 16)}

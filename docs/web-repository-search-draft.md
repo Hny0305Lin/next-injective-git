@@ -62,6 +62,7 @@
   1. 头窗口事件扫描：最近 `REPO_INDEX_RECENT_WINDOW`（100k）块的 `eth_getLogs`，结果立即可用；
   2. 历史走查：从头窗口下界向创世方向降序分块扫描（10k 块/查询，8 路并发，16 块/tick），条目按最新事件位置守卫，乱序合并正确；连续 4 轮全空或连续 3 次硬错误即自适应暂停（下个会话可续）；
   3. 吸收层：打开 Owner 页或连接钱包时，经 `listRepositoriesPage` 按 owner 合约枚举并入索引（不依赖日志，不受 RPC 日志裁剪影响），同 owner/name 跨代仓库按键含 suiteVersion 共存；
+  4. 公共浏览器回填：搜索页首次使用时，向 profile 中已配置的 blockscout（evmExplorer）拉取全量 RepositoryCreated/OwnershipTransferred 事件（Etherscan 风格 logs API，带 12s 超时，失败即降级为前三路）；该源弥补公共 RPC 对旧区块日志的静默裁剪，仍是导航提示、不作为事实来源；
 - 增量更新：头游标 `cursor+1` 起扫到 latest，回退 96 块 overlap 防 reorg；
 - 已知限制：Injective 公共测试网 RPC 对旧区块日志存在静默裁剪（实测对 -244k 块的单块 `eth_getLogs` 也返回空），因此老仓库依赖吸收层覆盖；自建/归档 RPC 上走查可达全量历史；
 - 容量上限：50k 条 / 4MB，超限停止扩充历史层；
@@ -79,13 +80,13 @@
 - 结果去重与排序沿用 `registry.ts` 规则（`owner/name/suite_version`），跨代同名仓库以版本徽标（V3/V4）区分，配置顺序优先；
 - 不引入跨目录合并写入，也不做任何合约改动。
 
-### 4.5 UI 交互（App.tsx 搜索框）
+### 4.5 UI 交互（App.tsx 搜索框 + /search 页，2026-10-09 调整）
 
-- 下拉复用现有 `search-history` 视觉体系，新增分组：Repositories（索引结果）/ Recent（历史）；
-- 键盘上下选择、Enter 跳转、Esc 关闭；保留 `/` 聚焦快捷键与最近历史；
-- 点击结果：先经 `repoInfoById(repoId)` 取 canonical owner（应对索引 owner 过期），再跳转 `/:owner/:repo`；
-- 保留回退：索引未就绪/无结果时，Enter 仍按现行为 `buildSearchPath` 直接跳转；
-- 占位文案更新为体现仓库检索（如 `Search repositories, owners, addresses...`）。
+- 搜索框回车一律进入独立路由 `/search?q=<词>&type=repositories`（GitHub 风格），不再把搜索词直接拼成 `/:owner` 或 `/:owner/:repo` 路径；`archive://` 前缀保留原有直达行为；
+- 该设计消除了关键字与现有页面路由（/settings、/monitor、/explorer 等）的冲突：输入 Settings 回车停留在搜索页；
+- 下拉新增固定动作项 "Search for <词>"；键盘方向键在仓库结果与最近历史间移动，选中仓库结果回车直达，未选中回车进 /search；
+- /search 页结果来自客户端索引（三路事件 + 吸收层 + 浏览器回填），另做两类权威探测：q 形如 owner/name 时尝试 resolveRepo 给出 "Jump to" 卡片；q 能解析为地址/用户名时展示 owner 卡片并顺带吸收其仓库列表；
+- 点击结果统一经 resolveEntryTarget（repoInfoById 或 resolveRepo）做链上权威解析后跳转；索引永远只是导航提示。
 
 ### 4.6 治理与安全过滤
 
@@ -142,3 +143,21 @@
 - 代码与测试落地：`npm run test:api` 163/163 通过（含 8 个 repo-index 单测）、`npm run typecheck` 与 `npm run build` 通过；
 - 真实测试网端到端验证（Playwright + Chromium，本地 dev server）：访问 Owner 页吸收 3 个仓库（demo-showcase v3/v4、demo-showcase-byos v4）后，全局搜索输入 dem 下拉命中 3 条，方向键加回车跳转 `/:owner/:repo` 成功；截图存于会话 scratch 目录（1-owner-page.png / 2-search-dropdown.png / 3-repo-page.png）；
 - 安全边界复核：索引仅为导航提示，点击后经 `repoInfoById`（有 repoId 时）或 `resolveRepo`（吸收条目）做权威解析；不新增模块地址、不发交易、不部署合约；delisted 条目不出现在结果中。
+
+## 11. 演进方案对比（2026-10-09）
+
+| 方案 | 说明 | 优点 | 取舍 | 建议 |
+|---|---|---|---|---|
+| A. 客户端多源索引（当前实现） | 链头事件 + 历史走查 + owner 枚举吸收 + 公共浏览器回填，/search 页承载 | 零后端、零合约改动、冷启动可用 | 公共浏览器可用性不受控；索引仅本浏览器；首次结果需数秒 | 已交付，作为基线 |
+| B. 链上全局枚举（合约 v5 候选） | 给 core/directory 增加全局分页枚举（不做链上模糊匹配） | 真 direct-to-chain，CLI/外部工具同样受益 | 需要走 Suite v5 部署与迁移；枚举的存储/gas 成本；与非升级性原则的张力 | 记入 v5 路线图候选，只做枚举、匹配仍在客户端 |
+| C. 自托管只读索引服务 | 独立 indexer 订阅事件入库，web 调只读 API（mini-A11 复活） | 全量、快、可排序分页联想、跨设备一致 | 引入运维组件，偏离浏览器直连定位；A11 历史 FAIL（漂移/reorg）教训；需重设安全边界 | 仓库量上万或需要代码搜索时再评估；默认关闭、自托管启用 |
+| D. 公共浏览器为主后端 | 直接把 Blockscout API 当主搜索源 | 免自建、全量历史 | 停机/限流/改版即坏；测试网 explorer 曾观察到与 RPC 块高不同步；查询泄露第三方 | 仅作 best-effort 回退（当前定位），不做唯一来源 |
+| E. 索引持久化增强 | localStorage 迁 IndexedDB/OPFS，支持导出导入索引包 | 弱网/离线可用，团队可分发缓存 | 只改善缓存不改善冷启动；需 TTL 与失效策略 | 低成本小步迭代（v1.6 候选） |
+
+推荐路线：短期 A + E；中期按仓库规模在 B（链上枚举，v5）与 C（自托管索引器）之间二选一；D 永远只是回退源。用户名联想（UsernameRegistered）可作为后续补充源，与仓库索引同构。
+
+## 12. 本轮修复记录（2026-10-09 第二轮）
+
+- 缺陷：搜索页首次使用时浏览器回填源在事件扫描未建 shard 前执行而被静默跳过，且空结果被 Promise 永久缓存（表现为 Explorer source: ok (0 events)、结果为空）；已改为按需创建 shard；
+- 缺陷：浏览器 fetch 无超时，explorer 挂起会拖住搜索页；已加 12s AbortSignal 超时；
+- 回归验证：Playwright 全新会话中 /search?q=demo-showcase-byos 命中 1 条并直达仓库页；输入 Settings 停留在 /search 不再进入设置页；npm run test:api 165/165、typecheck、build 全部通过。

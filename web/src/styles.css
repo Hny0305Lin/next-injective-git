@@ -5202,10 +5202,16 @@ html.dark .action-badge.a-award_badge {
   gap: 2px;
 }
 .search-repo-item .search-repo-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 600;
   font-size: 0.8rem;
 }
 .search-repo-item .search-repo-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 0.72rem;
   color: var(--fg-muted);
 }
@@ -5266,21 +5272,11 @@ html.dark .action-badge.a-award_badge {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
   font-size: 0.9rem;
 }
 .search-result-meta {
   font-size: 0.75rem;
-}
-.badge-plain {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  font-size: 0.65rem;
-  padding: 1px 7px;
-  color: var(--fg-muted);
-}
-.badge-frozen {
-  border-color: #d97706;
-  color: #b45309;
 }
 .search-empty p {
   margin: 4px 0;
