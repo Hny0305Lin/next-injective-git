@@ -1,6 +1,5 @@
 import {
   Activity,
-  ArrowUpRight,
   Box,
   CircleDot,
   GitBranch,
@@ -100,9 +99,6 @@ export default function Home() {
           <h1>{address ? "Your repositories" : "Dashboard"}</h1>
           <p>Browse repositories, inspect on-chain activity, and resolve IPFS objects.</p>
         </div>
-        <Link to="/explorer" className="page-heading-action">
-          Explore activity <ArrowUpRight size={15} />
-        </Link>
       </div>
 
       <div className="overview-strip" aria-label="Workspace overview">
@@ -157,7 +153,6 @@ export default function Home() {
               <GitBranch size={22} />
               <h3>Connect your workspace</h3>
               <p>Connect a wallet to see your repositories, or inspect public activity on the chain.</p>
-              <Link to="/explorer" className="btn primary">Explore repositories</Link>
             </div>
           )}
 
@@ -249,12 +244,6 @@ export default function Home() {
                   </div>
                 ))}
               </div>
-            )}
-
-            {activityLoaded && !activityError && (
-              <Link to="/explorer" className="panel-link">
-                View all activity <ArrowUpRight size={14} />
-              </Link>
             )}
           </div>
         </aside>

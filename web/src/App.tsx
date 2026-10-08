@@ -534,7 +534,6 @@ export default function App() {
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/monitor" element={<Suspense fallback={<RouteSpinner />}><LazyMonitor /></Suspense>} />
                 <Route path="/mapmonitor" element={<Suspense fallback={<RouteSpinner />}><LazyMapMonitor /></Suspense>} />
-                <Route path="/explorer" element={<Suspense fallback={<RouteSpinner />}><LazyExplorer /></Suspense>} />
                 <Route path="/ipfs" element={<Suspense fallback={<RouteSpinner />}><LazyIpfsExplorer /></Suspense>} />
                 <Route path="/archive/cosmwasm-v1" element={<Suspense fallback={<RouteSpinner />}><LazyArchive /></Suspense>} />
                 <Route path="/archive/cosmwasm-v1/:owner" element={<Suspense fallback={<RouteSpinner />}><LazyArchiveOwner /></Suspense>} />

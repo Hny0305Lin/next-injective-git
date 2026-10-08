@@ -656,7 +656,6 @@ export default function Monitor() {
                 <CardTitle>Recent actions</CardTitle>
                 <CardDescription>Confirmed transactions returned by the verified Suite modules.</CardDescription>
               </div>
-              <CardAction><Link className="monitor-card-link" to="/explorer">Open explorer <ArrowUpRight size={13} /></Link></CardAction>
             </CardHeader>
             <CardContent className="monitor-table-content">
               {snapshot.evm.state === "loading" ? (

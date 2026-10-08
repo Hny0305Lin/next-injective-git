@@ -15,10 +15,6 @@ test.describe('Navigation and Routing', () => {
     await page.goto('/settings');
     await expect(page.locator('h2').first()).toBeVisible();
 
-    // Explorer page
-    await page.goto('/explorer');
-    await expect(page.locator('h2').first()).toBeVisible();
-
     // Archive page
     await page.goto('/archive');
     await expect(page.locator('body')).toBeVisible();
@@ -281,12 +277,6 @@ test.describe('Visual Regression', () => {
     await page.goto('/settings');
     await page.waitForTimeout(2000);
     await expect(page).toHaveScreenshot('settings-page.png', { fullPage: true });
-  });
-
-  test('should match explorer page snapshot', async ({ page }) => {
-    await page.goto('/explorer');
-    await page.waitForTimeout(2000);
-    await expect(page).toHaveScreenshot('explorer-page.png', { fullPage: true });
   });
 });
 

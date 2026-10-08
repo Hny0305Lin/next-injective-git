@@ -109,7 +109,6 @@ export default function IpfsExplorer() {
     <div className="explorer">
       <div className="explorer-head">
         <h1>IPFS Explorer</h1>
-        <Link className="muted" to="/explorer">← Block explorer</Link>
       </div>
       <p className="muted">
         Packfiles are stored on IPFS and referenced on-chain. Gateway:{" "}
