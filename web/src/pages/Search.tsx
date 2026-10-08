@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { ChevronDown, GitFork, User } from "lucide-react";
+import { ChevronDown, GitFork, LoaderCircle, User } from "lucide-react";
 import {
   repoIndexShared,
   resolveEntryTarget,
@@ -212,6 +212,12 @@ export default function SearchPage() {
         <span className="muted">
           repositories matching <code>{query || "(empty)"}</code>
         </span>
+        {resultsLoading && (
+          <span className="search-page-loading" role="status" aria-live="polite">
+            <LoaderCircle size={12} className="animate-spin" aria-hidden="true" />
+            Searching...
+          </span>
+        )}
       </div>
 
       {exact && (
@@ -239,9 +245,8 @@ export default function SearchPage() {
       )}
 
       <div
-        className={`search-results${resultsLoading ? " loading" : ""}`}
+        className="search-results"
         role="list"
-        aria-busy={resultsLoading}
       >
         {results.map((entry) => {
           const key = `${entry.suiteDirectory}:${entry.repoId ?? `${entry.owner}/${entry.name}/v${entry.suiteVersion}`}`;
@@ -276,7 +281,8 @@ export default function SearchPage() {
             onClick={() => setArchiveOpen((open) => !open)}
             aria-expanded={archiveOpen}
           >
-            <span>View other V1 Archive results</span>
+            <ContractTypeBadge kind="cosmwasm-v1" />
+            <span className="search-archive-toggle-label">View other V1 Archive results</span>
             <ChevronDown
               size={14}
               className={`search-archive-chev${archiveOpen ? " open" : ""}`}
@@ -285,11 +291,13 @@ export default function SearchPage() {
           </button>
           {archiveOpen && (
             <div
-              className={`search-archive-body${archive.phase === "loading" ? " loading" : ""}`}
-              aria-busy={archive.phase === "loading"}
+              className="search-archive-body" role="list"
             >
               {archive.phase === "loading" && (
-                <div className="search-archive-note muted small">Loading V1 archive results...</div>
+                <div className="search-archive-note muted small" role="status">
+                  <LoaderCircle size={12} className="animate-spin" aria-hidden="true" />
+                  Loading V1 archive results...
+                </div>
               )}
               {archive.phase === "error" && (
                 <div className="search-archive-note muted small">{archive.message}</div>

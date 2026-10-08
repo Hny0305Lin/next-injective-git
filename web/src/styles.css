@@ -5319,66 +5319,60 @@ html.dark .action-badge.a-award_badge {
   }
 }
 
-/* Search results: rotating border loading animation (replaces loose spinners) */
-@property --search-spin {
-  syntax: "<angle>";
-  initial-value: 0deg;
-  inherits: false;
-}
-.search-results,
-.search-archive-body {
-  border: 1.5px solid transparent;
-  border-radius: calc(var(--radius) + 2px);
-  padding: 7px;
-}
-.search-results.loading,
-.search-archive-body.loading {
-  background:
-    linear-gradient(transparent, transparent) padding-box,
-    conic-gradient(
-      from var(--search-spin),
-      var(--accent-border, rgba(77, 61, 255, 0.9)),
-      rgba(77, 61, 255, 0.35) 22%,
-      transparent 42%
-    ) border-box;
-  animation: search-border-spin 1.1s linear infinite;
-}
-.search-results.loading:empty {
-  min-height: 88px;
-}
-@keyframes search-border-spin {
-  to {
-    --search-spin: 360deg;
-  }
+
+
+/* Search page: top-right loading hint */
+.search-page-loading {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg-muted);
+  font-size: 0.72rem;
 }
 
-/* Inline V1 archive section (expands in place, never navigates away) */
+/* Inline V1 archive section (full width, matches the result rows above) */
 .search-archive {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 .search-archive-toggle {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
-  align-self: flex-start;
-  background: none;
-  border: none;
-  color: var(--accent-border, #4d3dff);
+  gap: 8px;
+  width: 100%;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  color: var(--fg);
   font-size: 0.8rem;
   cursor: pointer;
-  padding: 2px 0;
+  text-align: left;
 }
 .search-archive-toggle:hover {
-  text-decoration: underline;
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+.search-archive-toggle-label {
+  flex: 1;
 }
 .search-archive-chev {
   transition: transform 0.15s ease;
+  color: var(--fg-muted);
 }
 .search-archive-chev.open {
   transform: rotate(180deg);
 }
+.search-archive-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .search-archive-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 6px 8px;
 }
