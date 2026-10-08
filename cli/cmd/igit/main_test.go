@@ -52,6 +52,33 @@ func TestCloneRejectsLeadingFlagWithUsageHint(t *testing.T) {
 	}
 }
 
+// A bare `igit` must stay scannable: the short quick-start replaces the full
+// reference, which remains available through `igit help`.
+func TestBareIgitPrintsShortUsage(t *testing.T) {
+	short := shortUsageText()
+	if lines := strings.Count(short, "\n"); lines > 22 {
+		t.Fatalf("short usage has %d lines, want <= 22:\n%s", lines, short)
+	}
+	if !strings.Contains(short, "igit help") {
+		t.Fatalf("short usage must point at `igit help`:\n%s", short)
+	}
+	for _, cmd := range []string{"setup", "clone", "push", "doctor"} {
+		if !strings.Contains(short, "igit "+cmd) {
+			t.Fatalf("short usage lost `igit %s`:\n%s", cmd, short)
+		}
+	}
+	full := usageText()
+	if !strings.Contains(full, "collab") || !strings.Contains(full, "guardians") {
+		t.Fatal("full usage reference lost command groups")
+	}
+	if strings.Count(full, "\n") <= strings.Count(short, "\n") {
+		t.Fatal("full usage must stay larger than the short quick-start")
+	}
+	if err := run(nil); err != nil {
+		t.Fatalf("bare run: %v", err)
+	}
+}
+
 func TestVisibleReposHidesModeratedRepositoriesByDefault(t *testing.T) {
 	repos := []chain.RepoInfo{
 		{Name: "active", ModerationStatus: "active"},

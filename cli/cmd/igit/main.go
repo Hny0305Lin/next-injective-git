@@ -35,7 +35,7 @@ Usage:
   (igit push -q / igit pull -q / igit clone <repo> -q silence igit progress
    lines; -v shows every step; or export IGIT_QUIET=1 / IGIT_VERBOSE=1)
   igit clone-url <name>                print the igit:// URL of your repo
-	igit repos [--all] [owner]           list active repositories of an owner
+  igit repos [--all] [owner]           list active repositories of an owner
   igit refs <owner> <repo>             list on-chain refs of a repository
   igit collab add <repo> <address> [maintainer|reader]
                                        grant a collaborator role (owner only)
@@ -68,7 +68,7 @@ Usage:
   igit splits set <repo> [addr:bps]... set revenue splits (owner only)
   igit splits show <owner> <repo>      show revenue splits
   igit username register <name>        claim a username (locks deposit)
-	igit username claim <name>           reclaim a migrated V1 username
+  igit username claim <name>           reclaim a migrated V1 username
   igit username release                release username
   igit username show [name|address]    resolve a username / reverse lookup
   igit release register <version> <platform=sha256>...
@@ -80,13 +80,13 @@ Usage:
   igit archive <query|inventory|verify> read-only CosmWasm V1 evidence tools
   igit key show                        show the configured signing address
   igit key new <name>                  create an encrypted signing key
-	igit key import <name>               import a private key without terminal echo
+  igit key import <name>               import a private key without terminal echo
   igit gateway status                  probe HK/US read-only gateway health
   igit gateway select                  print the automatically selected order
-	igit doctor [--clone|--push] [--json] diagnose tools, config and services
-	igit setup [options]                   prepare the complete push environment
-	igit setup push [options]              explicit alias for the default setup
-	igit setup status [--json]            show push environment status
+  igit doctor [--clone|--push] [--json] diagnose tools, config and services
+  igit setup [options]                   prepare the complete push environment
+  igit setup push [options]              explicit alias for the default setup
+  igit setup status [--json]            show push environment status
   igit config list                     show user-facing configuration status
   igit config list --internal          show backend details for operators
   igit config set <key> <value>        set a configuration value
@@ -117,7 +117,7 @@ const usageChinese = `igit - Next Injective Git（Injective + IPFS）
   （igit push -q / igit pull -q / igit clone <repo> -q 静默 igit 进度行；
    -v 显示全部步骤；也可导出 IGIT_QUIET=1 / IGIT_VERBOSE=1）
   igit clone-url <name>                输出仓库的 igit:// URL
-	igit repos [--all] [owner]           列出所有者的活跃仓库
+  igit repos [--all] [owner]           列出所有者的活跃仓库
   igit refs <owner> <repo>             列出仓库的链上 refs
   igit collab add <repo> <address> [maintainer|reader]
                                        授予协作者角色（仅所有者）
@@ -149,20 +149,20 @@ const usageChinese = `igit - Next Injective Git（Injective + IPFS）
   igit badge list [address|username]   显示贡献者的奖杯墙
   igit splits set <repo> [addr:bps]... 设置收益分成（仅所有者）
   igit splits show <owner> <repo>      显示收益分成
-	igit username register <name>        注册用户名
-	igit username claim <name>           在限时窗口内重领 V1 用户名
+  igit username register <name>        注册用户名
+  igit username claim <name>           在限时窗口内重领 V1 用户名
   igit username release                释放用户名
   igit username show [name|address]    查询用户名/反向查询
   igit release register <版本> <平台=sha256>...
                                        登记不可变发布物校验和（管理员）
   igit release verify <版本> <平台> <文件>
                                        对照链上校验和验证文件
-	igit suite info [--json]             显示已验证的 EVM suite 绑定
-	igit suite verify [--json]           验证链、代码哈希和模块绑定
+  igit suite info [--json]             显示已验证的 EVM suite 绑定
+  igit suite verify [--json]           验证链、代码哈希和模块绑定
   igit archive <query|inventory|verify> CosmWasm V1 只读证据工具
   igit key show                        显示已配置的签名地址
   igit key new <name>                  创建加密签名密钥
-	igit key import <name>               无回显导入私钥
+  igit key import <name>               无回显导入私钥
   igit gateway status                  探测 HK/US 只读网关健康状态
   igit gateway select                  输出自动选择的顺序
   igit doctor [--clone|--push] [--json] 诊断工具、配置和服务
@@ -187,6 +187,51 @@ const usageChinese = `igit - Next Injective Git（Injective + IPFS）
 
 func usageText() string { return i18n.Text(usageEnglish, usageChinese) }
 
+// shortUsage is what a bare `igit` prints: the day-one workflow plus a few
+// exploration commands. The full reference stays behind `igit help` so the
+// default output stays scannable.
+const shortUsageEnglish = `igit - Next Injective Git (Injective EVM + suite-dispatched storage)
+
+Quick start:
+  igit setup                          prepare the complete push environment
+  igit key import <name>              import an encrypted signing key
+  igit init <name>                    create an on-chain repository
+  igit clone <owner>/<repo> [dir]     clone a repository
+  igit push [remote] [refspec...]     push on-chain (-q quiet, -v every step)
+  igit pull [remote] [refspec...]     pull from chain
+
+Explore:
+  igit repos [owner]                  list on-chain repositories
+  igit refs <owner> <repo>            list refs of a repository
+  igit suite verify                   verify the chain and suite binding
+  igit doctor                         diagnose tools, config and services
+
+Anything else (add, commit, status, log, ...) is forwarded to git.
+Full command reference: igit help
+`
+
+const shortUsageChinese = `igit - Next Injective Git（Injective EVM + 按套件分派的存储）
+
+快速上手：
+  igit setup                          一键准备推送环境
+  igit key import <name>              导入加密签名密钥
+  igit init <name>                    创建链上仓库
+  igit clone <owner>/<repo> [dir]     克隆仓库
+  igit push [remote] [refspec...]     推送到链上（-q 静默，-v 显示全部步骤）
+  igit pull [remote] [refspec...]     从链上拉取
+
+浏览：
+  igit repos [owner]                  列出链上仓库
+  igit refs <owner> <repo>            列出仓库 refs
+  igit suite verify                   校验链与套件绑定
+  igit doctor                         诊断工具、配置和服务
+
+其余子命令（add、commit、status、log……）原样转发给 git。
+完整命令参考：igit help
+`
+
+func shortUsageText() string { return i18n.Text(shortUsageEnglish, shortUsageChinese) }
+
 // version is set at release build time with -ldflags. Keep a useful value for
 // local development builds that do not provide the linker override.
 const errorCodeUpgradeRemoved i18n.ErrorCode = "command.upgrade_removed"
@@ -205,7 +250,9 @@ func run(args []string) error {
 		return cmdStorage(args[1:])
 	}
 	if len(args) == 0 {
-		fmt.Print(usageText())
+		// A bare invocation prints the compact quick-start; the full command
+		// reference stays behind `igit help`.
+		fmt.Print(shortUsageText())
 		return nil
 	}
 	// The V1 archive is deliberately isolated from normal configuration and
