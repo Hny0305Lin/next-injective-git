@@ -7,6 +7,8 @@ import { toInjectiveAddress } from "../src/lib/address.ts";
 import {
   absorbRepos,
   applyRepoEvent,
+  mergeEntriesForSearch,
+  sortRepoEvents,
   decodeRepoEvent,
   parseIndex,
   repoIndexStorageKey,
@@ -250,4 +252,36 @@ test("searchRepoEntries matches a bare address query by exact owner", () => {
   assert.equal(searchRepoEntries(entries, evmForm)[0].name, "beta");
   const stranger = toInjectiveAddress("0x9999999999999999999999999999999999999999");
   assert.equal(searchRepoEntries(entries, stranger).length, 0);
+});
+test("sortRepoEvents orders events by on-chain position", () => {
+  const events = [
+    { kind: "status", repoId: REPO_ID, status: 1, blockNumber: 300, logIndex: 0 },
+    { kind: "created", repoId: REPO_ID, owner: "inj-a", name: "demo-repo", blockNumber: 100, logIndex: 5 },
+    { kind: "owner", repoId: REPO_ID, owner: "inj-b", name: "", blockNumber: 300, logIndex: 1 },
+    { kind: "created", repoId: OTHER_REPO_ID, owner: "inj-a", name: "other", blockNumber: 100, logIndex: 2 },
+  ];
+  const ordered = sortRepoEvents(events);
+  assert.deepEqual(ordered.map((event) => [event.repoId, event.blockNumber, event.logIndex]), [
+    [OTHER_REPO_ID, 100, 2],
+    [REPO_ID, 100, 5],
+    [REPO_ID, 300, 0],
+    [REPO_ID, 300, 1],
+  ]);
+});
+
+test("mergeEntriesForSearch lets the fresh absorbed status outrank stale event status", () => {
+  const shardEntry = { ...entry(REPO_ID, "demo-repo", 100), status: 0 };
+  const absorbed = new Map();
+  absorbRepos(absorbed, [{ owner: shardEntry.owner, name: "demo-repo", moderation: "frozen" }], 4);
+  const merged = mergeEntriesForSearch([shardEntry], [...absorbed.values()]);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].status, 1);
+  assert.equal(merged[0].repoId, REPO_ID);
+
+  const untouched = mergeEntriesForSearch([shardEntry], []);
+  assert.equal(untouched[0].status, 0);
+
+  const absorbedOnly = mergeEntriesForSearch([], [...absorbed.values()]);
+  assert.equal(absorbedOnly.length, 1);
+  assert.equal(absorbedOnly[0].status, 1);
 });

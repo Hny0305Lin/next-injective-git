@@ -433,13 +433,18 @@ export function explorerLogsUrl(explorerBase: string, address: string, topic0: H
 export async function fetchExplorerRepoEvents(
   explorerBase: string,
   coreAddress: string,
+  moderationAddress: string,
 ): Promise<{ events: RepoEvent[]; logs: RpcLog[] }> {
   const topics = repoEventTopics()[0];
   const createdTopic = topics[0];
   const transferTopic = topics[1];
+  const statusTopic = topics[2];
   const urls = [
     explorerLogsUrl(explorerBase, coreAddress, createdTopic),
     explorerLogsUrl(explorerBase, coreAddress, transferTopic),
+    // Moderation events come from the moderation module; without them the
+    // explorer-sourced entries would show stale governance status.
+    explorerLogsUrl(explorerBase, moderationAddress, statusTopic),
   ];
   const logs: RpcLog[] = [];
   for (const url of urls) {
@@ -467,12 +472,43 @@ export async function fetchExplorerRepoEvents(
   return { events, logs };
 }
 
+/** Order events by on-chain position so status events apply after creation. */
+export function sortRepoEvents(events: readonly RepoEvent[]): RepoEvent[] {
+  return [...events].sort((left, right) => left.blockNumber - right.blockNumber || left.logIndex - right.logIndex);
+}
+
 function browserStorage(): Storage | null {
   try {
     return typeof localStorage === "undefined" ? null : localStorage;
   } catch {
     return null;
   }
+}
+
+/**
+ * Merge event-sourced and absorbed entries for search. Absorbed entries come
+ * from a fresh effectiveStatus contract read, so their governance status
+ * outranks the event replay, which may have missed pruned status logs.
+ */
+export function mergeEntriesForSearch(
+  shardEntries: readonly RepoIndexEntry[],
+  absorbedEntries: readonly RepoIndexEntry[],
+): RepoIndexEntry[] {
+  const absorbedByKey = new Map(absorbedEntries.map((entry) => [absorbedKey(entry.owner, entry.name, entry.suiteVersion), entry]));
+  const merged: RepoIndexEntry[] = [];
+  const seen = new Set<string>();
+  for (const entry of shardEntries) {
+    const key = absorbedKey(entry.owner, entry.name, entry.suiteVersion);
+    const absorbed = absorbedByKey.get(key);
+    merged.push(absorbed ? { ...entry, status: absorbed.status } : entry);
+    seen.add(key);
+  }
+  for (const entry of absorbedEntries) {
+    const key = absorbedKey(entry.owner, entry.name, entry.suiteVersion);
+    if (seen.has(key)) continue;
+    merged.push(entry);
+  }
+  return merged;
 }
 
 export class RepoIndexer {
@@ -538,21 +574,10 @@ export class RepoIndexer {
     return this.mergedEntries();
   }
 
-  /** Event-sourced entries win over absorbed duplicates of the same repository. */
   private mergedEntries(): RepoIndexEntry[] {
-    const merged: RepoIndexEntry[] = [];
-    const seen = new Set<string>();
-    for (const shard of this.shards.values()) {
-      for (const entry of shard.entries.values()) {
-        merged.push(entry);
-        seen.add(absorbedKey(entry.owner, entry.name, entry.suiteVersion));
-      }
-    }
-    for (const entry of this.absorbed.values()) {
-      if (seen.has(absorbedKey(entry.owner, entry.name, entry.suiteVersion))) continue;
-      merged.push(entry);
-    }
-    return merged;
+    const shardEntries: RepoIndexEntry[] = [];
+    for (const shard of this.shards.values()) shardEntries.push(...shard.entries.values());
+    return mergeEntriesForSearch(shardEntries, [...this.absorbed.values()]);
   }
 
   /** Merge contract-enumerated repositories (owner page, connected wallet). */
@@ -601,8 +626,8 @@ export class RepoIndexer {
             };
             this.shards.set(directory, shard);
           }
-          const { events } = await fetchExplorerRepoEvents(explorer, binding.modules.core);
-          for (const event of events) {
+          const { events } = await fetchExplorerRepoEvents(explorer, binding.modules.core, binding.modules.moderation);
+          for (const event of sortRepoEvents(events)) {
             const before = shard.entries.size;
             applyRepoEvent(shard, event);
             if (shard.entries.size > before) applied += 1;

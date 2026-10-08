@@ -162,3 +162,4 @@
 - 缺陷：浏览器 fetch 无超时，explorer 挂起会拖住搜索页；已加 12s AbortSignal 超时；
 - 回归验证：Playwright 全新会话中 /search?q=demo-showcase-byos 命中 1 条并直达仓库页；输入 Settings 停留在 /search 不再进入设置页；npm run test:api 165/165、typecheck、build 全部通过。
 - 第三轮修复（线上反馈）：纯地址/用户名查询时，owner 探测结果除卡片外，其仓库列表直接并入结果（GitHub 搜索用户名即列出其仓库），消除误报的 No repositories found；搜索页移除索引状态脚注（状态仅保留在内部状态机）；探测进行中不再闪现空态；searchRepoEntries 支持裸地址按 owner 精确匹配（顶栏下拉同样受益）；
+- 第四轮修复（线上反馈）：治理状态过期——浏览器回填源此前只拉 core 模块事件、缺少 ModerationModule 的 RepositoryStatusSet，且回填条目遮蔽了吸收层的新鲜 effectiveStatus；现回填源同时拉取状态事件并按区块位置排序折叠，mergeEntriesForSearch 让吸收层（合约直读）状态覆盖事件重放状态，两条路径（关键词/地址）均实时反映 frozen/delisted；
