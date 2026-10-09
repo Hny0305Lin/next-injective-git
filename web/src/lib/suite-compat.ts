@@ -12,7 +12,7 @@
 // │ v2*      │ EVM (pre-v3, none   │ IPFS (assumed same   │ v3 reader (fallback)   │
 // │          │ deployed to date)   │   shape as v3)       │                        │
 // │ v3       │ commitSha+packUris  │ IPFS gateway         │ registry.ts (legacy)   │
-// │          │   string[]          │                      │ gitstore.ts loadRef    │
+// │          │   string[]          │ (hardened reader)    │ gitstore.ts loadRef    │
 // │ v4       │ manifestDigest+     │ BYOS (aws-s3/r2)     │ registry.ts (successor)│
 // │          │   size+locator      │   verified manifest  │ gitstore.ts verified   │
 // │ v5+      │ unknown             │ unknown              │ attempt v4 ABI, warn   │

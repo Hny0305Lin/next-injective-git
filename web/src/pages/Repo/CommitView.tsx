@@ -27,7 +27,10 @@ export default function CommitView({
     setErr("");
     (async () => {
       try {
-        for (const r of refs) await store.loadRef(cfg, r);
+        // Route every pack load through the verified dispatch: commitment
+        // refs use the verified BYOS reader, legacy v3 refs use the hardened
+        // legacy reader. No view may call loadRef directly.
+        for (const r of refs) await store.loadRefVerifiedDispatch(cfg, r);
         setMeta(await store.commitMeta(sha));
         setChanges(await store.diffCommit(sha));
       } catch (e) {

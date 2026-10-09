@@ -4,7 +4,153 @@
 import LightningFS from "@isomorphic-git/lightning-fs";
 import * as git from "isomorphic-git";
 import type { AppConfig, RefInfo } from "./chain";
-import { fetchVerifiedManifest, fetchVerifiedPack } from "./successorReader";
+import { fetchVerifiedManifest, fetchVerifiedPack, MAX_WEB_PACK_BYTES, MAX_WEB_TOTAL_BYTES } from "./successorReader";
+import { digest } from "./packmanifest";
+
+// ---- Legacy (v3 ipfs-pack-uris) pack URI validation and fetch hardening ----
+//
+// The v3 protocol stores bare pack URIs on-chain with no content commitment,
+// so the gateway is an untrusted transport. Before any byte reaches
+// isomorphic-git we therefore: validate that the URI is exactly an IPFS CID
+// (no traversal, query, fragment, backslash or other scheme), fetch with
+// redirect:"error" + credentials:"omit", enforce per-pack/total byte budgets,
+// verify raw-codec CID content against its sha2-256 multihash, and require
+// the response to carry the git packfile magic.
+
+export class PackUriError extends Error {}
+
+/** CIDv1 base32 / CIDv0 base58 syntax (same house pattern as packmanifest.ts). */
+const CIDV1_BASE32 = /^b[a-z2-7]{20,120}$/;
+const CIDV0_BASE58 = /^Qm[1-9A-HJ-NP-Za-km-z]{44}$/;
+
+/**
+ * Validate a legacy pack URI and return the bare CID. Accepts only
+ * `ipfs://<CIDv1>` / `ipfs://<CIDv0>` (or the bare CID). Everything else —
+ * including `..`, `//`, `?`, `#`, `\`, whitespace and other schemes — throws,
+ * so a hostile on-chain pack_uris entry can never steer the request path or
+ * leave the `/ipfs/<cid>` namespace.
+ */
+export function parsePackCid(uri: string): string {
+  if (typeof uri !== "string") throw new PackUriError("pack uri must be a string");
+  let cid = uri;
+  if (cid.startsWith("ipfs://")) cid = cid.slice("ipfs://".length);
+  if (!CIDV1_BASE32.test(cid) && !CIDV0_BASE58.test(cid)) {
+    throw new PackUriError(`unsupported pack uri: ${uri}`);
+  }
+  return cid;
+}
+
+const BASE32_LOWER = "abcdefghijklmnopqrstuvwxyz234567";
+
+function decodeBase32Lower(input: string): Uint8Array {
+  let bits = 0;
+  let value = 0;
+  const out: number[] = [];
+  for (const ch of input) {
+    const index = BASE32_LOWER.indexOf(ch);
+    if (index < 0) throw new PackUriError("cid is not valid base32");
+    value = (value << 5) | index;
+    bits += 5;
+    if (bits >= 8) {
+      out.push((value >>> (bits - 8)) & 0xff);
+      bits -= 8;
+    }
+  }
+  return Uint8Array.from(out);
+}
+
+function readVarint(bytes: Uint8Array, offset: number): [bigint, number] {
+  let value = 0n;
+  let shift = 0n;
+  let index = offset;
+  while (index < bytes.length) {
+    const byte = bytes[index++];
+    value |= BigInt(byte & 0x7f) << shift;
+    if ((byte & 0x80) === 0) return [value, index - offset];
+    shift += 7n;
+    if (shift > 42n) throw new PackUriError("cid varint is too long");
+  }
+  throw new PackUriError("cid varint is truncated");
+}
+
+const toHex = (bytes: Uint8Array): string =>
+  [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+
+/**
+ * Best-effort content verification of gateway bytes against the requested CID.
+ *
+ * - CIDv1 with the raw codec and a sha2-256 multihash: the response body is
+ *   the block itself, so sha256(bytes) must equal the CID digest. A malicious
+ *   or compromised gateway cannot substitute content.
+ * - CIDv0 / CIDv1 dag-pb (what `ipfs add` produces for packfiles): the CID
+ *   commits to the UnixFS DAG, not to the reconstructed HTTP body, so a
+ *   byte-level check is impossible in the browser; these return true and rely
+ *   on the packfile magic check plus the on-chain commit binding in loadRef.
+ */
+export async function verifyLegacyCidContent(cid: string, bytes: Uint8Array): Promise<boolean> {
+  if (!CIDV1_BASE32.test(cid)) {
+    if (CIDV0_BASE58.test(cid)) return true; // dag-pb UnixFS root: unverifiable here
+    throw new PackUriError(`unsupported pack uri: ${cid}`);
+  }
+  const decoded = decodeBase32Lower(cid.slice(1)); // 'b' is the multibase prefix
+  const [version, versionLen] = readVarint(decoded, 0);
+  if (version !== 1n) return false;
+  const [codec, codecLen] = readVarint(decoded, versionLen);
+  if (codec !== 0x55n) return true; // dag-pb / other DAG codecs: skip byte check
+  const multihash = decoded.subarray(versionLen + codecLen);
+  if (multihash.length !== 34 || multihash[0] !== 0x12 || multihash[1] !== 0x20) return true; // non sha2-256: skip
+  return (await digest(bytes)) === toHex(multihash.subarray(2));
+}
+
+function isPackfileMagic(bytes: Uint8Array): boolean {
+  return bytes.length >= 12 && bytes[0] === 0x50 && bytes[1] === 0x41 && bytes[2] === 0x43 && bytes[3] === 0x4b;
+}
+
+export interface PackFetchBudget {
+  total: number;
+}
+
+/**
+ * Fetch one legacy pack URI through the configured IPFS gateway with the same
+ * transport discipline as the verified BYOS reader: no redirects, no
+ * credentials, declared+actual length budgets, CID syntax validation and
+ * (for raw CIDs) content-hash verification before the bytes are returned.
+ */
+export async function fetchLegacyPack(
+  cfg: AppConfig,
+  uri: string,
+  budget: PackFetchBudget,
+): Promise<Uint8Array> {
+  const cid = parsePackCid(uri);
+  const gateway = cfg.ipfsGateway.replace(/\/+$/, "");
+  const url = `${gateway}/ipfs/${encodeURIComponent(cid)}`;
+  let response: Response;
+  try {
+    response = await fetch(url, { credentials: "omit", redirect: "error" });
+  } catch (error) {
+    throw new PackUriError(`gateway fetch failed for ${cid}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (!response.ok) throw new PackUriError(`gateway HTTP ${response.status} for ${cid}`);
+  const declared = Number(response.headers.get("content-length") ?? "");
+  if (Number.isFinite(declared) && declared > MAX_WEB_PACK_BYTES) {
+    throw new PackUriError(`pack ${cid} declares ${declared} bytes, over the ${MAX_WEB_PACK_BYTES}-byte web budget`);
+  }
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.length > MAX_WEB_PACK_BYTES) {
+    throw new PackUriError(`pack ${cid} is ${bytes.length} bytes, over the ${MAX_WEB_PACK_BYTES}-byte web budget`);
+  }
+  if (budget.total + bytes.length > MAX_WEB_TOTAL_BYTES) {
+    throw new PackUriError("repository packs exceed the total web download budget");
+  }
+  budget.total += bytes.length;
+  if (!(await verifyLegacyCidContent(cid, bytes))) {
+    throw new PackUriError(`pack bytes do not match the requested CID ${cid}`);
+  }
+  if (!isPackfileMagic(bytes)) {
+    throw new PackUriError(`content for ${cid} is not a git packfile`);
+  }
+  return bytes;
+}
 
 export interface TreeItem {
   name: string;
@@ -52,17 +198,36 @@ export class RepoStore {
     this.fs = new LightningFS(storeName, { wipe: true } as never);
   }
 
-  /** Download + index every pack URI of a ref (in order). */
+  /**
+   * Download + index every pack URI of a ref (in order).
+   *
+   * Legacy v3 path: the on-chain ref carries no content commitment beyond the
+   * CID itself, so every fetch goes through fetchLegacyPack (strict CID
+   * validation, redirect/credential/budget discipline, raw-CID hash checks)
+   * and, after ingestion, the packs must contain the on-chain commit_sha —
+   * otherwise the loaded content is rejected as not belonging to this ref.
+   */
   async loadRef(cfg: AppConfig, ref: RefInfo, onProgress?: (msg: string) => void) {
     await this.ensureInit();
+    const budget: PackFetchBudget = { total: 0 };
     for (let i = 0; i < ref.pack_uris.length; i++) {
       const uri = ref.pack_uris[i];
       if (this.loaded.has(uri)) continue;
       onProgress?.(`downloading pack ${i + 1}/${ref.pack_uris.length}`);
-      const bytes = await this.fetchPack(cfg, uri);
+      const bytes = await fetchLegacyPack(cfg, uri, budget);
       onProgress?.(`indexing pack ${i + 1}/${ref.pack_uris.length}`);
       await this.ingestPack(bytes, i);
       this.loaded.add(uri);
+    }
+    // Bind the ingested objects to the on-chain ref: the recorded commit must
+    // resolve locally, so substituted pack bytes that don't carry the chain's
+    // commit_sha are rejected before the UI renders anything from them.
+    if (ref.commit_sha) {
+      try {
+        await git.readCommit({ fs: this.fs, dir: this.dir, oid: ref.commit_sha });
+      } catch {
+        throw new PackUriError(`loaded packs do not contain the on-chain commit ${ref.commit_sha}`);
+      }
     }
   }
 
@@ -72,16 +237,6 @@ export class RepoStore {
     } catch {
       await git.init({ fs: this.fs, dir: this.dir, defaultBranch: "main" });
     }
-  }
-
-  private async fetchPack(cfg: AppConfig, uri: string): Promise<Uint8Array> {
-    let cid = uri;
-    if (uri.startsWith("ipfs://")) cid = uri.slice("ipfs://".length);
-    else if (uri.includes("://")) throw new Error(`unsupported pack uri: ${uri}`);
-    const gw = cfg.ipfsGateway.replace(/\/+$/, "");
-    const resp = await fetch(`${gw}/ipfs/${cid}`);
-    if (!resp.ok) throw new Error(`gateway HTTP ${resp.status} for ${cid}`);
-    return new Uint8Array(await resp.arrayBuffer());
   }
 
   private async ingestPack(bytes: Uint8Array, seq: number) {
@@ -138,7 +293,9 @@ export class RepoStore {
   /**
    * Storage-neutral dispatch by ref shape (see suite-compat.ts):
    *   - manifest-commitment (v4+): verified BYOS reader
-   *   - ipfs-pack-uris (v3-): legacy IPFS gateway reader
+   *   - ipfs-pack-uris (v3-): hardened legacy IPFS reader (strict CID
+   *     validation + transport/budget discipline + on-chain commit binding;
+   *     no other entry point may fetch legacy packs)
    * Unknown future versions with a commitment field also use the verified reader.
    */
   async loadRefVerifiedDispatch(cfg: AppConfig, ref: RefInfo, onProgress?: (msg: string) => void) {
@@ -310,11 +467,12 @@ export interface CidInfo {
  * object count from the 12-byte header ("PACK" + u32 version + u32 count).
  */
 export async function inspectCid(cfg: AppConfig, uri: string): Promise<CidInfo> {
-  const cid = uri.startsWith("ipfs://") ? uri.slice("ipfs://".length) : uri;
-  const info: CidInfo = { cid, ok: false, status: 0, size: 0, isPack: false, version: null, objectCount: null };
+  const info: CidInfo = { cid: "", ok: false, status: 0, size: 0, isPack: false, version: null, objectCount: null };
   try {
+    const cid = parsePackCid(uri);
+    info.cid = cid;
     const gw = cfg.ipfsGateway.replace(/\/+$/, "");
-    const resp = await fetch(`${gw}/ipfs/${cid}`);
+    const resp = await fetch(`${gw}/ipfs/${encodeURIComponent(cid)}`, { credentials: "omit", redirect: "error" });
     info.status = resp.status;
     if (!resp.ok) {
       info.error = `gateway HTTP ${resp.status}`;
