@@ -2,8 +2,10 @@ import {
   AlertTriangle,
   BookOpen,
   CheckCircle2,
+  Clock,
   Database,
   ExternalLink,
+  GitFork,
   HardDrive,
   Gauge,
   LayoutDashboard,
@@ -13,6 +15,7 @@ import {
   Search,
   Settings as SettingsIcon,
   Sun,
+  User,
 } from "lucide-react";
 import { Icon as IconifyIcon } from "@iconify/react/offline";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -25,6 +28,15 @@ import { Button } from "./components/ui/button";
 import { WalletModal } from "./components/WalletModal";
 import { useWallet } from "./lib/WalletContext";
 import { DOCS_URL, buildSearchPath, matchPageSuggestion, parseSearchQuery } from "./lib/search";
+import { SEARCH_PREFIXES, parseSearchScope, searchSubmitTarget } from "./lib/search-prefix";
+import {
+  SEARCH_HISTORY_CATEGORIES,
+  clearSearchHistory,
+  loadSearchHistory,
+  recordSearchHistory,
+  type SearchHistory,
+  type SearchHistoryCategory,
+} from "./lib/search-history";
 
 import { ContractTypeBadge } from "./components/ContractTypeBadge";
 import { repoIndexShared, resolveEntryTarget, searchRepoEntries, type RepoIndexEntry, type RepoIndexStatus } from "./lib/repo-index";
@@ -69,6 +81,30 @@ const primaryTopnavCount = 4;
 type SuiteReadiness = "unconfigured" | "checking" | "ready" | "error";
 type CacheNotification = "refreshing" | "refreshed" | null;
 
+/** The search box draft is kept for the browser session only. */
+const SEARCH_DRAFT_KEY = "search_draft";
+
+/** Section icons for the categorized search history dropdown. */
+const HISTORY_SECTION_ICONS: Record<SearchHistoryCategory, typeof User> = {
+  owners: User,
+  recent: Clock,
+  repos: GitFork,
+};
+
+const HISTORY_SECTION_LABELS: Record<SearchHistoryCategory, string> = {
+  owners: "Owners",
+  recent: "Recent",
+  repos: "Repos",
+};
+
+function readSearchDraft(): string {
+  try {
+    return sessionStorage.getItem(SEARCH_DRAFT_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
 function RouteSpinner() {
   return <div className="spinner" aria-live="polite">loading...</div>;
 }
@@ -76,9 +112,11 @@ function RouteSpinner() {
 export default function App() {
   const nav = useNavigate();
   const location = useLocation();
-  const [q, setQ] = useState("");
+  // The draft survives navigation and reloads within the tab session, so
+  // reopening the search box restores the last input instead of clearing it.
+  const [q, setQ] = useState(readSearchDraft);
   const [showHistory, setShowHistory] = useState(false);
-  const [history, setHistory] = useState<string[]>([]);
+  const [history, setHistory] = useState<SearchHistory>(loadSearchHistory);
   const [repoResults, setRepoResults] = useState<RepoIndexEntry[]>([]);
   const [indexStatus, setIndexStatus] = useState<RepoIndexStatus | null>(null);
   const [highlight, setHighlight] = useState(-1);
@@ -93,6 +131,7 @@ export default function App() {
   const { address, connected, walletModalOpen, openWalletModal, closeWalletModal } = useWallet();
   const searchRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const historyListRef = useRef<HTMLDivElement>(null);
   const cfg = useMemo(() => loadConfig(), [configRevision]);
   const isArchiveRoute = isCosmWasmV1ArchivePath(location.pathname);
   // Monitor and MapMonitor are read-only public pages that must stay usable
@@ -148,12 +187,16 @@ export default function App() {
     localStorage.setItem("igit_theme", theme);
   }, [theme]);
 
+  // Persist the search draft for this tab session so reopening the search
+  // box (or reloading the page) restores the last input.
   useEffect(() => {
     try {
-      const saved = localStorage.getItem("search_history");
-      if (saved) setHistory(JSON.parse(saved));
-    } catch {}
-  }, []);
+      if (q) sessionStorage.setItem(SEARCH_DRAFT_KEY, q);
+      else sessionStorage.removeItem(SEARCH_DRAFT_KEY);
+    } catch {
+      // Storage unavailable: the draft only lives in state.
+    }
+  }, [q]);
 
   useEffect(() => {
     const indexer = repoIndexShared(cfg);
@@ -185,12 +228,15 @@ export default function App() {
     };
   }, [address, cfg]);
 
-  const addToHistory = useCallback((query: string) => {
-    setHistory((previous) => {
-      const next = [query, ...previous.filter((item) => item !== query)].slice(0, 5);
-      localStorage.setItem("search_history", JSON.stringify(next));
-      return next;
-    });
+  /** Record a submitted query into its history category (prefix-aware). */
+  const recordQueryHistory = useCallback((query: string) => {
+    const scope = parseSearchScope(query);
+    const category: SearchHistoryCategory = scope?.kind === "user" && !scope.keywords
+      ? "owners"
+      : scope?.kind === "repo"
+        ? "repos"
+        : "recent";
+    setHistory(recordSearchHistory(category, query));
   }, []);
 
   useEffect(() => {
@@ -210,6 +256,8 @@ export default function App() {
       if (event.key === "/" && !isEditing) {
         event.preventDefault();
         searchInputRef.current?.focus();
+        // Select the restored draft so fresh typing replaces it in one stroke.
+        searchInputRef.current?.select();
       }
     };
     window.addEventListener("keydown", focusSearch);
@@ -234,9 +282,8 @@ export default function App() {
   const openRepo = async (entry: RepoIndexEntry) => {
     // The index is navigation-only; the contract read is authoritative.
     const { owner, name } = await resolveEntryTarget(cfg, entry);
-    addToHistory(`${owner}/${name}`);
+    setHistory(recordSearchHistory("repos", `${owner}/${name}`));
     nav(`/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`);
-    setQ("");
     setShowHistory(false);
     setRepoResults([]);
     setHighlight(-1);
@@ -245,39 +292,78 @@ export default function App() {
   const submitSearch = (rawQuery = q) => {
     const query = rawQuery.trim();
     if (!query) return;
-    addToHistory(query);
-    // Archive schemes keep their direct paths; everything else goes to the
-    // dedicated search route so keywords never collide with app routes.
+    recordQueryHistory(query);
+    // Archive schemes keep their direct paths; a bare `user:x` prefix points
+    // straight at the owner page; everything else goes to the dedicated
+    // search route (qualifier preserved) so keywords never collide with
+    // app routes. The input draft is intentionally kept for the next open.
     const parsed = parseSearchQuery(query);
-    const target = parsed.archive && parsed.parts.length > 0
-      ? buildSearchPath(query)
-      : `/search?q=${encodeURIComponent(query)}`;
+    if (parsed.archive && parsed.parts.length > 0) {
+      const archiveTarget = buildSearchPath(query);
+      if (!archiveTarget) return;
+      nav(archiveTarget);
+      setShowHistory(false);
+      return;
+    }
+    const target = searchSubmitTarget(query);
     if (!target) return;
-    nav(target);
-    setQ("");
+    if (target.kind === "owner") {
+      nav(`/${encodeURIComponent(target.owner)}`);
+    } else {
+      nav(`/search?q=${encodeURIComponent(target.query)}`);
+    }
     setShowHistory(false);
   };
 
-  const clearHistory = () => {
-    setHistory([]);
-    localStorage.removeItem("search_history");
+  const clearHistorySection = (category?: SearchHistoryCategory) => {
+    setHistory(clearSearchHistory(category));
   };
 
   const indexBuilding = q.trim().length >= 2 && (indexStatus?.building ?? false);
 
-  // "docs"-style queries hint at the documentation site before repo results.
+  const inputScope = useMemo(() => parseSearchScope(q), [q]);
+  const submitTarget = useMemo(() => searchSubmitTarget(q), [q]);
+
+  // "docs"-style queries hint at the documentation site before repo results;
+  // an explicit qualifier prefix means the user already chose a direction.
   const docsSuggestion = useMemo(() => {
+    if (inputScope) return null;
     const suggestion = matchPageSuggestion(q);
     return suggestion?.href ? suggestion : null;
-  }, [q]);
+  }, [q, inputScope]);
 
   const openDocsHint = () => {
-    setQ("");
     setShowHistory(false);
     setRepoResults([]);
     setHighlight(-1);
     window.open(DOCS_URL, "_blank", "noopener,noreferrer");
   };
+
+  // Flat option list for keyboard navigation: live repo results first, then
+  // the Owners / Recent / Repos history sections in display order.
+  const historyOptions = useMemo(
+    () => SEARCH_HISTORY_CATEGORIES.flatMap((category) => history[category].map((value) => ({ category, value }))),
+    [history],
+  );
+  const optionCount = repoResults.length + historyOptions.length;
+  const historyTotal = historyOptions.length;
+  const sectionOffsets = useMemo(() => {
+    let offset = repoResults.length;
+    const offsets: Record<SearchHistoryCategory, number> = { owners: 0, recent: 0, repos: 0 };
+    for (const category of SEARCH_HISTORY_CATEGORIES) {
+      offsets[category] = offset;
+      offset += history[category].length;
+    }
+    return offsets;
+  }, [repoResults.length, history]);
+
+  // Keep the keyboard-highlighted option visible inside the scrollable panel.
+  useEffect(() => {
+    if (highlight < 0) return;
+    historyListRef.current
+      ?.querySelector<HTMLElement>('[data-hl="true"]')
+      ?.scrollIntoView({ block: "nearest" });
+  }, [highlight]);
 
   return (
     <div className="app">
@@ -313,10 +399,19 @@ export default function App() {
             <input
               ref={searchInputRef}
               value={q}
-              onChange={(event) => setQ(event.target.value)}
-              onFocus={() => setShowHistory(true)}
+              onChange={(event) => {
+                setQ(event.target.value);
+                // Typing always reopens the panel: after a submit the input
+                // keeps focus, so a fresh focus event alone would not.
+                setShowHistory(true);
+              }}
+              onFocus={() => {
+                // Re-read storage: the /search page records into the shared
+                // history while the dropdown is closed.
+                setHistory(loadSearchHistory());
+                setShowHistory(true);
+              }}
               onKeyDown={(event) => {
-                const optionCount = repoResults.length + history.length;
                 if ((event.key === "ArrowDown" || event.key === "ArrowUp") && optionCount > 0) {
                   event.preventDefault();
                   setHighlight((current) => {
@@ -336,20 +431,22 @@ export default function App() {
                   event.preventDefault();
                   if (highlight >= 0 && highlight < repoResults.length) {
                     void openRepo(repoResults[highlight]);
-                  } else if (highlight >= repoResults.length && highlight - repoResults.length < history.length) {
-                    submitSearch(history[highlight - repoResults.length]);
                   } else {
-                    submitSearch();
+                    const option = highlight >= repoResults.length
+                      ? historyOptions[highlight - repoResults.length]
+                      : undefined;
+                    if (option) submitSearch(option.value);
+                    else submitSearch();
                   }
                 }
               }}
-              placeholder="Search repositories, owners, addresses..."
+              placeholder="Search user:owner repo:name keywords..."
               aria-label="Search repositories, owners, or addresses"
               spellCheck={false}
             />
           </form>
-          {showHistory && (q.trim().length > 0 || history.length > 0 || repoResults.length > 0 || indexBuilding) && (
-            <div className="search-history" role="listbox">
+          {showHistory && (q.trim().length > 0 || historyTotal > 0 || repoResults.length > 0 || indexBuilding) && (
+            <div className="search-history" role="listbox" ref={historyListRef}>
               {docsSuggestion && (
                 <button
                   type="button"
@@ -373,7 +470,16 @@ export default function App() {
                   onClick={() => submitSearch()}
                   role="option"
                 >
-                  <span className="search-action-label">Search for</span> <span className="mono">{q.trim()}</span>
+                  {submitTarget?.kind === "owner" ? (
+                    <>
+                      <span className="search-action-label">Go to owner</span>{" "}
+                      <span className="mono">{submitTarget.owner}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="search-action-label">Search for</span> <span className="mono">{q.trim()}</span>
+                    </>
+                  )}
                 </button>
               )}
               {repoResults.length === 0 && indexBuilding && (
@@ -392,6 +498,7 @@ export default function App() {
                       className={`search-history-item search-repo-item${highlight === index ? " on" : ""}`}
                       role="option"
                       aria-selected={highlight === index}
+                      data-hl={highlight === index ? "true" : undefined}
                       onMouseEnter={() => setHighlight(index)}
                       onClick={() => void openRepo(entry)}
                     >
@@ -409,21 +516,49 @@ export default function App() {
                   ))}
                 </>
               )}
-              <div className="search-history-head">
-                <span className="muted small">Recent</span>
-                <button type="button" className="search-history-clear" onClick={clearHistory}>Clear</button>
+              {SEARCH_HISTORY_CATEGORIES.map((category) => {
+                const items = history[category];
+                if (items.length === 0) return null;
+                const offset = sectionOffsets[category];
+                const Icon = HISTORY_SECTION_ICONS[category];
+                return (
+                  <div key={category}>
+                    <div className="search-history-head">
+                      <span className="muted small">{HISTORY_SECTION_LABELS[category]}</span>
+                      <button
+                        type="button"
+                        className="search-history-clear"
+                        onClick={() => clearHistorySection(category)}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                    {items.map((item, index) => (
+                      <button
+                        key={`${category}:${item}`}
+                        type="button"
+                        className={`search-history-item search-history-entry${highlight === offset + index ? " on" : ""}`}
+                        onClick={() => submitSearch(item)}
+                        role="option"
+                        aria-selected={highlight === offset + index}
+                        data-hl={highlight === offset + index ? "true" : undefined}
+                        onMouseEnter={() => setHighlight(offset + index)}
+                      >
+                        <Icon size={12} className="search-history-icon" aria-hidden="true" />
+                        <span className="search-history-value">{item}</span>
+                      </button>
+                    ))}
+                  </div>
+                );
+              })}
+              <div className="search-prefix-hint" aria-hidden="true">
+                {SEARCH_PREFIXES.map((prefix) => (
+                  <span key={prefix.name} className="search-prefix-hint-item">
+                    <code>{prefix.name}:</code>
+                    <span>{prefix.hint}</span>
+                  </span>
+                ))}
               </div>
-              {history.map((item, index) => (
-                <button
-                  key={item}
-                  type="button"
-                  className={`search-history-item${highlight === repoResults.length + index ? " on" : ""}`}
-                  onClick={() => submitSearch(item)}
-                  role="option"
-                >
-                  {item}
-                </button>
-              ))}
             </div>
           )}
         </div>

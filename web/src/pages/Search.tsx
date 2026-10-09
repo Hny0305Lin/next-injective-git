@@ -11,6 +11,8 @@ import {
 import { ContractTypeBadge } from "../components/ContractTypeBadge";
 import { resolveRepo } from "../lib/registry";
 import { matchPageSuggestion, type PageSuggestion } from "../lib/search";
+import { parseSearchScope, type SearchScope } from "../lib/search-prefix";
+import { recordSearchHistory } from "../lib/search-history";
 import {
   formatCosmWasmV1Error,
   listCosmWasmV1Repos,
@@ -73,6 +75,40 @@ const SUGGESTION_ICONS: Record<string, typeof LayoutDashboard> = {
 };
 
 /**
+ * Filter index entries for a qualifier-scoped query (`user:` / `repo:`
+ * prefixes). Unlike the plain ranked search, scoped queries keep the
+ * qualifier semantics: user scopes match the owner (plus optional name
+ * keywords), repo scopes match repository names — owner/name supported.
+ */
+function scopedRepoEntries(entries: readonly RepoIndexEntry[], scope: SearchScope, limit: number): RepoIndexEntry[] {
+  const value = scope.value.trim().toLowerCase();
+  const keywords = scope.keywords.trim().toLowerCase();
+  const visible = entries.filter((entry) => entry.status !== 2);
+  let matched: RepoIndexEntry[];
+  if (scope.kind === "user") {
+    const byOwner = visible.filter((entry) => entry.owner.toLowerCase().includes(value));
+    matched = keywords
+      ? byOwner.filter((entry) => entry.name.toLowerCase().includes(keywords))
+      : byOwner;
+  } else {
+    const slash = value.indexOf("/");
+    if (slash > 0) {
+      const owner = value.slice(0, slash);
+      const name = value.slice(slash + 1);
+      matched = visible.filter(
+        (entry) => entry.owner.toLowerCase().includes(owner) && entry.name.toLowerCase().includes(name),
+      );
+    } else {
+      const tokens = [value, ...keywords.split(/\s+/).filter(Boolean)];
+      matched = visible.filter((entry) => tokens.every((token) => entry.name.toLowerCase().includes(token)));
+    }
+  }
+  return matched
+    .sort((left, right) => right.createdBlock - left.createdBlock || left.name.localeCompare(right.name))
+    .slice(0, limit);
+}
+
+/**
  * GitHub-style repository search page: /search?q=<term>&type=repositories.
  * Results come from the client-side index (chain head events, history walk,
  * absorbed owner listings, and the public explorer fallback) plus the
@@ -83,6 +119,28 @@ export default function SearchPage() {
   const [params] = useSearchParams();
   const nav = useNavigate();
   const query = (params.get("q") ?? "").trim();
+  // Qualifier prefixes (`user:` / `repo:`) scope the whole page; plain
+  // queries keep their exact previous behavior.
+  const scope = parseSearchScope(query);
+  // Text used for the owner/username and exact owner/name probes; null when
+  // a repo-scoped query without a slash must not probe owners at all.
+  const probeText = scope
+    ? scope.kind === "user"
+      ? scope.value
+      : scope.value.includes("/")
+        ? scope.value
+        : null
+    : query;
+  // Text the V1 archive section resolves against.
+  const archiveText = scope
+    ? scope.kind === "user"
+      ? scope.keywords
+        ? `${scope.value}/${scope.keywords}`
+        : scope.value
+      : scope.value.includes("/")
+        ? scope.value
+        : `${scope.value}${scope.keywords ? ` ${scope.keywords}` : ""}`.trim()
+    : query;
   const cfg = useMemo(() => loadConfig(), []);
   const [status, setStatus] = useState<RepoIndexStatus | null>(null);
 const boot = query ? searchSnapshots.get(query) : undefined;
@@ -119,14 +177,17 @@ const boot = query ? searchSnapshots.get(query) : undefined;
       setArchive(fresh ? cached.archive : { phase: "idle" });
     }
     if (!query) return;
+    // A repo-scoped query without a slash matches repository names only:
+    // skip the owner/username and exact-repository probes entirely.
+    if (probeText === null) return;
     let cancelled = false;
-    const slash = query.indexOf("/");
+    const slash = probeText.indexOf("/");
     setProbing(true);
     void (async () => {
       try {
-        if (slash > 0 && slash < query.length - 1) {
-          const ownerPart = query.slice(0, slash);
-          const namePart = query.slice(slash + 1);
+        if (slash > 0 && slash < probeText.length - 1) {
+          const ownerPart = probeText.slice(0, slash);
+          const namePart = probeText.slice(slash + 1);
           try {
             const resolved = await resolveRepo(cfg, ownerPart, namePart);
             if (!cancelled) setExact({ owner: resolved.info.owner, name: resolved.info.name });
@@ -136,10 +197,10 @@ const boot = query ? searchSnapshots.get(query) : undefined;
           return;
         }
         if (slash >= 0) return;
-        const address = await resolveOwner(cfg, query);
-        const alias = query.toLowerCase().startsWith("inj1")
+        const address = await resolveOwner(cfg, probeText);
+        const alias = probeText.toLowerCase().startsWith("inj1")
           ? await addressUsername(cfg, address).catch(() => null)
-          : query;
+          : probeText;
         const repos = await listRepos(cfg, address);
         if (cancelled) return;
         // A resolved owner enriches the index with their repositories.
@@ -175,15 +236,15 @@ const boot = query ? searchSnapshots.get(query) : undefined;
   // The V1 archive section expands in place: results load below the EVM
   // results without ever navigating to the archive pages.
   useEffect(() => {
-    if (!archiveOpen || !query) return;
+    if (!archiveOpen || !archiveText) return;
     let cancelled = false;
     setArchive((previous) => (previous.phase === "idle" ? { phase: "loading" } : previous));
     void (async () => {
       try {
         await prepareCosmWasmV1Snapshot();
-        const slash = query.indexOf("/");
-        const ownerPart = slash > 0 ? query.slice(0, slash) : query;
-        const namePart = slash > 0 ? query.slice(slash + 1) : "";
+        const slash = archiveText.indexOf("/");
+        const ownerPart = slash > 0 ? archiveText.slice(0, slash) : archiveText;
+        const namePart = slash > 0 ? archiveText.slice(slash + 1) : "";
         let owner: string;
         try {
           owner = await resolveCosmWasmV1Owner(ownerPart);
@@ -205,16 +266,31 @@ const boot = query ? searchSnapshots.get(query) : undefined;
     return () => {
       cancelled = true;
     };
-  }, [archiveOpen, query]);
+  }, [archiveOpen, archiveText]);
 
-  const pageSuggestion = useMemo<PageSuggestion | null>(() => matchPageSuggestion(query), [query]);
+  // An explicit qualifier prefix means the user already chose a direction;
+  // app-page suggestions stay out of the way for scoped queries.
+  const pageSuggestion = useMemo<PageSuggestion | null>(
+    () => (scope ? null : matchPageSuggestion(query)),
+    [query, scope],
+  );
 
   const results = useMemo(() => {
     if (!query) return [];
-    const hits = searchRepoEntries(repoIndexShared(cfg).entries, query, 50);
+    const hits = scope
+      ? scopedRepoEntries(repoIndexShared(cfg).entries, scope, 50)
+      : searchRepoEntries(repoIndexShared(cfg).entries, query, 50);
     const seen = new Set(hits.map((entry) => `${entry.owner}/${entry.name}/v${entry.suiteVersion}`));
     const ownerRows: RepoIndexEntry[] = [];
     for (const repo of ownerMatch?.repos ?? []) {
+      if (scope) {
+        // Owner listings only enrich user-scoped queries; repo scopes match
+        // repository names and never resolve an owner on their own.
+        if (scope.kind !== "user") continue;
+        if (!repo.owner.toLowerCase().includes(scope.value.trim().toLowerCase())) continue;
+        const keywords = scope.keywords.trim().toLowerCase();
+        if (keywords && !repo.name.toLowerCase().includes(keywords)) continue;
+      }
       const key = `${repo.owner}/${repo.name}/v${repo.suiteVersion}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -231,7 +307,7 @@ const boot = query ? searchSnapshots.get(query) : undefined;
       });
     }
     return [...hits, ...ownerRows];
-  }, [query, cfg, status, ownerMatch]);
+  }, [query, cfg, status, ownerMatch, scope]);
 
   // Loading is shown as a rotating border on the results area instead of a
   // loose spinner widget.
@@ -250,6 +326,8 @@ const boot = query ? searchSnapshots.get(query) : undefined;
   const open = async (entry: RepoIndexEntry) => {
     setOpening(`${entry.suiteDirectory}:${entry.repoId ?? entry.name}`);
     const { owner, name } = await resolveEntryTarget(cfg, entry);
+    // Opened repositories feed the global search box's Repos section.
+    recordSearchHistory("repos", `${owner}/${name}`);
     setOpening(null);
     nav(`/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`);
   };
@@ -261,6 +339,12 @@ const boot = query ? searchSnapshots.get(query) : undefined;
         <span className="muted">
           repositories matching <code>{query || "(empty)"}</code>
         </span>
+        {scope && (
+          <span className="muted small">
+            限定{scope.kind === "user" ? "用户" : "仓库"}: <code>{scope.value}</code>
+            {scope.keywords && <> · 关键词 <code>{scope.keywords}</code></>}
+          </span>
+        )}
         {resultsLoading && (
           <span className="search-page-loading" role="status" aria-live="polite">
             <LoaderCircle size={12} className="animate-spin" aria-hidden="true" />
@@ -317,7 +401,14 @@ const boot = query ? searchSnapshots.get(query) : undefined;
       )}
 
       {ownerMatch && (
-        <Link className="card search-owner-card" to={`/${encodeURIComponent(ownerMatch.address)}`}>
+        <Link
+          className="card search-owner-card"
+          to={`/${encodeURIComponent(ownerMatch.address)}`}
+          onClick={() => {
+            // Visited owners feed the global search box's Owners section.
+            recordSearchHistory("owners", `user:${ownerMatch.alias ?? ownerMatch.address}`);
+          }}
+        >
           <User size={15} aria-hidden="true" />
           <span>
             <b>{ownerMatch.alias ?? truncateAddress(ownerMatch.address, 14)}</b>

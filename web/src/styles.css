@@ -5093,6 +5093,53 @@ textarea.field:focus,
   color: var(--fg-muted);
   flex-shrink: 0;
 }
+
+/* Global search: categorized history sections (Owners / Recent / Repos). */
+.search-history {
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+}
+.search-history-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.search-history-icon {
+  color: var(--fg-muted);
+  flex-shrink: 0;
+}
+.search-history-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Qualifier prefix hints (user: / repo:, extensible) in the dropdown footer. */
+.search-prefix-hint {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  font-size: 0.72rem;
+  color: var(--fg-muted);
+}
+.search-prefix-hint-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.search-prefix-hint code {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--fg);
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+}
 /* Mobile: keep horizontal swipe scrolling on tab strips, code blocks, diffs,
    tables, and command lines, but hide the visible scrollbar. */
 @media (max-width: 768px) {
