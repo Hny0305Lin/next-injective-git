@@ -177,12 +177,7 @@ code, pre, .mono {
   color: var(--accent);
   font-weight: 700;
 }
-.brand-sub {
-  color: var(--fg-faint);
-  font-weight: 500;
-  font-size: 0.68rem;
-  letter-spacing: 0;
-}
+
 .topnav {
   display: flex;
   align-items: center;
@@ -1620,9 +1615,7 @@ input.field:focus {
   .topbar {
     padding: 6px 10px;
   }
-  .brand-sub {
-    display: none;
-  }
+
   .topnav-link {
     font-size: 0.76rem;
     padding: 3px 5px;
@@ -1721,21 +1714,12 @@ button:disabled,
 .brand-mark {
   width: 28px;
   height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
   border-radius: var(--radius);
-  background: var(--fg);
-  color: var(--bg);
+  object-fit: contain;
 }
 
-.brand-sub {
-  padding-left: 7px;
-  border-left: 1px solid var(--border);
-  color: var(--fg-muted);
-  font-size: 0.72rem;
-  font-weight: 500;
-}
+
 
 .topnav {
   gap: 2px;
@@ -2993,9 +2977,7 @@ html.dark .action-badge.a-award_badge {
     padding: 8px 12px;
   }
 
-  .brand-sub {
-    display: none;
-  }
+
 
   .wallet-btn {
     max-width: 150px;

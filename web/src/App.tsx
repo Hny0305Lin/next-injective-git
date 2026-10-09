@@ -2,7 +2,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   Database,
-  GitFork,
   HardDrive,
   Gauge,
   LayoutDashboard,
@@ -268,9 +267,8 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <Link to="/" className="brand" aria-label="igit dashboard">
-          <span className="brand-mark"><GitFork size={16} strokeWidth={2.25} /></span>
+          <img className="brand-mark" src="/igit-image.png" alt="" width={28} height={28} />
           <span>igit</span>
-          <span className="brand-sub">Injective</span>
         </Link>
 
         <nav className="topnav" aria-label="Primary navigation">
