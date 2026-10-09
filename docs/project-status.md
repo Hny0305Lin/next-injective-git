@@ -7,7 +7,10 @@ evidence `local-only/successor-deploy/deployment5.json`); CLI and Web dispatch
 by on-chain suite version (v3 → IPFS legacy, v4 → verified BYOS path); a real
 Cloudflare R2 end-to-end Git flow (push/clone/fetch/ls-remote/tag/ref-delete/
 tombstone rebuild, anonymous public GET+CORS, no Kubo/WSL2/`injectived`) and
-Web repository browsing are working. BYOS cloud providers are limited to
+Web repository browsing are working. Incremental packs (S08, manifest schema
+2, no contract change) are delivered and verified with a real testnet/R2
+incremental push ([ADR 0005](adr/0005-incremental-packs-via-manifest-schema-2.md)).
+BYOS cloud providers are limited to
 AWS S3 and Cloudflare R2. Still open: real AWS S3 canary, real force-push/
 concurrency races, Blockscout verification, Foundry gates (R04), successor
 publication evidence, security review, and mainnet approval — see
@@ -63,7 +66,7 @@ Git flows PASS, Web reads working (see [backlog](backlog.md)). Still NOT
 PROVEN: the real AWS S3 canary, remaining real-layer residuals, successor
 publication evidence, security review, and mainnet acceptance.
 See [ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md),
-[implementation specification](storage-byos.md), [S01–S07 backlog](backlog.md),
+[implementation specification](storage-byos.md), [S01–S08 backlog](backlog.md),
 and [suite version compatibility](suite-version-compatibility.md).
 
 以下文件保留原样并统一标记为：**“历史迁移草稿/未对齐报告，不作为当前项目状态依据。”**
@@ -72,7 +75,7 @@ and [suite version compatibility](suite-version-compatibility.md).
 - docs/a11-storage-indexer-v2.md、docs/PRIORITY-MAPPING.md。
 - docs/evm-v2-handoff.md、docs/liveagent-evm-v2-context.md、docs/project-knowledge-base-zh.md 中的旧状态快照属于 HISTORICAL；架构描述需按当前代码逐条引用。
 
-旧文档中的 P1.1/P1.2/P1.3 分别被用于“operator/部署/激活”和“Moderation/索引/ABI”两套含义，不能互换。旧问题使用 R01–R08；新增存储任务使用 S01–S07。
+旧文档中的 P1.1/P1.2/P1.3 分别被用于“operator/部署/激活”和“Moderation/索引/ABI”两套含义，不能互换。旧问题使用 R01–R08；新增存储任务使用 S01–S08。
 
 Current acceptance is NOT PROVEN. Foundry, native Kubo, and the standard CLI configuration path are BLOCKED in this environment. Real transactions and production deployment are outside this audit authorization. See [the independent follow-up task list](backlog.md).
 

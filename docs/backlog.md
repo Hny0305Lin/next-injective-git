@@ -19,11 +19,12 @@
 
 R01–R08 只是后续任务清单，本轮没有实现这些功能或发送交易。静态修复任务可以开始；真实 E2E 需先解决对应环境/代码阻断并获得明确写交易授权；不得进入生产部署。
 
-## 新存储工作流 S01–S07（2026-09-13 用户决策）
+## 新存储工作流 S01–S08（2026-09-13 用户决策；S08 于 2026-10-05 增补）
 
 范围见 [ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md)；
 技术细节见 [BYOS 实施规格](storage-byos.md)。下表状态已按 2026-10-05 交付情况同步；
-各切片的原始执行记录见下方日期小节。
+各切片的原始执行记录见下方日期小节。S08（增量 pack）范围与门槛另见
+[ADR 0005](adr/0005-incremental-packs-via-manifest-schema-2.md)。
 
 主网首期直接目标 storage-neutral successor；只接用户自有 AWS S3 / Cloudflare R2 桶，
 不接 MinIO/其他云/自建对象存储服务。公开仓库、canonical JSON、用户独立 reader、用户付费，
@@ -130,7 +131,7 @@ S04–S07 仍 NOT PROVEN；下一切片为 successor ABI/CAS/version dispatch，
 - docs/a11-storage-indexer-v2.md、docs/PRIORITY-MAPPING.md。
 - docs/evm-v2-handoff.md、docs/liveagent-evm-v2-context.md、docs/project-knowledge-base-zh.md 中的旧状态快照属于 HISTORICAL；架构描述需按当前代码逐条引用。
 
-旧文档中的 P1.1/P1.2/P1.3 分别被用于“operator/部署/激活”和“Moderation/索引/ABI”两套含义，不能互换。旧问题继续使用 R01–R08；新增存储任务使用 S01–S07，不重新编号或覆盖旧问题。
+旧文档中的 P1.1/P1.2/P1.3 分别被用于“operator/部署/激活”和“Moderation/索引/ABI”两套含义，不能互换。旧问题继续使用 R01–R08；新增存储任务使用 S01–S08，不重新编号或覆盖旧问题。
 
 不要继续旧草稿的“仅补测试即可完成”假设。Suite 测试网地址已知且实时可读；索引器的实际阻断是代码不匹配，Moderation 的实际阻断是文件不存在。
 

@@ -1,6 +1,6 @@
 # igit Manual — Complete User and Developer Guide
 
-Status: manual home. Applies to the current `dev` line. Last updated: 2026-10-05.
+Status: manual home. Applies to the current `dev` line. Last updated: 2026-10-09.
 
 This manual is the single, self-contained walkthrough of Next Injective Git
 (igit): a Git hosting stack whose control plane is a non-upgradeable Injective
@@ -175,9 +175,12 @@ This project publishes status with a bounded vocabulary — `PASS`, `FAIL`,
 `BLOCKED`, `NOT PROVEN`, `HISTORICAL`. Those labels are used unchanged in both
 languages and must not be softened. In particular:
 
-- Suite v4 on Injective testnet, the CLI/Web version dispatch, and real
-  Cloudflare R2 end-to-end Git flows are **delivered**.
-- The real AWS S3 canary, Foundry gates, successor publication evidence,
+- Suite v4 on Injective testnet, the CLI/Web version dispatch, real
+  Cloudflare R2 end-to-end Git flows, and incremental packs (manifest schema
+  2, [ADR 0005](adr/0005-incremental-packs-via-manifest-schema-2.md)) are
+  **delivered**.
+- The real AWS S3 canary, real force-push and concurrency races, Blockscout
+  verification, Foundry gates (R04), successor publication evidence,
   security review, and mainnet governance approval remain **open**.
 - `SuiteDirectory` in published network profiles is intentionally held empty
   until real deployment and cutover evidence is approved. Do not treat a test

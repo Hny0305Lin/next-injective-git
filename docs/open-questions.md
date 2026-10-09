@@ -101,4 +101,4 @@ protocol.
 
 No fixture, previous deployment or document checkbox can decide these matters
 or prove their implementation. See [the roadmap](delivery-roadmap.md) and
-[S01–S07 backlog](backlog.md) for actual exit conditions.
+[S01–S08 backlog](backlog.md) for actual exit conditions.

@@ -7,12 +7,14 @@ uses the legacy IPFS/Kubo adapter, and Suite v4 uses BYOS object storage
 `SuiteDirectory`; never add a direct module address, compatibility backend,
 legacy fallback, proxy, diamond, or `delegatecall` path.
 
-**Current Project Status:** V4 BYOS delivered (2026-10-05): the successor Suite
-(suiteVersion 4) is deployed and active on Injective testnet, the CLI and Web
-dispatch by on-chain suite version, and real R2 end-to-end Git flows plus Web
-browsing work without Kubo/WSL2/`injectived`. Remaining open items: real AWS
-canary, Foundry gates, successor publication evidence, security review, and
-mainnet governance approval. Incremental packs (S08) are delivered and
+**Current Project Status:** V4 BYOS delivered in testnet scope (updated
+2026-10-09): the successor Suite (suiteVersion 4) is deployed and active on
+Injective testnet, the CLI and Web dispatch by on-chain suite version, and
+real R2 end-to-end Git flows plus Web browsing work without
+Kubo/WSL2/`injectived`. Remaining open items: real AWS S3 canary, real
+force-push/concurrency races, Blockscout verification, Foundry gates (R04),
+successor publication evidence, security review, and mainnet governance
+approval. Incremental packs (S08) are delivered and
 verified with a real testnet/R2 incremental push
 ([ADR 0005](docs/adr/0005-incremental-packs-via-manifest-schema-2.md);
 manifest schema 2 on Suite v4, no contract change). See

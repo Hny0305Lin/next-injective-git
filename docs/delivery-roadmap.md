@@ -78,7 +78,7 @@ findings or substitute for current Windows/Linux release-asset acceptance.
 See [Project Status](project-status.md) for the fact summary and
 [ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md) for
 product choices. Do not reuse ambiguous old P1 subtask numbers for R01–R08
-repairs or S01–S07 storage tasks.
+repairs or S01–S08 storage tasks.
 
 ## Non-Negotiable Guardrails
 

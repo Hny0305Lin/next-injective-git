@@ -2,6 +2,18 @@
 
 Date: 2026-08-21. Branch `dev`. Commits `471b7fd`, `78920e6`, `cd128dc`.
 
+> **Follow-up (2026-10-09): the open failure below is resolved.** The user
+> configured the required Vercel secrets, and the `web Vercel production
+> deploy` CI job succeeded for commit `721228e` on 2026-10-05 — the first
+> CI-originated production deployment. www.igit.xyz began serving the new
+> bundle (`index-_26HIkFf.js`), confirmed by fetching the live bundle and
+> checking that its manifest validator accepts `schemaVersion 1|2`. The
+> "never succeeded" statements in *Summary* and *Verification*, and the
+> token-scoped *Open Failure* section, are the pre-resolution historical
+> record and are superseded by this note. CI has remained the sole publish
+> path since; see [backlog](backlog.md) 2026-10-05 sections for the
+> deployment evidence trail.
+
 ## Summary
 
 A CI run that previously executed seven jobs began executing three. No pipeline

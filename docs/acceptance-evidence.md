@@ -74,7 +74,7 @@ with verified public GET/CORS. Still required before successor publication:
 - Retain independent security, governance, finality, approval and checksum
   gates. A PASS from the current v3 gate cannot approve successor publication.
 
-Detailed layer exits are in [S01–S07](backlog.md), the
+Detailed layer exits are in [S01–S08](backlog.md), the
 [BYOS specification](storage-byos.md) and [roadmap](delivery-roadmap.md).
 Managed brokers, private repositories, compulsory dual copies and automatic
 cleanup are not first-release evidence requirements.

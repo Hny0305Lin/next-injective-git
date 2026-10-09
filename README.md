@@ -1,5 +1,9 @@
 # Next Injective Git (`igit`)
 
+<p align="center">
+  <img src="web/public/igit-image.png" width="128" height="128" alt="Next Injective Git (igit) logo" />
+</p>
+
 Next Injective Git stores Git packfiles through two version-dispatched data
 planes — Suite v3 uses the legacy IPFS/Kubo adapter, and Suite v4 uses BYOS
 object storage limited to Amazon S3 and Cloudflare R2 — and stores repository
@@ -20,13 +24,19 @@ write fallback, or mixed backend mode.
 > (`0xf987396475d0a4c96b722e993a95d8720a6292ad`); it is not yet a published
 > public profile. See [suite version compatibility](docs/suite-version-compatibility.md).
 
-**Current Status:** V4 BYOS delivered (2026-10-05) — successor Suite deployed
-on Injective testnet, CLI/Web version dispatch, real Cloudflare R2 end-to-end
-Git flows and Web browsing working without Kubo/WSL2/`injectived`; mainnet and
-successor publication gates remain open. See [Project Status](docs/project-status.md)
-for a quick overview or [Delivery Roadmap](docs/delivery-roadmap.md) for
-detailed sequencing. Architecture decisions and acceptance evidence remain
-authoritative in their dedicated documents.
+**Current Status:** V4 BYOS delivered in testnet scope (updated 2026-10-09) —
+successor Suite deployed and active on Injective testnet, CLI/Web version
+dispatch, real Cloudflare R2 end-to-end Git flows and Web browsing, and
+incremental packs via manifest schema 2
+([ADR 0005](docs/adr/0005-incremental-packs-via-manifest-schema-2.md)), all
+working without Kubo/WSL2/`injectived`. Suite v4 is **not finished**: still
+open are the real AWS S3 canary, real force-push/concurrency races, Blockscout
+verification, Foundry gates (R04), successor publication evidence, security
+review, and mainnet governance approval. See
+[Project Status](docs/project-status.md) for a quick overview or
+[Delivery Roadmap](docs/delivery-roadmap.md) for detailed sequencing.
+Architecture decisions and acceptance evidence remain authoritative in their
+dedicated documents.
 
 ## Why EVM V2
 

@@ -1,6 +1,6 @@
 # 03 · Web Application Guide
 
-Status: manual chapter. Audience: users. Last updated: 2026-10-05.
+Status: manual chapter. Audience: users. Last updated: 2026-10-09.
 
 The igit web application at <https://www.igit.xyz> is a **direct-to-chain
 client**. It has no backend of its own: it reads the same Injective EVM
@@ -61,18 +61,30 @@ prefix, because it is a separate trust root — see
 
 | Route | Renders | Needs a verified Suite? |
 |---|---|---|
-| `/` | Dashboard — your repositories plus recent contract activity | yes |
+| `/` | Dashboard — your repositories and a workspace overview | yes |
 | `/search?q=…` | Search results across repositories and owners | yes |
 | `/settings` | Network profile, SuiteDirectory, testnet wallet table | no |
 | `/monitor` | Public monitor — network pulse, gateways, V1 boundary | no |
 | `/mapmonitor` | Map monitor — reachable infrastructure on a world tour | no |
-| `/explorer` | Block explorer — on-chain activity and transaction detail | yes |
 | `/ipfs` | IPFS explorer — inspect CIDs, audit a repository's packfiles | yes |
 | `/archive/cosmwasm-v1` | CosmWasm v1 archive entry — open an archived repository | no |
 | `/archive/cosmwasm-v1/:owner` | Archived owner's repository list | no |
 | `/archive/cosmwasm-v1/:owner/:repo/*` | Archived repository viewer (read-only) | no |
 | `/:owner` | Owner page — repositories and badges | yes |
 | `/:owner/:repo/*` | Repository page — code, commits, refs, sponsors | yes |
+
+There is no block-explorer page. The former `/explorer` Activity page and its
+navigation entry were removed (2026-10-09); on-chain activity now lives in
+the monitor's *Activity* tab, and transaction inspection happens on the
+public explorer linked from Settings.
+
+Navigation is deliberately small. The top bar carries the igit logo and
+wordmark, then **Dashboard, Monitor, MapMonitor, IPFS, Settings**. The side
+navigation repeats those entries, adds an external **Docs** link
+(docs.igit.xyz), and shows the architecture legend (EVM V2/V3 on IPFS,
+EVM V4 BYOS, CosmWasm V1 archive, IPFS). The archive has **no navigation
+entry**: reach it through a direct URL, through search, or through links on
+the Monitor page.
 
 Routes that do **not** require a verified Suite — the archive, the monitor, and
 the map monitor — deliberately stay usable so you can always inspect
@@ -139,26 +151,18 @@ Sponsor controls sit inert.
 `/` is the landing page.
 
 - Signed out, the heading is **Dashboard** and the copy reads "Browse
-  repositories, inspect on-chain activity, and resolve IPFS objects." The
-  repository panel invites you to "Connect your workspace" or to explore public
-  activity instead.
+  repositories and resolve IPFS objects." The repository panel invites you to
+  "Connect your workspace".
 - Signed in, the heading becomes **Your repositories** and lists the
   repositories owned by the connected address, with a client-side filter
   ("Find a repository…").
 
-An overview strip summarizes the workspace: the **Repositories** count, the
-**Network** state (which reads "Injective" when a Suite is configured and
-"Setup needed" when it is not), and the **Objects** rail, which reads "IPFS" —
-the legacy pack rail, shown for continuity with v3 repositories.
-
-The right-hand column shows **Recent activity** — the latest confirmed contract
-actions, lazily loaded as you scroll. Each row carries an action badge, the
-sender (abbreviated), and a relative timestamp, with a `failed` marker for
-transactions that reverted. Before the Suite verifies, the panel says:
-
-> Activity is unavailable until the EVM Suite passes verification.
-
-Both the empty state and the activity panel link onward to the explorer.
+An overview strip summarizes the workspace: the **Repositories** count and
+the **Network** state (which reads "Injective" when a Suite is configured and
+"Setup needed" when it is not). The former Objects/IPFS rail and the
+right-hand **Recent activity** column were removed (2026-10-09): the
+dashboard focuses on your repositories, and chain activity lives in the
+monitor's *Activity* tab.
 
 ### Empty states you may meet
 
@@ -357,6 +361,10 @@ Empty states: "no repositories on chain.", "no matching repositories.", and
 Two ways in: the header search box, and the `/search?q=…` route.
 
 - **Keyboard.** Press `/` anywhere outside a text field to focus the search box.
+- **Built-in page suggestions.** Queries that look like a page name — for
+  example `monitor`, `settings`, or `docs` (also 文档) — offer a direct jump
+  above the repository results; the `docs` suggestion opens the documentation
+  site (docs.igit.xyz) in a new tab.
 - **Instant results.** Typing two or more characters searches a locally built
   repository index and shows up to seven matches, ranked exact match first,
   then prefix, then substring, then owner-address match. Delisted repositories
@@ -383,35 +391,6 @@ A search for an archived owner or repository also offers **View other V1 Archive
 results**, which queries the CosmWasm v1 contract directly and links into the
 archive routes. If the query does not resolve to an archived owner, it says so
 rather than failing silently.
-
-## Block explorer
-
-`/explorer` lists on-chain activity for the configured SuiteDirectory. The
-header states exactly what is being watched:
-
-```text
-Activity across SuiteDirectory 0x9873964750… · EVM chain 1439
-```
-
-A configuration card reports the platform fee, the suite version, the treasury
-address, and the admin address. A lookup field accepts a transaction hash and
-renders the full transaction: hash, success or revert code, block height, gas
-used, signature mode, public key when present, the decoded messages, and the
-raw log on failure.
-
-Two scopes control the list:
-
-- **All** — every contract transaction observed in the window.
-- **Mine** — filtered to your connected address.
-
-The privacy note is explicit and worth quoting in full:
-
-> On-chain data is public. "Mine" only filters this view to your address; it
-> does not hide anything from others.
-
-Empty states: "no activity from your address yet." and "no contract
-transactions found." A hash that has not been indexed yet reports "tx not found
-(or not indexed yet)."
 
 ## Public monitor
 

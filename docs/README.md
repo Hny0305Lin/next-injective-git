@@ -1,7 +1,7 @@
 # 项目文档入口
 
-文档同步日期：2026-10-05（Asia/Shanghai）。历史审计记录以
-[事实基线](reconciliation-baseline-2026-09-12.md)（2026-09-13）为准；其后 S01–S06 的交付记录见
+文档同步日期：2026-10-09（Asia/Shanghai）。历史审计记录以
+[事实基线](reconciliation-baseline-2026-09-12.md)（2026-09-13）为准；其后 S01–S06 与 S08 的交付记录见
 [backlog](backlog.md) 各日期小节与 [BYOS 规格](storage-byos.md)。本页仅作入口，不覆盖历史审计。
 状态限定为 PASS、FAIL、BLOCKED、NOT PROVEN、HISTORICAL，定义和原始命令输出见基线。
 
@@ -10,9 +10,10 @@
 | [套件版本兼容矩阵](suite-version-compatibility.md) | v1–v5+ 各版本职责、读取路径、CLI/Web 支持范围与前向兼容策略（单一事实来源） | 2026-10-05 生效；v3=IPFS、v4=BYOS(S3/R2) |
 | [事实基线](reconciliation-baseline-2026-09-12.md) | 2026-09-13 审计的状态依据；含命令、文件清单、RPC、冲突表和缺口 | 只按具体检查项赋予状态 |
 | [中文状态入口](project-status-zh.md) / [English status](project-status.md) | 状态摘要 | 不维护第二套完成度 |
-| [后续待办](backlog.md) | R01–R08 旧问题、S01–S07 新存储任务及退出条件 | 计划不代表实现或授权 |
+| [后续待办](backlog.md) | R01–R08 旧问题、S01–S08 新存储任务及退出条件 | 计划不代表实现或授权 |
 | [架构](architecture.md)、[ADR](adr/) | 设计约束 | 不是实时验收证据 |
 | [ADR 0004](adr/0004-mainnet-storage-neutral-successor-and-byos-scope.md) | 2026-09-13 用户确认的主网 successor / AWS S3 / R2 BYOS 范围 | 产品选择已落地：S01–S06 已交付（v4 测试网部署 + 真实 R2 E2E PASS）；真实 AWS canary 与主网发布门禁未过 |
+| [ADR 0005](adr/0005-incremental-packs-via-manifest-schema-2.md) | 2026-10-05 增量 pack（manifest schema 2）决策与验收门槛 | 已交付：本地切片 + 真实测试网/R2 增量推送复验；不改 v4 合约与 suiteVersion |
 | [BYOS 实施规格](storage-byos.md) | canonical JSON、manifest、credentials、provider 能力与失败恢复 | schema 1 已冻结；`storage add/doctor/show` 与 v4 Git 远程 BYOS 已实现 |
 | [S04/S05 实施提示词](prompts/s04-s05-successor-integration.md) | 已执行（2026-10-04）：successor 合约 + CLI/Web 接入 | 历史任务书，不含部署/交易/云写入授权 |
 | [S01–S03 实施提示词](prompts/next-storage-implementation.md) | 已执行（2026-09-13）：本地协议/adapter 切片 | 历史任务书，不含真实凭据/云写入/交易/部署授权 |
@@ -27,7 +28,7 @@
 - docs/a11-storage-indexer-v2.md、docs/PRIORITY-MAPPING.md。
 - docs/evm-v2-handoff.md、docs/liveagent-evm-v2-context.md、docs/project-knowledge-base-zh.md 中的旧状态快照属于 HISTORICAL；架构描述需按当前代码逐条引用。
 
-旧文档中的 P1.1/P1.2/P1.3 分别被用于“operator/部署/激活”和“Moderation/索引/ABI”两套含义，不能互换。旧问题使用 R01–R08，新增存储任务使用 S01–S07。
+旧文档中的 P1.1/P1.2/P1.3 分别被用于“operator/部署/激活”和“Moderation/索引/ABI”两套含义，不能互换。旧问题使用 R01–R08，新增存储任务使用 S01–S08。
 
 原审计关键结论（不覆盖 BYOS 第 9 节新增记录）：九合约 solc、Go test/vet、Web 本地检查 PASS；Foundry/Kubo/普通 CLI 配置读取 BLOCKED；Moderation UI 完成声明及 EVM 索引器 FAIL；真实产品 E2E 和生产部署 NOT PROVEN。
 
