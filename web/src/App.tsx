@@ -78,6 +78,10 @@ const primaryNav = [
   { to: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
+// The top bar omits Monitor (MapMonitor covers the monitoring view); the
+// left Workspace sidebar and mobile nav keep the full primaryNav list.
+const topNav = primaryNav.filter((item) => item.to !== "/monitor");
+
 // Entries beyond this index render in the top nav only on wide viewports
 // (see the .topnav-link-more media query); side/mobile nav always show all.
 const primaryTopnavCount = 4;
@@ -472,7 +476,7 @@ export default function App() {
         </Link>
 
         <nav className="topnav" aria-label="Primary navigation">
-          {primaryNav.map((item, index) => (
+          {topNav.map((item, index) => (
             <NavLink
               key={item.to}
               to={item.to}
