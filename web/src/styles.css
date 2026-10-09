@@ -418,16 +418,7 @@ input.field:focus {
 }
 
 /* ---- dashboard ---- */
-.dashboard {
-  display: grid;
-  grid-template-columns: 1fr 380px;
-  gap: 20px;
-  align-items: start;
-}
 .dashboard-main {
-  min-width: 0;
-}
-.dashboard-side {
   min-width: 0;
 }
 .dash-section-title {
@@ -1384,19 +1375,6 @@ input.field:focus {
 .linkish:hover {
   text-decoration: underline;
 }
-.action-badge {
-  display: inline-block;
-  padding: 1px 7px;
-  border-radius: 20px;
-  font-size: 0.7rem;
-  font-weight: 600;
-  background: rgba(139, 148, 158, 0.18);
-  color: var(--fg-muted);
-}
-.action-badge.a-sponsor { background: rgba(45, 212, 143, 0.18); color: var(--accent-2); }
-.action-badge.a-update_ref { background: rgba(77, 61, 255, 0.2); color: #a89fff; }
-.action-badge.a-create_repo { background: rgba(210, 153, 34, 0.2); color: #d29922; }
-.action-badge.a-award_badge { background: rgba(188, 140, 255, 0.2); color: #bc8cff; }
 .ok-tag {
   color: var(--accent-2);
   font-size: 0.76rem;
@@ -1542,14 +1520,6 @@ input.field:focus {
 }
 
 /* ---- responsive ---- */
-@media (max-width: 960px) {
-  .dashboard {
-    grid-template-columns: 1fr;
-  }
-  .dashboard-side {
-    order: -1;
-  }
-}
 
 @media (max-width: 860px) {
   .topbar {
@@ -2229,11 +2199,6 @@ textarea.field:focus,
   box-shadow: 0 0 0 3px var(--warn-soft);
 }
 
-.dashboard {
-  grid-template-columns: minmax(0, 1fr) 340px;
-  gap: 28px;
-}
-
 .section-heading {
   min-height: 44px;
   margin-bottom: 12px;
@@ -2406,41 +2371,6 @@ textarea.field:focus,
   font-weight: 550;
 }
 
-.activity-panel {
-  min-height: 190px;
-}
-
-.activity-list {
-  display: grid;
-}
-
-.activity-row {
-  min-height: 49px;
-  padding: 9px 12px;
-  display: grid;
-  grid-template-columns: minmax(92px, auto) minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  border-bottom: 1px solid var(--border);
-}
-
-.activity-meta {
-  min-width: 0;
-  display: grid;
-  justify-items: end;
-  color: var(--fg-muted);
-  font-size: 0.68rem;
-}
-
-.activity-meta code {
-  max-width: 100%;
-  overflow: hidden;
-  color: var(--fg);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.7rem;
-}
-
 .panel-link {
   min-height: 40px;
   padding: 0 12px;
@@ -2456,12 +2386,6 @@ textarea.field:focus,
   color: var(--fg);
   background: var(--bg-inset);
   text-decoration: none;
-}
-
-.activity-error a {
-  color: var(--fg);
-  font-size: 0.76rem;
-  font-weight: 500;
 }
 
 .page-note {
@@ -2820,40 +2744,6 @@ textarea.field:focus,
   text-transform: none;
 }
 
-.action-badge {
-  border-radius: 999px;
-  background: var(--bg-hover);
-  color: var(--fg-muted);
-  font-weight: 550;
-}
-
-.action-badge.a-update_ref {
-  background: #eff6ff;
-  color: #1d4ed8;
-}
-
-.action-badge.a-create_repo,
-.action-badge.a-award_badge {
-  background: #fff7ed;
-  color: #c2410c;
-}
-
-.action-badge.a-sponsor {
-  background: var(--accent-2-soft);
-  color: var(--accent-2);
-}
-
-html.dark .action-badge.a-update_ref {
-  background: rgba(59, 130, 246, 0.14);
-  color: #93c5fd;
-}
-
-html.dark .action-badge.a-create_repo,
-html.dark .action-badge.a-award_badge {
-  background: rgba(249, 115, 22, 0.14);
-  color: #fdba74;
-}
-
 .error {
   color: var(--danger);
   background: var(--danger-soft);
@@ -2888,10 +2778,6 @@ html.dark .action-badge.a-award_badge {
 
   .footer {
     width: calc(100% - 64px);
-  }
-
-  .dashboard {
-    grid-template-columns: minmax(0, 1fr) 310px;
   }
 }
 
@@ -2962,14 +2848,6 @@ html.dark .action-badge.a-award_badge {
   .footer {
     width: calc(100% - 48px);
   }
-
-  .dashboard {
-    grid-template-columns: 1fr;
-  }
-
-  .dashboard-side {
-    order: 0;
-  }
 }
 
 @media (max-width: 600px) {
@@ -3025,10 +2903,6 @@ html.dark .action-badge.a-award_badge {
     border-top: 1px solid var(--border);
   }
 
-  .dashboard {
-    gap: 26px;
-  }
-
   .repo-list-item {
     grid-template-columns: 24px minmax(0, 1fr);
     padding: 13px 12px;
@@ -3037,14 +2911,6 @@ html.dark .action-badge.a-award_badge {
   .repo-list-icon {
     width: 24px;
     height: 24px;
-  }
-
-  .activity-row {
-    grid-template-columns: minmax(84px, auto) minmax(0, 1fr);
-  }
-
-  .activity-row .fail-tag {
-    display: none;
   }
 
   .page-note a {
