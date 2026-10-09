@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Award, GitBranch } from "lucide-react";
 import { ContractTypeBadge } from "../components/ContractTypeBadge";
+import { Identicon } from "../components/Identicon";
 import { repoIndexShared } from "../lib/repo-index";
 import {
   addressUsername,
@@ -65,18 +66,12 @@ export default function Owner() {
           <div style={{
             width: 64,
             height: 64,
-            borderRadius: "50%",
-            background: "var(--accent-soft)",
+            borderRadius: 12,
             border: "1px solid var(--border)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            overflow: "hidden",
             margin: "0 auto 12px",
-            color: "var(--accent-text)",
-            fontSize: "1.5rem",
-            fontWeight: 700,
           }}>
-            {(alias ?? owner).slice(0, 2).toUpperCase()}
+            <Identicon seed={addr || owner} title={`identicon for ${alias ?? owner}`} />
           </div>
           {alias && (
             <div style={{ fontWeight: 600, fontSize: "1.05rem" }}>@{alias}</div>
