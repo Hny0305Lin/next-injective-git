@@ -341,8 +341,8 @@ const boot = query ? searchSnapshots.get(query) : undefined;
         </span>
         {scope && (
           <span className="muted small">
-            限定{scope.kind === "user" ? "用户" : "仓库"}: <code>{scope.value}</code>
-            {scope.keywords && <> · 关键词 <code>{scope.keywords}</code></>}
+            scoped to {scope.kind === "user" ? "owner" : "repositories"} <code>{scope.value}</code>
+            {scope.keywords && <> · keywords <code>{scope.keywords}</code></>}
           </span>
         )}
         {resultsLoading && (

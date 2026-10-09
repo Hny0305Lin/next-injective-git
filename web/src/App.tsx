@@ -18,7 +18,8 @@ import {
   User,
 } from "lucide-react";
 import { Icon as IconifyIcon } from "@iconify/react/offline";
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Link, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import AccountMenu from "./components/AccountMenu";
 import Toast from "./components/Toast";
@@ -115,7 +116,9 @@ export default function App() {
   // The draft survives navigation and reloads within the tab session, so
   // reopening the search box restores the last input instead of clearing it.
   const [q, setQ] = useState(readSearchDraft);
-  const [showHistory, setShowHistory] = useState(false);
+  // GitHub-style search card: opened from the topbar trigger, rendered as a
+  // centered modal (same overlay as the wallet dialog).
+  const [searchOpen, setSearchOpen] = useState(false);
   const [history, setHistory] = useState<SearchHistory>(loadSearchHistory);
   const [repoResults, setRepoResults] = useState<RepoIndexEntry[]>([]);
   const [indexStatus, setIndexStatus] = useState<RepoIndexStatus | null>(null);
@@ -129,7 +132,6 @@ export default function App() {
     return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   });
   const { address, connected, walletModalOpen, openWalletModal, closeWalletModal } = useWallet();
-  const searchRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const historyListRef = useRef<HTMLDivElement>(null);
   const cfg = useMemo(() => loadConfig(), [configRevision]);
@@ -239,15 +241,51 @@ export default function App() {
     setHistory(recordSearchHistory(category, query));
   }, []);
 
-  useEffect(() => {
-    const onClick = (event: MouseEvent) => {
-      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
-        setShowHistory(false);
-      }
-    };
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
+  /** Open the centered search card (trigger click or "/" shortcut). */
+  const openSearch = useCallback(() => {
+    // Re-read storage: the /search page records into the shared history
+    // while the card is closed. A fresh open never carries a stale
+    // keyboard/mouse highlight from the previous session.
+    setHistory(loadSearchHistory());
+    setHighlight(-1);
+    setSearchOpen(true);
   }, []);
+
+  const closeSearch = useCallback(() => setSearchOpen(false), []);
+
+  // Autofocus the card input on open and select the restored draft so fresh
+  // typing replaces it in one stroke.
+  useEffect(() => {
+    if (!searchOpen) return;
+    const input = searchInputRef.current;
+    input?.focus();
+    input?.select();
+  }, [searchOpen]);
+
+  // Lock background scrolling while the card is open (wallet modal pattern).
+  useEffect(() => {
+    if (!searchOpen) return;
+    const { body, documentElement } = document;
+    const previousOverflow = body.style.overflow;
+    const previousPaddingRight = body.style.paddingRight;
+    const scrollbarWidth = window.innerWidth - documentElement.clientWidth;
+    body.style.overflow = "hidden";
+    if (scrollbarWidth > 0) body.style.paddingRight = `${scrollbarWidth}px`;
+    return () => {
+      body.style.overflow = previousOverflow;
+      body.style.paddingRight = previousPaddingRight;
+    };
+  }, [searchOpen]);
+
+  // Escape closes the card from anywhere (input events bubble to window).
+  useEffect(() => {
+    if (!searchOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeSearch();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [searchOpen, closeSearch]);
 
   useEffect(() => {
     const focusSearch = (event: KeyboardEvent) => {
@@ -255,14 +293,12 @@ export default function App() {
       const isEditing = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
       if (event.key === "/" && !isEditing) {
         event.preventDefault();
-        searchInputRef.current?.focus();
-        // Select the restored draft so fresh typing replaces it in one stroke.
-        searchInputRef.current?.select();
+        openSearch();
       }
     };
     window.addEventListener("keydown", focusSearch);
     return () => window.removeEventListener("keydown", focusSearch);
-  }, []);
+  }, [openSearch]);
 
   useEffect(() => {
     const query = q.trim();
@@ -284,7 +320,7 @@ export default function App() {
     const { owner, name } = await resolveEntryTarget(cfg, entry);
     setHistory(recordSearchHistory("repos", `${owner}/${name}`));
     nav(`/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`);
-    setShowHistory(false);
+    setSearchOpen(false);
     setRepoResults([]);
     setHighlight(-1);
   };
@@ -302,7 +338,7 @@ export default function App() {
       const archiveTarget = buildSearchPath(query);
       if (!archiveTarget) return;
       nav(archiveTarget);
-      setShowHistory(false);
+      setSearchOpen(false);
       return;
     }
     const target = searchSubmitTarget(query);
@@ -312,7 +348,7 @@ export default function App() {
     } else {
       nav(`/search?q=${encodeURIComponent(target.query)}`);
     }
-    setShowHistory(false);
+    setSearchOpen(false);
   };
 
   const clearHistorySection = (category?: SearchHistoryCategory) => {
@@ -333,7 +369,7 @@ export default function App() {
   }, [q, inputScope]);
 
   const openDocsHint = () => {
-    setShowHistory(false);
+    setSearchOpen(false);
     setRepoResults([]);
     setHighlight(-1);
     window.open(DOCS_URL, "_blank", "noopener,noreferrer");
@@ -365,6 +401,39 @@ export default function App() {
       ?.scrollIntoView({ block: "nearest" });
   }, [highlight]);
 
+  // Keyboard interaction inside the search card input: arrows walk the flat
+  // option list (repo results, then Owners / Recent / Repos), Enter runs the
+  // highlighted option (or submits), Escape closes the card.
+  const onSearchCardKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if ((event.key === "ArrowDown" || event.key === "ArrowUp") && optionCount > 0) {
+      event.preventDefault();
+      setHighlight((current) => {
+        const delta = event.key === "ArrowDown" ? 1 : -1;
+        const next = current + delta;
+        if (next < 0) return optionCount - 1;
+        if (next >= optionCount) return 0;
+        return next;
+      });
+      return;
+    }
+    if (event.key === "Escape") {
+      closeSearch();
+      return;
+    }
+    if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      if (highlight >= 0 && highlight < repoResults.length) {
+        void openRepo(repoResults[highlight]);
+      } else {
+        const option = highlight >= repoResults.length
+          ? historyOptions[highlight - repoResults.length]
+          : undefined;
+        if (option) submitSearch(option.value);
+        else submitSearch();
+      }
+    }
+  };
+
   return (
     <div className="app">
       <header className="topbar">
@@ -388,178 +457,172 @@ export default function App() {
           ))}
         </nav>
 
-        <div className="search" ref={searchRef}>
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              submitSearch();
-            }}
+        <div className="search">
+          <button
+            type="button"
+            className="search-trigger"
+            onClick={openSearch}
+            aria-label="Search repositories, owners, or addresses"
+            title="Search (press /)"
           >
-            <Search className="search-icon" size={15} aria-hidden="true" />
-            <input
-              ref={searchInputRef}
-              value={q}
-              onChange={(event) => {
-                setQ(event.target.value);
-                // Typing always reopens the panel: after a submit the input
-                // keeps focus, so a fresh focus event alone would not.
-                setShowHistory(true);
-              }}
-              onFocus={() => {
-                // Re-read storage: the /search page records into the shared
-                // history while the dropdown is closed.
-                setHistory(loadSearchHistory());
-                setShowHistory(true);
-              }}
-              onKeyDown={(event) => {
-                if ((event.key === "ArrowDown" || event.key === "ArrowUp") && optionCount > 0) {
-                  event.preventDefault();
-                  setHighlight((current) => {
-                    const delta = event.key === "ArrowDown" ? 1 : -1;
-                    const next = current + delta;
-                    if (next < 0) return optionCount - 1;
-                    if (next >= optionCount) return 0;
-                    return next;
-                  });
-                  return;
-                }
-                if (event.key === "Escape") {
-                  setShowHistory(false);
-                  return;
-                }
-                if (event.key === "Enter" && !event.nativeEvent.isComposing) {
-                  event.preventDefault();
-                  if (highlight >= 0 && highlight < repoResults.length) {
-                    void openRepo(repoResults[highlight]);
-                  } else {
-                    const option = highlight >= repoResults.length
-                      ? historyOptions[highlight - repoResults.length]
-                      : undefined;
-                    if (option) submitSearch(option.value);
-                    else submitSearch();
-                  }
-                }
-              }}
-              placeholder="Search user:owner repo:name keywords..."
-              aria-label="Search repositories, owners, or addresses"
-              spellCheck={false}
-            />
-          </form>
-          {showHistory && (q.trim().length > 0 || historyTotal > 0 || repoResults.length > 0 || indexBuilding) && (
-            <div className="search-history" role="listbox" ref={historyListRef}>
-              {docsSuggestion && (
-                <button
-                  type="button"
-                  className="search-history-item search-docs-hint"
-                  onClick={openDocsHint}
-                  role="option"
-                  aria-selected={false}
-                >
-                  <BookOpen size={14} aria-hidden="true" />
-                  <span className="search-docs-hint-text">
-                    <span className="search-action-label">你是否需要</span> <b>{docsSuggestion.label}</b>？
-                    <span className="muted small">docs.igit.xyz</span>
-                  </span>
-                  <ExternalLink size={12} aria-hidden="true" />
-                </button>
-              )}
-              {q.trim().length > 0 && (
-                <button
-                  type="button"
-                  className="search-history-item search-repo-action"
-                  onClick={() => submitSearch()}
-                  role="option"
-                >
-                  {submitTarget?.kind === "owner" ? (
-                    <>
-                      <span className="search-action-label">Go to owner</span>{" "}
-                      <span className="mono">{submitTarget.owner}</span>
-                    </>
+            <Search size={15} aria-hidden="true" />
+            <span className="search-trigger-text">{q.trim() || "Search user:owner repo:name keywords..."}</span>
+            <kbd className="search-trigger-kbd" aria-hidden="true">/</kbd>
+          </button>
+          {searchOpen && createPortal(
+            // Portal to document.body: the topbar's backdrop-filter creates a
+            // containing block that would otherwise pin this fixed overlay to
+            // the header instead of centering it over the viewport.
+            <div className="modal-overlay" onClick={closeSearch}>
+              <div
+                className="modal search-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Search repositories, owners, or addresses"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="search-modal-input-row">
+                  <Search size={16} aria-hidden="true" />
+                  <input
+                    ref={searchInputRef}
+                    value={q}
+                    onChange={(event) => setQ(event.target.value)}
+                    onKeyDown={onSearchCardKeyDown}
+                    placeholder="Search user:owner repo:name keywords..."
+                    aria-label="Search repositories, owners, or addresses"
+                    spellCheck={false}
+                  />
+                  {indexBuilding ? (
+                    <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />
                   ) : (
+                    <kbd className="search-trigger-kbd" aria-hidden="true">↵</kbd>
+                  )}
+                </div>
+                <div className="search-modal-body" ref={historyListRef} role="listbox">
+                  {docsSuggestion && (
+                    <button
+                      type="button"
+                      className="search-history-item search-docs-hint"
+                      onClick={openDocsHint}
+                      role="option"
+                      aria-selected={false}
+                    >
+                      <BookOpen size={14} aria-hidden="true" />
+                      <span className="search-docs-hint-text">
+                        <span className="search-action-label">你是否需要</span> <b>{docsSuggestion.label}</b>？
+                        <span className="muted small">docs.igit.xyz</span>
+                      </span>
+                      <ExternalLink size={12} aria-hidden="true" />
+                    </button>
+                  )}
+                  {q.trim().length > 0 && (
+                    <button
+                      type="button"
+                      className="search-history-item search-repo-action"
+                      onClick={() => submitSearch()}
+                      role="option"
+                    >
+                      {submitTarget?.kind === "owner" ? (
+                        <>
+                          <span className="search-action-label">Go to owner</span>{" "}
+                          <span className="mono">{submitTarget.owner}</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="search-action-label">Search for</span> <span className="mono">{q.trim()}</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                  {repoResults.length === 0 && indexBuilding && (
+                    <div className="search-history-item search-repo-pending">Building repository index from chain...</div>
+                  )}
+                  {repoResults.length > 0 && (
                     <>
-                      <span className="search-action-label">Search for</span> <span className="mono">{q.trim()}</span>
+                      <div className="search-history-head">
+                        <span className="muted small">Repositories</span>
+                        {indexBuilding && <span className="muted small">indexing...</span>}
+                      </div>
+                      {repoResults.map((entry, index) => (
+                        <button
+                          key={`${entry.suiteDirectory}:${entry.repoId ?? `${entry.owner}/${entry.name}/v${entry.suiteVersion}`}`}
+                          type="button"
+                          className={`search-history-item search-repo-item${highlight === index ? " on" : ""}`}
+                          role="option"
+                          aria-selected={highlight === index}
+                          data-hl={highlight === index ? "true" : undefined}
+                          onMouseEnter={() => setHighlight(index)}
+                          onClick={() => void openRepo(entry)}
+                        >
+                          <span className="search-repo-name">
+                            {entry.name}
+                            <ContractTypeBadge kind="evm-v2" suiteVersion={BigInt(entry.suiteVersion)} />
+                          </span>
+                          <span className="search-repo-meta">
+                            {truncateAddress(entry.owner, 12)}
+                            <span className={`badge ${entry.status === 1 ? "frozen" : entry.status === 2 ? "delisted" : "active"}`}>
+                              {entry.status === 1 ? "frozen" : entry.status === 2 ? "delisted" : "active"}
+                            </span>
+                          </span>
+                        </button>
+                      ))}
                     </>
                   )}
-                </button>
-              )}
-              {repoResults.length === 0 && indexBuilding && (
-                <div className="search-history-item search-repo-pending">Building repository index from chain...</div>
-              )}
-              {repoResults.length > 0 && (
-                <>
-                  <div className="search-history-head">
-                    <span className="muted small">Repositories</span>
-                    {indexBuilding && <span className="muted small">indexing...</span>}
-                  </div>
-                  {repoResults.map((entry, index) => (
-                    <button
-                      key={`${entry.suiteDirectory}:${entry.repoId ?? `${entry.owner}/${entry.name}/v${entry.suiteVersion}`}`}
-                      type="button"
-                      className={`search-history-item search-repo-item${highlight === index ? " on" : ""}`}
-                      role="option"
-                      aria-selected={highlight === index}
-                      data-hl={highlight === index ? "true" : undefined}
-                      onMouseEnter={() => setHighlight(index)}
-                      onClick={() => void openRepo(entry)}
-                    >
-                      <span className="search-repo-name">
-                        {entry.name}
-                        <ContractTypeBadge kind="evm-v2" suiteVersion={BigInt(entry.suiteVersion)} />
-                      </span>
-                      <span className="search-repo-meta">
-                        {truncateAddress(entry.owner, 12)}
-                        <span className={`badge ${entry.status === 1 ? "frozen" : entry.status === 2 ? "delisted" : "active"}`}>
-                          {entry.status === 1 ? "frozen" : entry.status === 2 ? "delisted" : "active"}
-                        </span>
-                      </span>
-                    </button>
-                  ))}
-                </>
-              )}
-              {SEARCH_HISTORY_CATEGORIES.map((category) => {
-                const items = history[category];
-                if (items.length === 0) return null;
-                const offset = sectionOffsets[category];
-                const Icon = HISTORY_SECTION_ICONS[category];
-                return (
-                  <div key={category}>
-                    <div className="search-history-head">
-                      <span className="muted small">{HISTORY_SECTION_LABELS[category]}</span>
-                      <button
-                        type="button"
-                        className="search-history-clear"
-                        onClick={() => clearHistorySection(category)}
-                      >
-                        Clear
-                      </button>
+                  {SEARCH_HISTORY_CATEGORIES.map((category) => {
+                    const items = history[category];
+                    if (items.length === 0) return null;
+                    const offset = sectionOffsets[category];
+                    const Icon = HISTORY_SECTION_ICONS[category];
+                    return (
+                      <div key={category}>
+                        <div className="search-history-head">
+                          <span className="muted small">{HISTORY_SECTION_LABELS[category]}</span>
+                          <button
+                            type="button"
+                            className="search-history-clear"
+                            onClick={() => clearHistorySection(category)}
+                          >
+                            Clear
+                          </button>
+                        </div>
+                        {items.map((item, index) => (
+                          <button
+                            key={`${category}:${item}`}
+                            type="button"
+                            className={`search-history-item search-history-entry${highlight === offset + index ? " on" : ""}`}
+                            onClick={() => submitSearch(item)}
+                            role="option"
+                            aria-selected={highlight === offset + index}
+                            data-hl={highlight === offset + index ? "true" : undefined}
+                            onMouseEnter={() => setHighlight(offset + index)}
+                          >
+                            <Icon size={12} className="search-history-icon" aria-hidden="true" />
+                            <span className="search-history-value">{item}</span>
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })}
+                  {q.trim().length === 0 && historyTotal === 0 && repoResults.length === 0 && !indexBuilding && (
+                    <div className="search-history-item search-repo-pending">
+                      No recent searches yet — try user:owner or repo:name.
                     </div>
-                    {items.map((item, index) => (
-                      <button
-                        key={`${category}:${item}`}
-                        type="button"
-                        className={`search-history-item search-history-entry${highlight === offset + index ? " on" : ""}`}
-                        onClick={() => submitSearch(item)}
-                        role="option"
-                        aria-selected={highlight === offset + index}
-                        data-hl={highlight === offset + index ? "true" : undefined}
-                        onMouseEnter={() => setHighlight(offset + index)}
-                      >
-                        <Icon size={12} className="search-history-icon" aria-hidden="true" />
-                        <span className="search-history-value">{item}</span>
-                      </button>
+                  )}
+                </div>
+                <div className="search-modal-footer">
+                  <div className="search-prefix-hint" aria-hidden="true">
+                    {SEARCH_PREFIXES.map((prefix) => (
+                      <span key={prefix.name} className="search-prefix-hint-item">
+                        <code>{prefix.name}:</code>
+                        <span>{prefix.hint}</span>
+                      </span>
                     ))}
                   </div>
-                );
-              })}
-              <div className="search-prefix-hint" aria-hidden="true">
-                {SEARCH_PREFIXES.map((prefix) => (
-                  <span key={prefix.name} className="search-prefix-hint-item">
-                    <code>{prefix.name}:</code>
-                    <span>{prefix.hint}</span>
-                  </span>
-                ))}
+                  <span className="search-modal-keys" aria-hidden="true">↑↓ navigate · ↵ open · esc close</span>
+                </div>
               </div>
-            </div>
+            </div>,
+            document.body,
           )}
         </div>
 
@@ -720,9 +783,9 @@ export default function App() {
           </main>
 
           <footer className="footer">
-            <span>EVM V2 and CosmWasm V1</span>
-            <span>Packfiles on IPFS</span>
-            <span>Direct-to-chain client</span>
+            <span>EVM + Cosmwasm on Inj</span>
+            <span>Packfiles on IPFS + Buckets</span>
+            <span>Direct-to-Chain CLI</span>
           </footer>
         </div>
       </div>

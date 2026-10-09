@@ -23,8 +23,8 @@ export interface SearchPrefixDefinition {
 }
 
 export const SEARCH_PREFIXES: readonly SearchPrefixDefinition[] = [
-  { name: "user", kind: "user", hint: "限定到某个用户（owner），如 user:alice" },
-  { name: "repo", kind: "repo", hint: "限定到仓库，如 repo:name 或 repo:owner/name" },
+  { name: "user", kind: "user", hint: "Limit results to one owner, e.g. user:alice" },
+  { name: "repo", kind: "repo", hint: "Limit results to repositories, e.g. repo:name or repo:owner/name" },
 ];
 
 const PREFIX_TOKEN = /^([a-z][a-z0-9_-]*):([^\s:]*)$/i;

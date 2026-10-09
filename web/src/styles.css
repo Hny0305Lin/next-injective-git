@@ -202,37 +202,6 @@ code, pre, .mono {
   min-width: 140px;
   max-width: 420px;
 }
-.search input {
-  width: 100%;
-  padding: 6px 12px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: var(--bg-inset);
-  color: var(--fg);
-  font-family: var(--font-ui);
-  font-size: 0.84rem;
-  outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-.search input::placeholder {
-  color: var(--fg-faint);
-}
-.search input:focus {
-  border-color: var(--accent-border);
-  box-shadow: 0 0 0 3px rgba(77, 61, 255, 0.15);
-}
-.search-history {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
-  background: var(--bg-raised);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  z-index: 40;
-  overflow: hidden;
-}
 .search-history-head {
   display: flex;
   align-items: center;
@@ -1711,43 +1680,6 @@ button:disabled,
 .search {
   max-width: 360px;
   margin-left: auto;
-}
-
-.search form {
-  position: relative;
-}
-
-.search-icon {
-  position: absolute;
-  left: 11px;
-  top: 50%;
-  z-index: 1;
-  color: var(--fg-muted);
-  transform: translateY(-50%);
-  pointer-events: none;
-}
-
-.search input {
-  height: 34px;
-  padding: 0 12px 0 34px;
-  border-color: transparent;
-  background: var(--bg-hover);
-  color: var(--fg);
-  font-size: 0.82rem;
-}
-
-.search input:focus {
-  border-color: var(--border-strong);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 18%, transparent);
-  background: var(--bg);
-}
-
-.search-history {
-  top: calc(100% + 8px);
-  background: var(--popover);
-  border-color: var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
 }
 
 .search-history-head {
@@ -5094,11 +5026,104 @@ textarea.field:focus,
   flex-shrink: 0;
 }
 
-/* Global search: categorized history sections (Owners / Recent / Repos). */
-.search-history {
-  max-height: min(70vh, 520px);
-  overflow-y: auto;
+/* Global search: topbar trigger (button styled like the old input; the
+   actual search UI lives in the centered .search-modal card). */
+.search-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 34px;
+  padding: 0 8px 0 11px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--bg-hover);
+  color: var(--fg-muted);
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
+.search-trigger:hover {
+  background: var(--bg);
+  border-color: var(--border-strong);
+  color: var(--fg);
+}
+.search-trigger-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-trigger-kbd {
+  flex-shrink: 0;
+  min-width: 18px;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--bg-inset);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  text-align: center;
+}
+
+/* Global search: centered card (GitHub-style, wallet modal overlay). */
+.search-modal {
+  display: flex;
+  flex-direction: column;
+  width: 640px;
+  max-height: min(640px, calc(100dvh - 48px));
+}
+.search-modal-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-muted);
+}
+.search-modal-input-row:focus-within {
+  border-bottom-color: var(--accent-border);
+}
+.search-modal-input-row input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 0.95rem;
+}
+.search-modal-input-row input::placeholder {
+  color: var(--fg-faint);
+}
+.search-modal-body {
+  max-height: min(56vh, 420px);
+  overflow-y: auto;
+  padding: 6px 0 8px;
+}
+.search-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+}
+.search-modal-keys {
+  flex-shrink: 0;
+  color: var(--fg-faint);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+/* Global search: categorized history sections (Owners / Recent / Repos). */
 .search-history-entry {
   display: flex;
   align-items: center;
@@ -5115,13 +5140,11 @@ textarea.field:focus,
   white-space: nowrap;
 }
 
-/* Qualifier prefix hints (user: / repo:, extensible) in the dropdown footer. */
+/* Qualifier prefix hints (user: / repo:, extensible) in the card footer. */
 .search-prefix-hint {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 14px;
-  padding: 8px 12px;
-  border-top: 1px solid var(--border);
   font-size: 0.72rem;
   color: var(--fg-muted);
 }
@@ -5139,6 +5162,21 @@ textarea.field:focus,
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 0 4px;
+}
+
+/* Mobile: the search card spans the viewport; keyboard hints are desktop-only. */
+@media (max-width: 768px) {
+  .search-trigger-kbd,
+  .search-modal-keys {
+    display: none;
+  }
+  .search-modal {
+    width: calc(100vw - 20px);
+    max-height: calc(100dvh - 24px);
+  }
+  .search-modal-body {
+    max-height: calc(100dvh - 160px);
+  }
 }
 /* Mobile: keep horizontal swipe scrolling on tab strips, code blocks, diffs,
    tables, and command lines, but hide the visible scrollbar. */
@@ -5173,9 +5211,8 @@ textarea.field:focus,
 
 
 
-/* Search page: top-right loading hint */
+/* Search page: inline loading hint (kept next to the query, not pinned right) */
 .search-page-loading {
-  margin-left: auto;
   display: inline-flex;
   align-items: center;
   gap: 6px;
