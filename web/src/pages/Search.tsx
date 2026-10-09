@@ -365,7 +365,7 @@ const boot = query ? searchSnapshots.get(query) : undefined;
             >
               <SuggestIcon size={15} aria-hidden="true" />
               <span>
-                你是否需要 <b>{pageSuggestion.label}</b>？<span className="muted small">{pageSuggestion.href}</span>
+                Looking for <b>{pageSuggestion.label}</b>? <span className="muted small">{pageSuggestion.href}</span>
               </span>
               <ExternalLink size={13} aria-hidden="true" />
             </a>

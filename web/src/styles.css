@@ -4995,15 +4995,18 @@ textarea.field:focus,
   color: var(--fg-muted);
 }
 
-/* Docs hint inside the global search dropdown ("你是否需要 Docs？"). */
-.search-history-item.search-docs-hint {
+/* Built-in page hints inside the global search dropdown: the external Docs
+   link ("Looking for Docs?") and "Go to <page>" suggestions. */
+.search-history-item.search-docs-hint,
+.search-history-item.search-page-hint {
   display: flex;
   align-items: center;
   gap: 8px;
   border-bottom: 1px solid var(--border);
 }
 
-.search-docs-hint .search-docs-hint-text {
+.search-docs-hint .search-docs-hint-text,
+.search-page-hint .search-docs-hint-text {
   display: flex;
   align-items: baseline;
   gap: 6px;

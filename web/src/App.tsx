@@ -1,5 +1,8 @@
 import {
+  Activity,
   AlertTriangle,
+  Archive as ArchiveIcon,
+  ArrowRight,
   BookOpen,
   CheckCircle2,
   Clock,
@@ -78,6 +81,19 @@ const primaryNav = [
 // Entries beyond this index render in the top nav only on wide viewports
 // (see the .topnav-link-more media query); side/mobile nav always show all.
 const primaryTopnavCount = 4;
+
+// Icons for built-in page suggestions surfaced inline in the global search
+// dropdown (same mapping as the search results page's SUGGESTION_ICONS).
+const PAGE_SUGGESTION_ICONS: Record<string, typeof LayoutDashboard> = {
+  Dashboard: LayoutDashboard,
+  Monitor: Gauge,
+  MapMonitor: MapIcon,
+  Activity,
+  IPFS: HardDrive,
+  "V1 Archive": ArchiveIcon,
+  Settings: SettingsIcon,
+  Docs: BookOpen,
+};
 
 type SuiteReadiness = "unconfigured" | "checking" | "ready" | "error";
 type CacheNotification = "refreshing" | "refreshed" | null;
@@ -360,19 +376,32 @@ export default function App() {
   const inputScope = useMemo(() => parseSearchScope(q), [q]);
   const submitTarget = useMemo(() => searchSubmitTarget(q), [q]);
 
-  // "docs"-style queries hint at the documentation site before repo results;
-  // an explicit qualifier prefix means the user already chose a direction.
-  const docsSuggestion = useMemo(() => {
+  // Built-in page queries ("docs", "settings", "ipfs", ...) surface their
+  // target directly in the dropdown before repo results — Enter still submits
+  // a normal search. An explicit qualifier prefix means the user already
+  // chose a direction, so no page hint is shown then.
+  const pageSuggestion = useMemo(() => {
     if (inputScope) return null;
-    const suggestion = matchPageSuggestion(q);
-    return suggestion?.href ? suggestion : null;
+    return matchPageSuggestion(q);
   }, [q, inputScope]);
 
-  const openDocsHint = () => {
+  const PageHintIcon =
+    pageSuggestion === null ? null : PAGE_SUGGESTION_ICONS[pageSuggestion.label] ?? LayoutDashboard;
+
+  const closeSearchUi = () => {
     setSearchOpen(false);
     setRepoResults([]);
     setHighlight(-1);
+  };
+
+  const openDocsHint = () => {
+    closeSearchUi();
     window.open(DOCS_URL, "_blank", "noopener,noreferrer");
+  };
+
+  const openPageHint = (to: string) => {
+    closeSearchUi();
+    nav(to);
   };
 
   // Flat option list for keyboard navigation: live repo results first, then
@@ -499,7 +528,7 @@ export default function App() {
                   )}
                 </div>
                 <div className="search-modal-body" ref={historyListRef} role="listbox">
-                  {docsSuggestion && (
+                  {pageSuggestion?.href && (
                     <button
                       type="button"
                       className="search-history-item search-docs-hint"
@@ -509,10 +538,25 @@ export default function App() {
                     >
                       <BookOpen size={14} aria-hidden="true" />
                       <span className="search-docs-hint-text">
-                        <span className="search-action-label">你是否需要</span> <b>{docsSuggestion.label}</b>？
+                        <span className="search-action-label">Looking for</span> <b>{pageSuggestion.label}</b>?
                         <span className="muted small">docs.igit.xyz</span>
                       </span>
                       <ExternalLink size={12} aria-hidden="true" />
+                    </button>
+                  )}
+                  {pageSuggestion?.to && PageHintIcon && (
+                    <button
+                      type="button"
+                      className="search-history-item search-page-hint"
+                      onClick={() => openPageHint(pageSuggestion.to ?? "/")}
+                      role="option"
+                      aria-selected={false}
+                    >
+                      <PageHintIcon size={14} aria-hidden="true" />
+                      <span className="search-docs-hint-text">
+                        <span className="search-action-label">Go to</span> <b>{pageSuggestion.label}</b>
+                      </span>
+                      <ArrowRight size={12} aria-hidden="true" />
                     </button>
                   )}
                   {q.trim().length > 0 && (
