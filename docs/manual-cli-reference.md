@@ -390,8 +390,9 @@ suite verification passed
 Both accept `--json` for machine-readable output. The command uses a five-minute
 context, because a full verification is a sequence of dependent RPC calls.
 
-`igit upgrade` **was removed** with the immutable EVM suite. It now fails with a
-stable error code and tells you to use `igit suite verify` instead. There is no
+The legacy `upgrade` subcommand **was removed** with the immutable EVM suite.
+Invoking it now fails with a stable error code and tells you to use
+`igit suite verify` instead. There is no
 upgrade path by design: no proxy, no diamond, no `delegatecall`.
 
 ## Keys
