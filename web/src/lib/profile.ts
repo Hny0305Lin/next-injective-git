@@ -21,7 +21,9 @@ export interface AppConfig {
 }
 
 // A built-in address is added only after deployment evidence has passed the
-// release gate. Keeping this empty makes pre-cutover builds fail closed.
+// release gate. Both verified on-chain SuiteDirectory deployments (v4 and v3)
+// are built in since the successor cutover; an empty list is only for
+// pre-cutover builds, which must fail closed.
 export const NETWORK_PROFILES: Record<NetworkProfileId, NetworkProfile> = {
   "injective-testnet": {
     id: "injective-testnet",
