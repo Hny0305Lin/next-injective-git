@@ -1,7 +1,9 @@
 import {
   AlertTriangle,
+  BookOpen,
   CheckCircle2,
   Database,
+  ExternalLink,
   HardDrive,
   Gauge,
   LayoutDashboard,
@@ -22,7 +24,7 @@ import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert";
 import { Button } from "./components/ui/button";
 import { WalletModal } from "./components/WalletModal";
 import { useWallet } from "./lib/WalletContext";
-import { buildSearchPath, parseSearchQuery } from "./lib/search";
+import { DOCS_URL, buildSearchPath, matchPageSuggestion, parseSearchQuery } from "./lib/search";
 
 import { ContractTypeBadge } from "./components/ContractTypeBadge";
 import { repoIndexShared, resolveEntryTarget, searchRepoEntries, type RepoIndexEntry, type RepoIndexStatus } from "./lib/repo-index";
@@ -263,6 +265,20 @@ export default function App() {
 
   const indexBuilding = q.trim().length >= 2 && (indexStatus?.building ?? false);
 
+  // "docs"-style queries hint at the documentation site before repo results.
+  const docsSuggestion = useMemo(() => {
+    const suggestion = matchPageSuggestion(q);
+    return suggestion?.href ? suggestion : null;
+  }, [q]);
+
+  const openDocsHint = () => {
+    setQ("");
+    setShowHistory(false);
+    setRepoResults([]);
+    setHighlight(-1);
+    window.open(DOCS_URL, "_blank", "noopener,noreferrer");
+  };
+
   return (
     <div className="app">
       <header className="topbar">
@@ -334,6 +350,22 @@ export default function App() {
           </form>
           {showHistory && (q.trim().length > 0 || history.length > 0 || repoResults.length > 0 || indexBuilding) && (
             <div className="search-history" role="listbox">
+              {docsSuggestion && (
+                <button
+                  type="button"
+                  className="search-history-item search-docs-hint"
+                  onClick={openDocsHint}
+                  role="option"
+                  aria-selected={false}
+                >
+                  <BookOpen size={14} aria-hidden="true" />
+                  <span className="search-docs-hint-text">
+                    <span className="search-action-label">你是否需要</span> <b>{docsSuggestion.label}</b>？
+                    <span className="muted small">docs.igit.xyz</span>
+                  </span>
+                  <ExternalLink size={12} aria-hidden="true" />
+                </button>
+              )}
               {q.trim().length > 0 && (
                 <button
                   type="button"
@@ -463,6 +495,16 @@ export default function App() {
                 </NavLink>
               );
             })}
+            <a
+              className="side-nav-item side-nav-docs"
+              href={DOCS_URL}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <BookOpen size={15} aria-hidden="true" />
+              <span>Docs</span>
+              <ExternalLink size={11} className="side-nav-docs-external" aria-hidden="true" />
+            </a>
           </div>
 
           <div className="side-nav-section architecture">

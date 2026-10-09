@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { Activity, Archive as ArchiveIcon, ChevronDown, Gauge, GitFork, HardDrive, LayoutDashboard, LoaderCircle, Map as MapIcon, Settings as SettingsIcon, User } from "lucide-react";
+import { Activity, Archive as ArchiveIcon, BookOpen, ChevronDown, ExternalLink, Gauge, GitFork, HardDrive, LayoutDashboard, LoaderCircle, Map as MapIcon, Settings as SettingsIcon, User } from "lucide-react";
 import {
   repoIndexShared,
   resolveEntryTarget,
@@ -69,6 +69,7 @@ const SUGGESTION_ICONS: Record<string, typeof LayoutDashboard> = {
   IPFS: HardDrive,
   "V1 Archive": ArchiveIcon,
   Settings: SettingsIcon,
+  Docs: BookOpen,
 };
 
 /**
@@ -270,11 +271,29 @@ const boot = query ? searchSnapshots.get(query) : undefined;
 
       {pageSuggestion && (() => {
         const SuggestIcon = SUGGESTION_ICONS[pageSuggestion.label] ?? LayoutDashboard;
+        if (pageSuggestion.href) {
+          return (
+            <a
+              className="card search-exact-card search-docs-card"
+              href={pageSuggestion.href}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <SuggestIcon size={15} aria-hidden="true" />
+              <span>
+                你是否需要 <b>{pageSuggestion.label}</b>？<span className="muted small">{pageSuggestion.href}</span>
+              </span>
+              <ExternalLink size={13} aria-hidden="true" />
+            </a>
+          );
+        }
+        const to = pageSuggestion.to;
+        if (!to) return null;
         return (
           <button
             type="button"
             className="card search-exact-card"
-            onClick={() => nav(pageSuggestion.to)}
+            onClick={() => nav(to)}
           >
             <SuggestIcon size={15} aria-hidden="true" />
             <span>

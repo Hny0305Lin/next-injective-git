@@ -5062,6 +5062,37 @@ textarea.field:focus,
 .search-repo-action .search-action-label {
   color: var(--fg-muted);
 }
+
+/* Docs hint inside the global search dropdown ("你是否需要 Docs？"). */
+.search-history-item.search-docs-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.search-docs-hint .search-docs-hint-text {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.search-docs-hint .muted {
+  margin-left: auto;
+}
+
+/* External Docs entry in the Workspace side navigation. */
+.side-nav-item.side-nav-docs {
+  text-decoration: none;
+}
+
+.side-nav-docs-external {
+  color: var(--fg-muted);
+  flex-shrink: 0;
+}
 /* Mobile: keep horizontal swipe scrolling on tab strips, code blocks, diffs,
    tables, and command lines, but hide the visible scrollbar. */
 @media (max-width: 768px) {

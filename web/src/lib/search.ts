@@ -54,9 +54,15 @@ export function buildSearchPath(raw: string): string | null {
  */
 export interface PageSuggestion {
   label: string;
-  to: string;
+  /** Internal router path for in-app destinations. */
+  to?: string;
+  /** External URL (documentation site); opens in a new tab. */
+  href?: string;
   keywords: readonly string[];
 }
+
+/** Project documentation site linked from the Workspace nav and search hints. */
+export const DOCS_URL = "https://docs.igit.xyz/";
 
 export const PAGE_SUGGESTIONS: readonly PageSuggestion[] = [
   { label: "Dashboard", to: "/", keywords: ["dashboard", "home"] },
@@ -66,6 +72,9 @@ export const PAGE_SUGGESTIONS: readonly PageSuggestion[] = [
   { label: "IPFS", to: "/ipfs", keywords: ["ipfs"] },
   { label: "V1 Archive", to: "/archive/cosmwasm-v1", keywords: ["archive", "v1 archive", "cosmwasm"] },
   { label: "Settings", to: "/settings", keywords: ["settings", "setting"] },
+  // "doc" needs no explicit keyword: 3+ character prefix matching maps it to
+  // "docs" while keeping "docker"-style queries unmatched.
+  { label: "Docs", href: DOCS_URL, keywords: ["docs", "documentation", "文档"] },
 ];
 
 /**

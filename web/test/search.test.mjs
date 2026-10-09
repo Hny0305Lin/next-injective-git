@@ -57,3 +57,17 @@ test("page suggestions match built-in app pages", () => {
   assert.equal(matchPageSuggestion(""), null);
   assert.equal(matchPageSuggestion("x"), null);
 });
+
+test("docs queries suggest the documentation site", () => {
+  const docs = matchPageSuggestion("docs");
+  assert.equal(docs.label, "Docs");
+  assert.equal(docs.href, "https://docs.igit.xyz/");
+  assert.equal(docs.to, undefined);
+  assert.equal(matchPageSuggestion("  DOCS ").label, "Docs");
+  assert.equal(matchPageSuggestion("Docs").label, "Docs");
+  assert.equal(matchPageSuggestion("doc").label, "Docs");
+  assert.equal(matchPageSuggestion("documentation").label, "Docs");
+  assert.equal(matchPageSuggestion("文档").label, "Docs");
+  assert.equal(matchPageSuggestion("do"), null);
+  assert.equal(matchPageSuggestion("docker"), null);
+});
