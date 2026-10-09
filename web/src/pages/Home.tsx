@@ -1,6 +1,5 @@
 import {
   Activity,
-  Box,
   CircleDot,
   GitBranch,
   Search,
@@ -111,10 +110,6 @@ export default function Home() {
           <strong className={`status-value${suiteConfigured ? "" : " warning"}`}>
             <i /> {suiteConfigured ? "Injective" : "Setup needed"}
           </strong>
-        </div>
-        <div className="overview-item">
-          <span><Box size={15} /> Objects</span>
-          <strong>IPFS</strong>
         </div>
       </div>
 
