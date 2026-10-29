@@ -445,8 +445,10 @@ map with a rotating focus every 45 seconds.
 - Popups list the repositories observed at an endpoint, with a link onward to
   the owner page.
 
-The map falls back to a development tile source when no map key is configured,
-and it says so rather than rendering a blank canvas.
+The map renders on OpenStreetMap tiles by default, with the required
+attribution shown in the corner. No map key is required or shipped. A
+deployment that wants a different tile provider can select one at build time
+through the `VITE_MAP_*` environment variables.
 
 ## IPFS explorer
 

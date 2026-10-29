@@ -72,8 +72,10 @@ $ npm run test:e2e             # Playwright browser tests
 
 Local environment variables (copy from `.env.example`):
 `VITE_WALLETCONNECT_PROJECT_ID` (a public Reown project identifier whose
-allowlist contains your origin) and, only for the MapMonitor page, the AMap
-key/security code. Never commit real keys.
+allowlist contains your origin). The MapMonitor page needs no map key: it
+renders OpenStreetMap tiles by default. An operator may optionally point it at
+another basemap through `VITE_MAP_BASEMAP`, `VITE_MAP_TILE_URL`, and
+`VITE_MAP_ATTRIBUTION`. Never commit real keys.
 
 ## Building and testing the contracts
 

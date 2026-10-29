@@ -36,6 +36,10 @@ contracts/evm-v2/out/
 /demo-evidence/
 /.igit-*-test/
 
+# Chinese software copyright (软著) submission material — local only, never
+# pushed to GitHub. Contains full source listings and registration documents.
+/copyright/
+
 # IDE / OS
 .vscode/
 .idea/
@@ -61,6 +65,12 @@ web/.vercel/
 .vercel
 .env*
 
+# Node.js dependencies
 contracts/evm-v2-successor/node_modules/
 
+# igit Documentation site
+# https://docs.igit.xyz/
 docs-site/
+
+# Archify
+.archify/

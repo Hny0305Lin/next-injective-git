@@ -57,7 +57,7 @@ export interface PageSuggestion {
   /** Internal router path for in-app destinations. */
   to?: string;
   /** External URL (documentation site); opens in a new tab. */
-  href?: string;
+        href?: string;
   keywords: readonly string[];
 }
 

@@ -1,7 +1,9 @@
 interface ImportMetaEnv {
   readonly VITE_WALLETCONNECT_PROJECT_ID?: string;
-  readonly VITE_AMAP_KEY?: string;
-  readonly VITE_AMAP_SECURITY_CODE?: string;
+  // MapMonitor basemap (optional). Defaults to OpenStreetMap when unset.
+  readonly VITE_MAP_BASEMAP?: string;
+  readonly VITE_MAP_TILE_URL?: string;
+  readonly VITE_MAP_ATTRIBUTION?: string;
 }
 
 interface ImportMeta {

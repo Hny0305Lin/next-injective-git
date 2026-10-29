@@ -4197,20 +4197,6 @@ textarea.field:focus,
   inset: 0;
 }
 
-/* Minimal ODbL credit replaces the default Leaflet attribution block. */
-.mapmonitor-map-credit {
-  position: absolute;
-  left: 8px;
-  bottom: 6px;
-  z-index: 1000;
-  padding: 1px 6px;
-  font-size: 10px;
-  color: var(--fg-faint);
-  background: color-mix(in srgb, var(--card) 78%, transparent);
-  border-radius: 4px;
-  pointer-events: none;
-}
-
 /* Custom InfoWindow shell (isCustom:true) themed with CSS variables. */
 .mapmonitor-popup {
   background: var(--card);
@@ -4310,40 +4296,47 @@ textarea.field:focus,
   white-space: nowrap;
 }
 
-/* Hide AMap's default logo + copyright watermark (bottom-left white text). */
-.mapmonitor-map-wrap .amap-logo,
-.mapmonitor-map-wrap .amap-copyright {
-  display: none !important;
-  visibility: hidden !important;
-  opacity: 0 !important;
-  pointer-events: none !important;
-}
-
-/* AMap zoom controls themed for dark mode. */
-.dark .amap-controls .amap-toolbar {
-  background: var(--card);
-  border-color: var(--border);
-}
-
-.dark .amap-controls .amap-toolbar .amap-ctrl-group {
-  background: var(--card);
-  border-color: var(--border);
-}
-
-.dark .amap-controls .amap-toolbar .amap-ctrl-group button {
-  color: var(--fg-muted);
-}
-
-.dark .amap-controls .amap-toolbar .amap-ctrl-group button:hover {
-  color: var(--fg);
-  background: var(--bg-hover);
-}
-
-.mapmonitor-map .leaflet-container {
+/* Leaflet stamps .leaflet-container on the map element itself, so this is a
+   compound selector, not a descendant one. */
+.mapmonitor-map.leaflet-container {
   width: 100%;
   height: 100%;
   font-family: var(--font-ui);
   background: var(--bg-inset);
+}
+
+/* Tile-provider credit (ODbL for OpenStreetMap). It sits bottom-left so the
+   two overlay cards on the right never cover it, and it stays visible in both
+   app themes because the licence requires the credit. */
+.mapmonitor-map .leaflet-control-attribution {
+  padding: 1px 6px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--fg-muted);
+  background: color-mix(in srgb, var(--card) 82%, transparent);
+  border-top-left-radius: 4px;
+}
+
+.mapmonitor-map .leaflet-control-attribution a {
+  color: var(--accent-3);
+  text-decoration: none;
+}
+
+.mapmonitor-map .leaflet-control-attribution a:hover,
+.mapmonitor-map .leaflet-control-attribution a:focus-visible {
+  text-decoration: underline;
+}
+
+/* Zoom control themed for dark mode. */
+.dark .mapmonitor-map .leaflet-control-zoom a {
+  color: var(--fg-muted);
+  background: var(--card);
+  border-color: var(--border);
+}
+
+.dark .mapmonitor-map .leaflet-control-zoom a:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
 }
 
 /* HTML dot markers (constant size during flyTo). */
@@ -4473,8 +4466,7 @@ textarea.field:focus,
 }
 
 /* The meta row only renders from LABEL_ZOOM up so the world view stays
-   clean; each engine toggles this class on the map element when the zoom
-   changes (AMap: zoomchange/zoomend · Leaflet: zoomend). */
+   clean; the map engine toggles this class on the map element on zoomend. */
 .mapmonitor-map.mapmonitor-zoom-labels .mapmonitor-pin-meta {
   display: flex;
 }
@@ -4787,6 +4779,14 @@ textarea.field:focus,
   width: min(300px, calc(100% - 24px));
   padding: 5px;
   gap: 0;
+}
+
+/* The tile-provider credit (ODbL for OpenStreetMap) is bottom-left; on
+   compact viewports the storage card spans nearly the full width, so it is
+   lifted by one credit line to keep the licence-mandated credit visible in
+   both its collapsed and expanded state. */
+.mapmonitor-stats-card.compact {
+  bottom: 34px;
 }
 
 .mapmonitor-focus-card.compact .mapmonitor-card-chip,

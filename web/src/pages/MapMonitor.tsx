@@ -28,7 +28,7 @@ import {
   saveCachedStorageStats,
   type StorageStats,
 } from "../lib/storage-stats";
-import { AMAP_KEY, loadAMap, wgsToGcj } from "../lib/amap";
+import { ACTIVE_BASEMAP, type BasemapDefinition } from "../lib/basemaps";
 import {
   contractActivity,
   EVM_ACTIVITY_BLOCK_WINDOW,
@@ -562,11 +562,12 @@ function livePointRepos(
 }
 
 // ---------------------------------------------------------------------------
-// Map engines. Both render the same tour: colored kind dots (plus live
-// status badges and gateway latency labels from LABEL_ZOOM up), a red lit
-// stop (or, for anycast stops, hidden main + lit red edge cities), an info
-// popup, and an eased flight. Leaflet/OpenStreetMap stays as the key-less
-// dev fallback; production uses AMap/Gaode (GCJ-02, mainland-safe borders).
+// Map engine. One Leaflet engine renders the tour: colored kind dots (plus
+// live status badges and gateway latency labels from LABEL_ZOOM up), a red
+// lit stop (or, for anycast stops, hidden main + lit red edge cities), an
+// info popup, and an eased flight. The basemap is an OSM-style XYZ layer from
+// the provider registry (OpenStreetMap by default; other providers plug in
+// through VITE_MAP_* without a key), so no third-party map SDK is loaded.
 // ---------------------------------------------------------------------------
 
 type MapEngine = {
@@ -585,10 +586,6 @@ type EngineCallbacks = {
   statusFor: (point: InfraPoint) => PointLiveStatus;
 };
 
-function popupShell(inner: string): string {
-  return `<div class="mapmonitor-popup">${inner}</div>`;
-}
-
 // Repository names come from chain data and land in innerHTML popups; escape
 // them before interpolation.
 function escapeHtml(value: string): string {
@@ -600,173 +597,12 @@ function escapeHtml(value: string): string {
     .replaceAll("'", "&#39;");
 }
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-// AMap (Gaode) engine: JS API 2.0, HTML content markers keep the shared dot
-// styles (pulse included); coordinates convert WGS-84 -> GCJ-02. AMap arrays
-// are [lng, lat] while our tour data is [lat, lng].
-function createAMapEngine(A: any, element: HTMLElement, cb: EngineCallbacks): MapEngine {
-  const pos = (latlng: [number, number]): [number, number] => {
-    const [lat, lng] = wgsToGcj(latlng[0], latlng[1]);
-    return [lng, lat];
-  };
-
-  // English basemap. AMap JS API 2.0's language switches (the documented
-  // `lang` Map option and the internal `languageCode`) only work through the
-  // multi-language VECTOR tiles, which the server gates behind key privileges
-  // (web_map/get_tile answers infocode 10012 INSUFFICIENT_PRIVILEGES for this
-  // key, for both 'en' and 'zh_en'). The classic raster tiles instead carry
-  // the language in the URL and need no privilege, so the vector base is
-  // replaced with lang=en raster tiles (verified: same tile differs from
-  // lang=zh_cn). They are GCJ-02 like the vector base, so marker positions
-  // keep matching. The raster map stays light in both app themes (same as the
-  // OSM dev fallback); dark vector styling cannot show English labels without
-  // a privileged key.
-  const englishBase = new A.TileLayer({
-    tileUrl:
-      "https://wprd0{1,2,3,4}.is.autonavi.com/appmaptile?x=[x]&y=[y]&z=[z]&lang=en&size=1&scale=1&style=7",
-    zooms: [3, 18],
-  });
-
-  const map = new A.Map(element, {
-    zoom: 3,
-    center: pos([20, 10]),
-    viewMode: "2D",
-    zooms: [3, 18],
-    layers: [englishBase],
-  });
-
-  // isCustom:true removes AMap's default white InfoWindow shell; our own
-  // .mapmonitor-popup class uses CSS variables that flip with the app theme.
-  const info = new A.InfoWindow({ isCustom: true, anchor: "bottom-center", offset: new A.Pixel(0, -4), autoMove: false });
-  let infoTimer = 0;
-  let activePointId = "";
-  let openPoint: InfraPoint | null = null;
-
-  // Latency labels + status badges appear only from LABEL_ZOOM in; listen to
-  // both zoomchange (live during the gesture) and zoomend (settled value).
-  const syncLabels = () => {
-    element.classList.toggle("mapmonitor-zoom-labels", map.getZoom() >= LABEL_ZOOM);
-  };
-  map.on("zoomchange", syncLabels);
-  map.on("zoomend", syncLabels);
-  syncLabels();
-
-  // isCustom also removes AMap's built-in dismiss-on-map-click behavior;
-  // clicking empty map space closes the popup manually.
-  map.on("click", () => {
-    openPoint = null;
-    info.close();
-  });
-
-  const mainMarkers = new Map<string, any>();
-  for (const [index, point] of INFRA_POINTS.entries()) {
-    const marker = new A.Marker({
-      position: pos(point.latlng),
-      content: pinHtml(point.kind, false, cb.statusFor(point)),
-      anchor: "center",
-      title: point.name,
-      cursor: "pointer",
-    });
-    marker.on("click", () => cb.onStopClick(index));
-    marker.setMap(map);
-    mainMarkers.set(point.id, marker);
-  }
-
-  const edgeMarkers = new Map<string, any[]>();
-  for (const point of INFRA_POINTS) {
-    if (point.edges == null) continue;
-    edgeMarkers.set(
-      point.id,
-      point.edges.map((edge) => {
-        const marker = new A.Marker({
-          position: pos(edge.latlng),
-          content: edgeDotHtml(),
-          anchor: "center",
-          title: `${point.name} · ${edge.name}`,
-          cursor: "pointer",
-        });
-        marker.on("click", () => {
-          info.setContent(popupShell(`<strong>${edge.name}</strong><br/>${point.name} edge`));
-          info.open(map, marker.getPosition());
-        });
-        return marker;
-      }),
-    );
-  }
-
-  return {
-    showStop(point: InfraPoint) {
-      activePointId = point.id;
-      const hasEdges = point.edges != null && point.edges.length > 0;
-      for (const markers of edgeMarkers.values()) {
-        for (const marker of markers) marker.setMap(null);
-      }
-      if (hasEdges) {
-        for (const marker of edgeMarkers.get(point.id) ?? []) marker.setMap(map);
-      }
-      for (const candidate of INFRA_POINTS) {
-        const marker = mainMarkers.get(candidate.id);
-        if (marker == null) continue;
-        const active = candidate.id === point.id;
-        if (active && hasEdges) {
-          marker.setMap(null);
-          continue;
-        }
-        if (marker.getMap() == null) marker.setMap(map);
-        marker.setContent(pinHtml(candidate.kind, active, cb.statusFor(candidate)));
-        marker.setzIndex(active ? 100 : 10);
-      }
-      if (hasEdges) {
-        // Expand bounds by ~20% margin so the R2 APAC view pulls back further
-        // and all 8 cities breathe with room to spare.
-        const positions = point.edges!.map((edge) => pos(edge.latlng));
-        const lngs = positions.map((p) => p[0]);
-        const lats = positions.map((p) => p[1]);
-        const minLng = Math.min(...lngs);
-        const maxLng = Math.max(...lngs);
-        const minLat = Math.min(...lats);
-        const maxLat = Math.max(...lats);
-        const lngMargin = Math.max((maxLng - minLng) * 0.2, 2);
-        const latMargin = Math.max((maxLat - minLat) * 0.2, 2);
-        map.setBounds(
-          new A.Bounds(
-            [minLng - lngMargin, minLat - latMargin],
-            [maxLng + lngMargin, maxLat + latMargin],
-          ),
-          false,
-        );
-      } else {
-        const center = pos(point.latlng);
-        const activeMarker = mainMarkers.get(point.id);
-        map.setZoomAndCenter(TOUR_ZOOM, center, false);
-        // Open the InfoWindow only after the fly animation settles; anchor it
-        // to the marker's rendered position so it sits right next to the dot.
-        window.clearTimeout(infoTimer);
-        infoTimer = window.setTimeout(() => {
-          openPoint = point;
-          info.setContent(popupShell(cb.buildPopup(point)));
-          info.open(map, activeMarker != null ? activeMarker.getPosition() : center);
-        }, 600);
-      }
-    },
-    refresh() {
-      for (const candidate of INFRA_POINTS) {
-        const marker = mainMarkers.get(candidate.id);
-        if (marker == null || marker.getMap() == null) continue;
-        marker.setContent(pinHtml(candidate.kind, candidate.id === activePointId, cb.statusFor(candidate)));
-      }
-      // Keep an already-open InfoWindow in sync with fresh popup context
-      // (e.g. the wallet connecting or disconnecting mid-tour).
-      if (openPoint != null) info.setContent(popupShell(cb.buildPopup(openPoint)));
-    },
-    destroy() {
-      window.clearTimeout(infoTimer);
-      try { map.destroy(); } catch { /* already torn down */ }
-    },
-  };
-}
-
-function createLeafletEngine(element: HTMLElement, cb: EngineCallbacks): MapEngine {
+// Leaflet engine: HTML divIcon markers keep the shared dot styles (pulse
+// included) at constant pixel size through flyTo animations, and the basemap
+// comes from the provider registry (OpenStreetMap by default, or another
+// XYZ provider selected at build time). Coordinates are WGS-84 [lat, lng],
+// which is exactly what both the tour data and the OSM tiles use.
+function createLeafletEngine(element: HTMLElement, cb: EngineCallbacks, basemap: BasemapDefinition = ACTIVE_BASEMAP): MapEngine {
   const markers = new Map<string, L.Marker>();
   const edgeMarkers = new Map<string, L.Marker[]>();
   let activePointId = "";
@@ -775,9 +611,18 @@ function createLeafletEngine(element: HTMLElement, cb: EngineCallbacks): MapEngi
     zoom: 2,
     minZoom: 2,
     worldCopyJump: true,
+    // The provider's credit line is a licensing requirement (ODbL for
+    // OpenStreetMap), so the control is added explicitly instead of relying
+    // on Leaflet's default: bottom-left keeps it clear of the two overlay
+    // cards, and dropping the "Leaflet" prefix keeps the bar to one line.
     attributionControl: false,
   });
-  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+  L.control.attribution({ position: "bottomleft", prefix: "" }).addTo(map);
+  L.tileLayer(basemap.urlTemplate, {
+    maxZoom: basemap.maxZoom,
+    subdomains: basemap.subdomains ?? "abc",
+    attribution: basemap.attribution,
+  }).addTo(map);
 
   const syncLabels = () => {
     element.classList.toggle("mapmonitor-zoom-labels", map.getZoom() >= LABEL_ZOOM);
@@ -870,7 +715,6 @@ export default function MapMonitor() {
   // The auto-tour holds off while the user explores after a marker click.
   const pauseUntilRef = useRef(0);
   const [mapReady, setMapReady] = useState(false);
-  const [mapEngine, setMapEngine] = useState<"amap" | "osm">(AMAP_KEY ? "amap" : "osm");
 
   // Compact overlay cards for small viewports: both cards start collapsed as
   // corner chips, only one stays expanded at a time (opening one closes the
@@ -1263,14 +1107,13 @@ export default function MapMonitor() {
     engineRef.current?.refresh();
   }, [buildPopup, statusFor, mapReady]);
 
-  // Create the map engine: AMap/Gaode in production (mainland-safe
-  // borders, GCJ-02, enterprise key), Tencent Maps as the secondary licensed
-  // engine, Leaflet/OpenStreetMap as the key-less dev fallback. The 45s tour
-  // timer lives here so it survives either engine.
+  // Create the map engine: a single Leaflet instance over the configured
+  // basemap (OpenStreetMap by default; see ../lib/basemaps). There is no
+  // third-party map SDK and no key to negotiate, so booting is synchronous.
+  // The 45s tour timer lives here too.
   useEffect(() => {
     const element = mapElementRef.current;
     if (element == null) return;
-    let cancelled = false;
 
     const callbacks: EngineCallbacks = {
       onStopClick: (index: number) => {
@@ -1283,28 +1126,9 @@ export default function MapMonitor() {
       statusFor: (point) => statusForRef.current(point),
     };
 
-    const bootLeaflet = () => {
-      if (cancelled || !element.isConnected) return;
-      setMapEngine("osm");
-      engineRef.current = createLeafletEngine(element, callbacks);
+    if (element.isConnected) {
+      engineRef.current = createLeafletEngine(element, callbacks, ACTIVE_BASEMAP);
       setMapReady(true);
-    };
-
-    if (AMAP_KEY) {
-      void loadAMap().then(
-        (A) => {
-          if (cancelled || !element.isConnected) return;
-          engineRef.current = createAMapEngine(A, element, callbacks);
-          setMapEngine("amap");
-          setMapReady(true);
-        },
-        () => {
-          console.warn("AMap unavailable; falling back to OpenStreetMap (dev only).");
-          bootLeaflet();
-        },
-      );
-    } else {
-      bootLeaflet();
     }
 
     const tourTimer = window.setInterval(() => {
@@ -1314,7 +1138,6 @@ export default function MapMonitor() {
     }, TOUR_INTERVAL_MS);
 
     return () => {
-      cancelled = true;
       window.clearInterval(tourTimer);
       engineRef.current?.destroy();
       engineRef.current = null;
@@ -1344,7 +1167,6 @@ export default function MapMonitor() {
 
       <div className="mapmonitor-map-wrap">
         <div ref={mapElementRef} className="mapmonitor-map" aria-label="World map with igit infrastructure endpoints" />
-        {mapEngine === "osm" && <span className="mapmonitor-map-credit">© OpenStreetMap · dev fallback</span>}
         <div
           className={`mapmonitor-focus-card${compact ? " compact" : ""}${openCard === "focus" ? " open" : ""}`}
           aria-live="polite"
