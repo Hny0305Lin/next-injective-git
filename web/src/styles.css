@@ -952,6 +952,15 @@ input.field:focus {
   border-color: rgba(140, 160, 200, 0.45);
 }
 
+/* shadcn Alert Dialog stacking. The generated primitive uses Tailwind z-50,
+   but MapMonitor's floating cards sit at z-index 1100, so a modal dialog opened
+   over the map would be painted underneath them. This stylesheet is unlayered
+   legacy CSS, so a plain rule here outranks the utility class. */
+[data-slot="alert-dialog-overlay"],
+[data-slot="alert-dialog-content"] {
+  z-index: 1200;
+}
+
 /* ---- wallet modal ---- */
 .modal-overlay {
   position: fixed;

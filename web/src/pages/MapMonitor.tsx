@@ -14,6 +14,7 @@ import {
   Server,
 } from "lucide-react";
 import { Badge } from "../components/ui/badge";
+import { MapMonitorBoundaryNotice } from "../components/mapmonitor-boundary-notice";
 import {
   CONFIG_CHANGED_EVENT,
   isSuiteDirectoryConfigured,
@@ -1152,6 +1153,7 @@ export default function MapMonitor() {
 
   return (
     <div className="mapmonitor-page">
+      <MapMonitorBoundaryNotice />
       <div className="monitor-heading">
         <div>
           <div className="monitor-eyebrow">
