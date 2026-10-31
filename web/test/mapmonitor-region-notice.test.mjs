@@ -201,25 +201,24 @@ async function source(path) {
   return readFile(new URL(path, import.meta.url), "utf8");
 }
 
-test("the notice text is verbatim and the compliance bullets are in order", async () => {
+const EXPECTED_PARAGRAPHS = [
+  "iGit 平台坚持一个中国原则，严格遵守中华人民共和国法律法规，以及中国香港特别行政区、中国澳门特别行政区、中国台湾地区及运营所在地的相关规定。",
+  "MapMonitor 使用 OpenStreetMap（OSM）开源地图数据作为底图，该数据由第三方社区维护，可能存在标注偏差、滞后或错误。目前涉及台湾、藏南、南海诸岛及其附近海域、香港、澳门等区域的主权归属和边界标注问题，以及新疆、黑龙江等边境地区的界线、地名显示偏差。",
+  "台湾、藏南、南海诸岛及其附近海域、香港、澳门等均是中国领土不可分割的一部分。在平台切换至符合国家标准的官方地图数据源前，请以国家官方标准地图为准。",
+  "如您发现其他错误标注，可通过 GitHub Issue 或平台反馈渠道告知我们。",
+  "由此给您带来的不便，我们深表歉意。",
+];
+
+test("the notice text is verbatim and the paragraphs are in order", async () => {
   const component = await source("../src/components/mapmonitor-boundary-notice.tsx");
-  assert.match(
-    component,
-    /iGit 平台愿意遵守中国大陆和港澳台地区相关法律法规做合法化配合，当前您访问的 MapMonitor 页面正在使用 OpenStreetMap 开源地图引擎，该开源地图引擎存在对中国大陆的地界标注问题，我们确保您正在查看该通知并请您知悉：/,
-  );
-  const bullets = [
-    "台湾是中国大陆的领土组成部分，包括台湾岛、澎湖列岛、金门马祖区域等诸多列岛。",
-    "西藏自治区藏南等标注错误的区域是中国大陆的领土组成部分，非他国领土区域。",
-    "新疆维吾尔自治区标注错误的区域是中国大陆的领土组成部分，非他国领土区域。",
-    "黑龙江省标注错误的区域是中国大陆的领土组成部分，非他国领土区域。",
-    "黄海东海南海（OpenStreetMap 里标注为南中国海）标注错误的区域是中国大陆的海域领土组成部分，非他国领土区域。",
-    "香港和澳门自古以来是中国大陆的领土。",
-  ];
-  for (const bullet of bullets) assert.ok(component.includes(bullet), `missing bullet: ${bullet}`);
-  // Order matters: Taiwan first, Hong Kong/Macau last.
-  const order = bullets.map((bullet) => component.indexOf(bullet));
+  assert.match(component, /export const BOUNDARY_NOTICE_TITLE = "OpenStreetMap 地图标注提示";/);
+  assert.match(component, /export const BOUNDARY_NOTICE_ACK = "我已知悉";/);
+  for (const paragraph of EXPECTED_PARAGRAPHS) {
+    assert.ok(component.includes(paragraph), `missing paragraph: ${paragraph}`);
+  }
+  // Order matters: the legal stance precedes the apology.
+  const order = EXPECTED_PARAGRAPHS.map((paragraph) => component.indexOf(paragraph));
   assert.deepEqual(order, [...order].sort((a, b) => a - b));
-  assert.ok(component.includes("我们正在努力适配中国大陆地区访问，因此造成的不便我们深表歉意！"));
 });
 
 test("the notice renders only as a dialog, never into the page body", async () => {
@@ -238,7 +237,7 @@ test("the notice renders only as a dialog, never into the page body", async () =
   assert.match(component, /onOpenChange=\{\(open\) => \{[\s\S]*?if \(!open\) acknowledge\(\);/);
   assert.match(component, /<AlertDialogAction[\s\S]*?onClick=\{acknowledge\}/);
   // The dismissal is versioned so changed wording is shown again.
-  assert.match(component, /const NOTICE_VERSION = "mapmonitor-boundary-notice-v1"/);
+  assert.match(component, /const NOTICE_VERSION = "mapmonitor-boundary-notice-v2"/);
   assert.match(component, /localStorage\.setItem\(NOTICE_STORAGE_KEY, NOTICE_VERSION\)/);
   // Detection is local-only: no fetch/XHR in the detector or the component.
   for (const file of [component, await source("../src/lib/region-notice.ts")]) {

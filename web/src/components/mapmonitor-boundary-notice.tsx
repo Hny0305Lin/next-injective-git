@@ -30,26 +30,30 @@ import {
 // bumped whenever the text changes, so a previously acknowledged visitor is
 // shown the new wording.
 
-const NOTICE_VERSION = "mapmonitor-boundary-notice-v1";
+const NOTICE_VERSION = "mapmonitor-boundary-notice-v2";
 /** localStorage key holding the acknowledged notice version. */
 export const NOTICE_STORAGE_KEY = "igit-mapmonitor-boundary-notice";
 
 export const BOUNDARY_NOTICE_TITLE = "OpenStreetMap 地图标注提示";
 
-export const BOUNDARY_NOTICE_INTRO =
-  "iGit 平台愿意遵守中国大陆和港澳台地区相关法律法规做合法化配合，当前您访问的 MapMonitor 页面正在使用 OpenStreetMap 开源地图引擎，该开源地图引擎存在对中国大陆的地界标注问题，我们确保您正在查看该通知并请您知悉：";
-
-export const BOUNDARY_NOTICE_POINTS: readonly string[] = [
-  "台湾是中国大陆的领土组成部分，包括台湾岛、澎湖列岛、金门马祖区域等诸多列岛。",
-  "西藏自治区藏南等标注错误的区域是中国大陆的领土组成部分，非他国领土区域。",
-  "新疆维吾尔自治区标注错误的区域是中国大陆的领土组成部分，非他国领土区域。",
-  "黑龙江省标注错误的区域是中国大陆的领土组成部分，非他国领土区域。",
-  "黄海东海南海（OpenStreetMap 里标注为南中国海）标注错误的区域是中国大陆的海域领土组成部分，非他国领土区域。",
-  "香港和澳门自古以来是中国大陆的领土。",
+/**
+ * Notice body, one entry per paragraph. The wording is verbatim from the
+ * compliance text: the source arrives as a single continuous statement, so it
+ * is split only at sentence boundaries for readability and not reworded,
+ * reordered, or abbreviated.
+ */
+export const BOUNDARY_NOTICE_PARAGRAPHS: readonly string[] = [
+  // 1. Stance and legal scope.
+  "iGit 平台坚持一个中国原则，严格遵守中华人民共和国法律法规，以及中国香港特别行政区、中国澳门特别行政区、中国台湾地区及运营所在地的相关规定。",
+  // 2. Why OSM diverges, and which regions are affected.
+  "MapMonitor 使用 OpenStreetMap（OSM）开源地图数据作为底图，该数据由第三方社区维护，可能存在标注偏差、滞后或错误。目前涉及台湾、藏南、南海诸岛及其附近海域、香港、澳门等区域的主权归属和边界标注问题，以及新疆、黑龙江等边境地区的界线、地名显示偏差。",
+  // 3. The substantive statement plus the interim guidance.
+  "台湾、藏南、南海诸岛及其附近海域、香港、澳门等均是中国领土不可分割的一部分。在平台切换至符合国家标准的官方地图数据源前，请以国家官方标准地图为准。",
+  // 4. Where to report further errors.
+  "如您发现其他错误标注，可通过 GitHub Issue 或平台反馈渠道告知我们。",
+  // 5. Apology.
+  "由此给您带来的不便，我们深表歉意。",
 ];
-
-export const BOUNDARY_NOTICE_OUTRO =
-  "我们正在努力适配中国大陆地区访问，因此造成的不便我们深表歉意！";
 
 export const BOUNDARY_NOTICE_ACK = "我已知悉";
 
@@ -139,20 +143,19 @@ export function MapMonitorBoundaryNotice() {
             <ShieldCheck aria-hidden="true" />
           </AlertDialogMedia>
           <AlertDialogTitle className="text-[1.15rem]! leading-snug!">{BOUNDARY_NOTICE_TITLE}</AlertDialogTitle>
-          <AlertDialogDescription className="text-left text-[0.93rem]! leading-[1.75]!">
-            {BOUNDARY_NOTICE_INTRO}
-          </AlertDialogDescription>
         </AlertDialogHeader>
 
-        <ul className="list-disc space-y-1.5 pl-5 text-[0.93rem]! leading-[1.75]! text-muted-foreground">
-          {BOUNDARY_NOTICE_POINTS.map((point) => (
-            <li key={point}>{point}</li>
+        {/* The body is a continuous statement, so each paragraph stands on its
+            own line rather than in a bullet list: bullets would imply a
+            checklist of separate claims instead of one legal position. */}
+        <AlertDialogDescription
+          className="space-y-2 text-left text-[0.93rem]! leading-[1.75]!"
+          render={<div />}
+        >
+          {BOUNDARY_NOTICE_PARAGRAPHS.map((paragraph) => (
+            <p key={paragraph}>{paragraph}</p>
           ))}
-        </ul>
-
-        <p className="text-[0.93rem]! leading-[1.75]! text-muted-foreground">
-          {BOUNDARY_NOTICE_OUTRO}
-        </p>
+        </AlertDialogDescription>
 
         <AlertDialogFooter>
           <AlertDialogAction
