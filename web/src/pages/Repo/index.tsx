@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
-import { AlertTriangle, ArrowRightLeft, Check, Copy, FileCode2, GitBranch, GitCommit, Pencil, Save, Users, X } from "lucide-react";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { AlertTriangle, ArrowRightLeft, Check, CheckCircle2, Copy, FileCode2, GitBranch, GitCommit, GitFork, LoaderCircle, Pencil, Save, Users, WalletCards, X } from "lucide-react";
 import { loadConfig } from "../../lib/chain";
 import { ContractTypeBadge, type RepositoryContractKind } from "../../components/ContractTypeBadge";
 import type { AppConfig } from "../../lib/chain";
@@ -10,11 +10,18 @@ import {
   formatError,
   listRefs,
   resolveRepo,
+  repoInfoById,
   resolveOwner,
   type RefInfo,
   type RepoInfo,
   type ResolvedRepo,
   formatResourceError,
+  forkRepositoryWithEvm,
+  EVMForkMetadataError,
+  repositoryNameAvailable,
+  validateRepositoryName,
+  validateRepositoryMetadata,
+  verifySuite,
   updateRepoInfoWithEvm,
   pendingOwnershipTransferWithEvm,
   beginOwnershipTransferWithEvm,
@@ -29,6 +36,7 @@ import {
 } from "../../lib/chain";
 import { useWallet } from "../../lib/WalletContext";
 import type { Eip1193 } from "../../lib/wallet";
+import { repositoryPath } from "../../lib/repository-path";
 import type { Hex } from "viem";
 import { getRepoStore } from "../../lib/gitstore";
 import {
@@ -50,6 +58,11 @@ import { findRef, parseView, shortRef } from "./useRepoViews";
 // this UI is served from (localhost dev, preview deployments).
 const SITE_ORIGIN = "https://www.igit.xyz";
 
+function compactRepositoryOwner(owner: string): string {
+  if (!owner.startsWith("inj1") || owner.length <= 20) return owner;
+  return `${owner.slice(0, 12)}…${owner.slice(-6)}`;
+}
+
 interface RepoProps {
   contractKind?: RepositoryContractKind;
 }
@@ -65,7 +78,12 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
   const splat = params["*"] ?? "";
   const isLegacy = contractKind === "cosmwasm-v1";
   const cfg = useMemo(() => loadConfig(), []);
-  const { connected, provider } = useWallet();
+  const { connected, provider, openWalletModal } = useWallet();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const forkMetadataNotice = location.state && typeof location.state === "object"
+    ? location.state as { forkMetadataError?: string; forkTxHash?: string }
+    : null;
   const [addr, setAddr] = useState("");
   const [info, setInfo] = useState<RepoInfo | null>(null);
   const [resolvedRepo, setResolvedRepo] = useState<PageResolvedRepo | null>(null);
@@ -84,6 +102,17 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
   const [transferTarget, setTransferTarget] = useState("");
   const [transferBusy, setTransferBusy] = useState(false);
   const [transferError, setTransferError] = useState("");
+  const [forkOpen, setForkOpen] = useState(false);
+  const [forkName, setForkName] = useState("");
+  const [forkDescription, setForkDescription] = useState("");
+  const [forkBranch, setForkBranch] = useState("main");
+  const [forkBusy, setForkBusy] = useState(false);
+  const [forkError, setForkError] = useState("");
+  const [forkSuiteError, setForkSuiteError] = useState("");
+  const [forkNameState, setForkNameState] = useState<"idle" | "checking" | "available" | "taken">("idle");
+  const [forkSource, setForkSource] = useState<RepoInfo | null>(null);
+  const [forkSuiteState, setForkSuiteState] = useState<"idle" | "checking" | "verified" | "error">("idle");
+  const sourceExceedsForkRefLimit = info?.suite_version === 3n && refs.length > 64;
 
   // The ?suite=3|4 link parameter selects which generation's same-named copy
   // this page operates on; every read and write then runs against that
@@ -175,6 +204,67 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
       });
     return () => { cancelled = true; };
   }, [cfg, isLegacy, resolvedRepo?.repoId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setForkSource(null);
+    if (isLegacy || !info?.forked_from || !resolvedRepo?.suiteDirectory) return () => { cancelled = true; };
+    void repoInfoById(suiteCfg, info.forked_from as Hex)
+      .then((source) => { if (!cancelled) setForkSource(source); })
+      .catch(() => { /* Lineage remains visible as a repo ID when the source is unavailable. */ });
+    return () => { cancelled = true; };
+  }, [info?.forked_from, isLegacy, resolvedRepo?.suiteDirectory, suiteCfg]);
+
+  useEffect(() => {
+    if (!forkOpen || !connected || !resolvedRepo?.repoId || info?.suite_version !== 3n) return;
+    const candidate = forkName.trim();
+    setForkNameState("idle");
+    setForkError("");
+    if (!candidate) return;
+    let normalized: string;
+    try {
+      normalized = validateRepositoryName(candidate);
+    } catch (error) {
+      setForkNameState("taken");
+      setForkError(formatError(error));
+      return;
+    }
+    let cancelled = false;
+    setForkNameState("checking");
+    void repositoryNameAvailable(suiteCfg, connected.address, normalized)
+      .then(() => { if (!cancelled) setForkNameState("available"); })
+      .catch((error) => {
+        if (!cancelled) {
+          setForkNameState("taken");
+          setForkError(formatError(error));
+        }
+      });
+    return () => { cancelled = true; };
+  }, [connected, forkName, forkOpen, info?.suite_version, resolvedRepo?.repoId, suiteCfg]);
+
+  useEffect(() => {
+    if (!forkOpen || isLegacy || !resolvedRepo?.repoId) return;
+    let cancelled = false;
+    setForkSuiteState("checking");
+    setForkSuiteError("");
+    void verifySuite(suiteCfg, true)
+      .then((binding) => {
+        if (cancelled) return;
+        if (binding.version !== 3n) {
+          setForkSuiteState("error");
+          setForkSuiteError("Web Fork is disabled for Suite v4 BYOS because its storage is user-controlled. Use a Suite v3 public-IPFS repository.");
+          return;
+        }
+        setForkSuiteState("verified");
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setForkSuiteState("error");
+          setForkSuiteError("Suite verification failed: " + formatError(error));
+        }
+      });
+    return () => { cancelled = true; };
+  }, [forkOpen, isLegacy, resolvedRepo?.repoId, sourceExceedsForkRefLimit, suiteCfg]);
 
   useEffect(() => {
     if (!editingMetadata) return;
@@ -354,6 +444,57 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
     }
   };
 
+  const openForkDialog = () => {
+    if (isLegacy || !resolvedRepo.repoId || info.suite_version !== 3n || sourceExceedsForkRefLimit) return;
+    if (!connected) {
+      openWalletModal();
+      return;
+    }
+    setForkName(info.name + "-fork");
+    setForkDescription(info.description);
+    setForkBranch(info.default_branch || "main");
+    setForkError("");
+    setForkSuiteError("");
+    setForkNameState("idle");
+    setForkSuiteState("idle");
+    setForkOpen(true);
+  };
+
+  const submitFork = async () => {
+    if (forkBusy || !provider || !connected || !resolvedRepo.repoId || forkSuiteState !== "verified") return;
+    setForkError("");
+    try {
+      const normalizedName = validateRepositoryName(forkName);
+      const metadata = validateRepositoryMetadata(forkDescription, forkBranch);
+      await repositoryNameAvailable(suiteCfg, connected.address, normalizedName);
+      setForkBusy(true);
+      let result: Awaited<ReturnType<typeof forkRepositoryWithEvm>>;
+      try {
+        result = await forkRepositoryWithEvm(provider, suiteCfg, resolvedRepo.repoId, normalizedName, metadata, connected.ethAddress);
+      } catch (error) {
+        if (!(error instanceof EVMForkMetadataError)) throw error;
+        setForkError(error.message + " The fork was created. Its page will open so you can verify it and retry metadata editing.");
+        setForkOpen(false);
+        navigate(repositoryPath(connected.address, normalizedName, location.search), {
+          state: { forkMetadataError: error.message, forkTxHash: error.forkTxHash },
+        });
+        return;
+      }
+      const sourceLink = location.search;
+      setForkOpen(false);
+      navigate(repositoryPath(connected.address, normalizedName, sourceLink));
+      showToast(result.metadataTxHash ? "Fork created and metadata updated" : "Fork created");
+    } catch (error) {
+      if (error instanceof EVMForkMetadataError) {
+        setForkError(error.message + " The fork remains available; refresh its page and retry metadata editing. Fork transaction: " + error.forkTxHash);
+      } else {
+        setForkError(formatError(error));
+      }
+    } finally {
+      setForkBusy(false);
+    }
+  };
+
   return (
     <div>
       {resolvedRepo && !resolvedRepo.isCanonical && (
@@ -402,8 +543,15 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
         )}
         {info.forked_from && (
           <p className="repo-forked muted">
-            forked from <Link to={`${sourcePrefix}/${info.forked_from}`}>{info.forked_from}</Link>
+            forked from {forkSource ? <Link to={`${sourcePrefix}/${forkSource.owner}/${forkSource.name}?suite=${info.suite_version}`}>{forkSource.owner}/{forkSource.name}</Link> : <code>{info.forked_from}</code>}
           </p>
+        )}
+        {forkMetadataNotice?.forkMetadataError && (
+          <div className="repo-fork-created-notice" role="alert">
+            <b>Fork created; metadata update needs a retry.</b>
+            <span>{forkMetadataNotice.forkMetadataError}</span>
+            {forkMetadataNotice.forkTxHash && <span>Confirmed fork transaction: <code>{forkMetadataNotice.forkTxHash}</code></span>}
+          </div>
         )}
         <div className="repo-stats">
           <span><b>{headShort}</b> HEAD</span>
@@ -411,6 +559,20 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
           <span><b>{tagsCount}</b> tags</span>
           <span><b>{packfilesCount}</b> packfiles</span>
         </div>
+        {info.forked_from && info.suite_version === 3n && (
+          <div className="repo-fork-created-notice" role="status">
+            <b>Fork created from the source repository.</b>
+            <span>Suite v3 copied the source refs and public-IPFS pack references at fork time. Push later changes with the CLI.</span>
+            <code>igit remote add inj igit://{resolvedRepo.canonical.owner}/{resolvedRepo.canonical.name}</code>
+          </div>
+        )}
+        {info.forked_from && info.suite_version === 4n && refs.length === 0 && (
+          <div className="repo-fork-created-notice" role="status">
+            <b>Fork created from the source metadata.</b>
+            <span>Suite v4 BYOS forks do not copy Git refs or packfiles. Add the remote and push the first content with the CLI.</span>
+            <code>igit remote add inj igit://{resolvedRepo.canonical.owner}/{resolvedRepo.canonical.name}</code>
+          </div>
+        )}
         {!isLegacy && (
           <div className="repo-actions">
             <div className="clone-box">
@@ -459,6 +621,32 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
                 aria-label="edit repository metadata"
               >
                 <Pencil size={15} />
+              </button>
+            )}
+            {!isLegacy && info.suite_version !== 3n && (
+              <span className="repo-fork-v3-disabled" role="note" title="Web Fork requires the public-IPFS Suite v3 path.">
+                {info.suite_version === 4n ? "Fork unavailable: Suite v4 BYOS storage is user-controlled" : "Fork unavailable: requires verified Suite v3 public IPFS"}
+              </span>
+            )}
+            {!isLegacy && connected && !connected.writable && (
+              <span className="repo-fork-v3-disabled" role="status">Switch to Injective EVM testnet to fork.</span>
+            )}
+            {!isLegacy && info.suite_version === 3n && sourceExceedsForkRefLimit && (
+              <span className="repo-fork-v3-disabled" role="note">This repository has more than 64 refs and cannot be forked by the Suite v3 contract.</span>
+            )}
+            {!isLegacy && info.moderation_status !== "active" && (
+              <span className="repo-fork-v3-disabled" role="status">This repository cannot be forked while {info.moderation_status}.</span>
+            )}
+            {!isLegacy && info.suite_version === 3n && (
+              <button
+                className="repo-fork-trigger"
+                type="button"
+                onClick={openForkDialog}
+                disabled={Boolean(connected && !connected.writable) || !resolvedRepo.repoId || !resolvedRepo.isCanonical || info.moderation_status !== "active" || sourceExceedsForkRefLimit}
+                title={!connected ? "Connect a wallet to fork to your account" : !connected.writable ? "Switch to Injective EVM testnet" : info.moderation_status !== "active" ? "This repository cannot be forked while inactive" : "Fork this public-IPFS repository"}
+                aria-label="Fork repository"
+              >
+                <GitFork size={15} /> Fork
               </button>
             )}
           </div>
@@ -667,6 +855,64 @@ export default function Repo({ contractKind = "evm-v2" }: RepoProps) {
                 <button className="repo-metadata-save" type="submit" disabled={savingMetadata}>
                   <Save size={15} />
                   {savingMetadata ? "Saving" : "Save"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {forkOpen && (
+        <div className="modal-overlay" onClick={() => { if (!forkBusy) setForkOpen(false); }}>
+          <div
+            className="modal repo-fork-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="repo-fork-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-head">
+              <b
+                id="repo-fork-title"
+                title={`Fork ${resolvedRepo.canonical.owner}/${resolvedRepo.canonical.name}`}
+              >
+                Fork {compactRepositoryOwner(resolvedRepo.canonical.owner)}/{resolvedRepo.canonical.name}
+              </b>
+              <button className="modal-x" type="button" onClick={() => setForkOpen(false)} disabled={forkBusy} aria-label="close fork dialog" title="close"><X size={17} /></button>
+            </div>
+            <form className="repo-metadata-form" onSubmit={(event) => { event.preventDefault(); void submitFork(); }}>
+              {!connected && (
+                <div className="repo-fork-warning" role="status">
+                  <WalletCards size={16} /> Connect a wallet to set the new repository owner to your address.
+                  <button type="button" onClick={openWalletModal}>Connect wallet</button>
+                </div>
+              )}
+              {info.moderation_status !== "active" && <div className="repo-fork-warning" role="alert">This repository is {info.moderation_status} and cannot be forked.</div>}
+              <div className="repo-fork-warning" role="note">
+                <GitFork size={16} /> This creates a separate repository you own. Suite v3 copies up to 64 refs and iGit's public-IPFS pack references; the immutable pack bytes remain shared in public IPFS. Use the CLI to push later changes.
+              </div>
+              <div className="repo-fork-warning" role="status">
+                <CheckCircle2 size={16} /> {forkSuiteState === "checking" ? "Verifying Suite v3 public-IPFS path…" : forkSuiteState === "verified" ? "Suite v3 public-IPFS verification passed." : forkSuiteState === "error" ? forkSuiteError : "Suite verification will run before submission."}
+              </div>
+              <label className="repo-metadata-field">
+                <span>New repository name</span>
+                <input className="field mono" value={forkName} maxLength={64} autoFocus disabled={forkBusy} onChange={(event) => setForkName(event.target.value)} required />
+                {forkNameState === "checking" && <small>Checking name availability…</small>}
+                {forkNameState === "available" && <small className="success-message">Available for {connected?.address}.</small>}
+              </label>
+              <label className="repo-metadata-field">
+                <span>Description</span>
+                <textarea className="field" value={forkDescription} maxLength={1024} rows={4} disabled={forkBusy} onChange={(event) => setForkDescription(event.target.value)} />
+              </label>
+              <label className="repo-metadata-field">
+                <span>Default branch</span>
+                <input className="field mono" value={forkBranch} maxLength={64} disabled={forkBusy} onChange={(event) => setForkBranch(event.target.value)} />
+              </label>
+              {forkError && <div className="error" role="alert">{forkError}</div>}
+              <div className="repo-metadata-actions">
+                <button type="button" onClick={() => setForkOpen(false)} disabled={forkBusy}>Cancel</button>
+                <button className="repo-metadata-save" type="submit" disabled={forkBusy || !connected || !provider || !resolvedRepo.repoId || !resolvedRepo.isCanonical || info.moderation_status !== "active" || forkSuiteState !== "verified" || forkNameState === "checking" || forkNameState === "taken"}>
+                  {forkBusy ? <LoaderCircle size={15} className="animate-spin" /> : <GitFork size={15} />}
+                  {forkBusy ? "Waiting for confirmation…" : "Create fork"}
                 </button>
               </div>
             </form>

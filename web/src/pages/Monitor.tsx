@@ -23,6 +23,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "../components/ui/alert";
+import { PublicDirectoryHero } from "../components/PublicDirectoryHero";
 import { Badge } from "../components/ui/badge";
 import {
   Card,
@@ -452,10 +453,11 @@ export default function Monitor() {
 
   return (
     <div className="monitor-page">
+      <PublicDirectoryHero variant="monitor" />
       <div className="monitor-heading">
         <div>
           <div className="monitor-eyebrow"><Gauge size={15} /> Public monitor <Badge variant="outline">Read-only</Badge></div>
-          <h1>Network pulse</h1>
+          <h2>Network pulse</h2>
           <p>Live observation window for the igit protocol surface.</p>
         </div>
         <div className="monitor-heading-actions">

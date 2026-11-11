@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   decodeFunctionData,
+  encodeAbiParameters,
+  encodeErrorResult,
   encodeFunctionResult,
   keccak256,
 } from "viem";
@@ -12,6 +14,7 @@ import {
   MODULE_IDS,
   MODULE_KEYS,
   boundModuleAbi,
+  coreAbi,
   directoryAbi,
 } from "../src/lib/abis.ts";
 import { configForProfile, isLocalDeploymentHost, loadConfig, saveConfig } from "../src/lib/profile.ts";
@@ -25,7 +28,9 @@ import {
   versionLabel,
 } from "../src/lib/suite-compat.ts";
 import {
+  EVMGasEstimationError,
   EVMReceiptUnconfirmedError,
+  EVMTransactionBroadcastError,
   SuiteConfigurationError,
   SuiteVerificationError,
   formatWalletError,
@@ -40,11 +45,17 @@ import {
 } from "../src/lib/transport.ts";
 import {
   cancelOwnershipTransferWithEvm,
+  createRepositoryWithEvm,
+  EVMForkMetadataError,
+  forkRepositoryWithEvm,
   rejectOwnershipTransferWithEvm,
   resolveRepo,
+  validateRepositoryMetadata,
+  validateRepositoryName,
   updateRepoInfoWithEvm,
 } from "../src/lib/registry.ts";
 import { setRevenueSplitsWithEconomicModule, sponsorWithEconomicModule } from "../src/lib/modules.ts";
+import { repositoryPath } from "../src/lib/repository-path.ts";
 import {
   EVM_ACTIVITY_BLOCK_WINDOW,
   EVM_LOG_RANGE_LIMIT,
@@ -89,6 +100,13 @@ function json(result) {
   });
 }
 
+function jsonError(data, message = "execution reverted") {
+  return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, error: { code: 3, message, data } }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
+
 function functionResult(abi, functionName, result) {
   return encodeFunctionResult({ abi, functionName, result });
 }
@@ -104,7 +122,7 @@ function suiteFixture(options = {}) {
     const decoded = decodeFunctionData({ abi: directoryAbi, data });
     switch (decoded.functionName) {
       case "state": return functionResult(directoryAbi, decoded.functionName, 1);
-      case "suiteVersion": return functionResult(directoryAbi, decoded.functionName, 3n);
+      case "suiteVersion": return functionResult(directoryAbi, decoded.functionName, options.suiteVersion ?? 3n);
       case "configuredChainId": return functionResult(directoryAbi, decoded.functionName, 1439n);
       case "snapshotRoot": return functionResult(directoryAbi, decoded.functionName, SNAPSHOT_ROOT);
       case "bootstrapCoordinator": return functionResult(directoryAbi, decoded.functionName, COORDINATOR);
@@ -209,6 +227,26 @@ async function withFetch(fetch, run) {
     clearSuiteCache();
     globalThis.fetch = previous;
   }
+}
+
+function locatorAvailableFetch(fetch, name, owner = OWNER) {
+  return async (url, init) => {
+    const request = JSON.parse(init.body);
+    if (request.method === "eth_call") {
+      const [{ to, data }] = request.params;
+      if (ADDRESS_TO_MODULE.get(to.toLowerCase()) === "core") {
+        try {
+          decodeFunctionData({ abi: boundModuleAbi, data });
+          return fetch(url, init);
+        } catch { /* Continue with RepositoryCore ABI calls. */ }
+        const decoded = decodeFunctionData({ abi: MODULE_ABIS.core, data });
+        if (decoded.functionName === "resolveRepository" && decoded.args[0].toLowerCase() === owner.toLowerCase() && decoded.args[1] === name) {
+          return jsonError(encodeErrorResult({ abi: coreAbi, errorName: "LocatorNotFound", args: [owner, name] }));
+        }
+      }
+    }
+    return fetch(url, init);
+  };
 }
 
 test("built-in profile points to the v4 successor suite and ignores legacy stored fields", () => {
@@ -553,7 +591,7 @@ test("registry reads use viem tuple decoding and stable repo IDs", async () => {
   });
 });
 
-function walletFixture({ receiptStatus = "0x1" } = {}) {
+function walletFixture({ receiptStatus = "0x1", sendError, estimateError } = {}) {
   const requests = [];
   return {
     requests,
@@ -564,8 +602,12 @@ function walletFixture({ receiptStatus = "0x1" } = {}) {
         case "eth_chainId": return "0x59f";
         case "eth_requestAccounts": return [OWNER];
         case "eth_gasPrice": return "0x1";
-        case "eth_estimateGas": return "0x5208";
-        case "eth_sendTransaction": return TX_HASH;
+        case "eth_estimateGas":
+          if (estimateError) throw estimateError;
+          return "0x5208";
+        case "eth_sendTransaction":
+          if (sendError) throw sendError;
+          return TX_HASH;
         case "eth_getTransactionReceipt": return { status: receiptStatus, transactionHash: TX_HASH };
         default: throw new Error(`unexpected wallet method ${request.method}`);
       }
@@ -591,6 +633,204 @@ test("wallet writes estimate gas and broadcast an explicit legacy transaction at
   const decoded = decodeFunctionData({ abi: MODULE_ABIS.economic, data: sent.data });
   assert.equal(decoded.functionName, "sponsor");
   assert.deepEqual(decoded.args, [REPO_ID, "thanks"]);
+});
+
+test("repository validators match the Core byte and character rules", () => {
+  assert.equal(validateRepositoryName("Repo.Release-1"), "Repo.Release-1");
+  assert.throws(() => validateRepositoryName(""), /required/);
+  assert.throws(() => validateRepositoryName("bad/name"), /only letters/);
+  assert.throws(() => validateRepositoryName("a".repeat(65)), /64 UTF-8 bytes/);
+  assert.deepEqual(validateRepositoryMetadata(" description ", " "), { description: "description", defaultBranch: "main" });
+  assert.throws(() => validateRepositoryMetadata("x".repeat(1025), "main"), /description.*1024/);
+  assert.throws(() => validateRepositoryMetadata("", "b".repeat(65)), /branch.*64/);
+});
+
+test("createRepository encodes the checked-in Suite v3 ABI and legacy wallet parameters", async () => {
+  const fixture = suiteFixture();
+  const wallet = walletFixture();
+  await withFetch(locatorAvailableFetch(fixture.fetch, "new-web-repo"), async () => {
+    const hash = await createRepositoryWithEvm(wallet, configured(), "new-web-repo", "from web", "dev", OWNER);
+    assert.equal(hash, TX_HASH);
+  });
+  const sent = wallet.requests.find((request) => request.method === "eth_sendTransaction").params[0];
+  assert.equal(sent.to, MODULE_ADDRESSES.core);
+  assert.equal(sent.type, "0x0");
+  const decoded = decodeFunctionData({ abi: MODULE_ABIS.core, data: sent.data });
+  assert.equal(decoded.functionName, "createRepository");
+  assert.deepEqual(decoded.args, ["new-web-repo", "from web", "dev"]);
+});
+
+test("createRepository validates availability and turns a rejected signature into a pre-broadcast error", async () => {
+  const fixture = suiteFixture();
+  const wallet = walletFixture();
+  wallet.request = async function request(value) {
+    this.requests.push(value);
+    if (value.method === "wallet_switchEthereumChain") return null;
+    if (value.method === "eth_chainId") return "0x59f";
+    if (value.method === "eth_requestAccounts") return [OWNER];
+    if (value.method === "eth_gasPrice") return "0x1";
+    if (value.method === "eth_estimateGas") return "0x5208";
+    if (value.method === "eth_sendTransaction") throw Object.assign(new Error("User rejected request"), { code: 4001 });
+    throw new Error("unexpected wallet method " + value.method);
+  };
+  await withFetch(locatorAvailableFetch(fixture.fetch, "cancelled-repo"), async () => {
+    await assert.rejects(
+      createRepositoryWithEvm(wallet, configured(), "cancelled-repo", "", "main", OWNER),
+      (error) => providerErrorCode(error) === 4001 && !(error instanceof EVMTransactionBroadcastError),
+    );
+  });
+  assert.equal(wallet.requests.filter((request) => request.method === "eth_sendTransaction").length, 1, "the wallet was asked to sign once");
+});
+
+test("createRepository distinguishes gas estimation and transaction broadcast failures", async () => {
+  const fixture = suiteFixture();
+  const estimateWallet = walletFixture({ estimateError: new Error("gas unavailable") });
+  await withFetch(locatorAvailableFetch(fixture.fetch, "gas-fail"), async () => {
+    await assert.rejects(createRepositoryWithEvm(estimateWallet, configured(), "gas-fail", "", "main", OWNER), EVMGasEstimationError);
+  });
+  assert.equal(estimateWallet.requests.some((request) => request.method === "eth_sendTransaction"), false);
+  const broadcastWallet = walletFixture({ sendError: new Error("RPC rejected transaction") });
+  await withFetch(locatorAvailableFetch(fixture.fetch, "broadcast-fail"), async () => {
+    await assert.rejects(createRepositoryWithEvm(broadcastWallet, configured(), "broadcast-fail", "", "main", OWNER), EVMTransactionBroadcastError);
+  });
+  assert.equal(broadcastWallet.requests.filter((request) => request.method === "eth_sendTransaction").length, 1);
+});
+
+test("forkRepository sends the checked-in v3 public-IPFS call and refuses v4 BYOS without broadcasting", async () => {
+  const fixture = suiteFixture({ suiteVersion: 3n, moduleCalls(module, decoded) {
+    if (module === "core" && decoded.functionName === "getRepository") return {
+      id: REPO_ID, owner: OWNER, name: "source", description: "source description", defaultBranch: "main",
+      forkedFrom: "0x" + "00".repeat(32), createdAt: 1n, updatedAt: 1n, exists: true,
+    };
+    if (module === "moderation" && decoded.functionName === "effectiveStatus") return 0;
+    return undefined;
+  } });
+  const wallet = walletFixture();
+  await withFetch(locatorAvailableFetch(fixture.fetch, "source-fork"), async () => {
+    const result = await forkRepositoryWithEvm(wallet, configured(), REPO_ID, "source-fork", {}, OWNER);
+    assert.deepEqual(result, { txHash: TX_HASH });
+  });
+  const sent = wallet.requests.find((request) => request.method === "eth_sendTransaction").params[0];
+  const decoded = decodeFunctionData({ abi: MODULE_ABIS.core, data: sent.data });
+  assert.equal(decoded.functionName, "forkRepository");
+  assert.deepEqual(decoded.args, [REPO_ID, "source-fork"]);
+
+  const byos = suiteFixture({ suiteVersion: 4n });
+  const noWrite = walletFixture();
+  await withFetch(byos.fetch, async () => {
+    await assert.rejects(forkRepositoryWithEvm(noWrite, configured(), REPO_ID, "byos-fork", {}, OWNER), /public-IPFS|BYOS/);
+  });
+  assert.equal(noWrite.requests.some((request) => request.method === "eth_sendTransaction"), false);
+});
+
+test("forkRepository keeps a cancelled signature as a pre-broadcast wallet error", async () => {
+  const fixture = suiteFixture({ suiteVersion: 3n, moduleCalls(module, decoded) {
+    if (module === "core" && decoded.functionName === "getRepository") return {
+      id: REPO_ID, owner: OWNER, name: "source", description: "source description", defaultBranch: "main",
+      forkedFrom: "0x" + "00".repeat(32), createdAt: 1n, updatedAt: 1n, exists: true,
+    };
+    if (module === "moderation" && decoded.functionName === "effectiveStatus") return 0;
+    return undefined;
+  } });
+  const wallet = walletFixture({ sendError: Object.assign(new Error("User rejected request"), { code: 4001 }) });
+  await withFetch(locatorAvailableFetch(fixture.fetch, "cancelled-fork"), async () => {
+    await assert.rejects(
+      forkRepositoryWithEvm(wallet, configured(), REPO_ID, "cancelled-fork", {}, OWNER),
+      (error) => providerErrorCode(error) === 4001 && !(error instanceof EVMTransactionBroadcastError),
+    );
+  });
+  assert.equal(wallet.requests.filter((request) => request.method === "eth_sendTransaction").length, 1);
+});
+
+test("forkRepository updates only edited metadata after the v3 fork is confirmed", async () => {
+  const fixture = suiteFixture({ suiteVersion: 3n, moduleCalls(module, decoded) {
+    if (module === "core" && decoded.functionName === "getRepository") return {
+      id: REPO_ID, owner: OWNER, name: "source", description: "description", defaultBranch: "main",
+      forkedFrom: "0x" + "00".repeat(32), createdAt: 1n, updatedAt: 1n, exists: true,
+    };
+    if (module === "core" && decoded.functionName === "resolveRepository") return [{
+      id: REPO_ID, owner: OWNER, name: "target", description: "new description", defaultBranch: "dev",
+      forkedFrom: REPO_ID, createdAt: 2n, updatedAt: 2n, exists: true,
+    }, true];
+    if (module === "moderation" && decoded.functionName === "effectiveStatus") return 0;
+    return undefined;
+  } });
+  const wallet = walletFixture();
+  await withFetch(locatorAvailableFetch(fixture.fetch, "target"), async () => {
+    const result = await forkRepositoryWithEvm(
+      wallet, configured(), REPO_ID, "target", { description: "description", defaultBranch: "main" }, OWNER,
+    );
+    assert.deepEqual(result, { txHash: TX_HASH });
+  });
+  const sent = wallet.requests.filter((request) => request.method === "eth_sendTransaction").map((request) => request.params[0]);
+  assert.equal(sent.length, 1, "unchanged fork metadata must not trigger a second transaction");
+});
+
+test("forkRepository preserves the confirmed v3 fork when metadata confirmation fails", async () => {
+  const fixture = suiteFixture({ suiteVersion: 3n, moduleCalls(module, decoded) {
+    if (module === "core" && decoded.functionName === "getRepository") return {
+      id: REPO_ID, owner: OWNER, name: "source", description: "old", defaultBranch: "main",
+      forkedFrom: "0x" + "00".repeat(32), createdAt: 1n, updatedAt: 1n, exists: true,
+    };
+    if (module === "moderation" && decoded.functionName === "effectiveStatus") return 0;
+    return undefined;
+  } });
+  const wallet = walletFixture();
+  let sent = 0;
+  wallet.request = async function request(value) {
+    this.requests.push(value);
+    if (value.method === "eth_sendTransaction") {
+      sent += 1;
+      if (sent === 1) return TX_HASH;
+      throw new Error("metadata broadcast blocked");
+    }
+    if (value.method === "eth_getTransactionReceipt") return { status: "0x1", transactionHash: TX_HASH };
+    if (value.method === "wallet_switchEthereumChain") return null;
+    if (value.method === "eth_chainId") return "0x59f";
+    if (value.method === "eth_requestAccounts") return [OWNER];
+    if (value.method === "eth_gasPrice") return "0x1";
+    if (value.method === "eth_estimateGas") return "0x5208";
+    throw new Error("unexpected wallet method " + value.method);
+  };
+  await withFetch(locatorAvailableFetch(fixture.fetch, "partial-fork"), async () => {
+    await assert.rejects(
+      forkRepositoryWithEvm(wallet, configured(), REPO_ID, "partial-fork", { description: "new" }, OWNER),
+      (error) => error instanceof EVMForkMetadataError && error.forkTxHash === TX_HASH,
+    );
+  });
+  assert.equal(sent, 2, "fork was confirmed, then the metadata action was attempted separately");
+  const writes = wallet.requests.filter((request) => request.method === "eth_sendTransaction").map((request) => request.params[0]);
+  const metadata = writes[1];
+  const metadataCall = decodeFunctionData({ abi: MODULE_ABIS.core, data: metadata.data });
+  assert.equal(metadataCall.functionName, "updateMetadata");
+  assert.equal(metadataCall.args[0], keccak256(encodeAbiParameters(
+    [{ type: "string" }, { type: "uint256" }, { type: "address" }, { type: "address" }, { type: "string" }],
+    ["igit:suite:v3:repo", 1439n, DIRECTORY, OWNER, "partial-fork"],
+  )));
+  assert.deepEqual(metadataCall.args.slice(1), [true, "new", false, ""]);
+});
+
+test("creation and fork UIs expose next steps, lineage, IPFS refs, and typed transaction failures", async () => {
+  const creation = await readFile(new URL("../src/pages/CreateRepository.tsx", import.meta.url), "utf8");
+  const repository = await readFile(new URL("../src/pages/Repo/index.tsx", import.meta.url), "utf8");
+  assert.match(creation, /No wallet connected/);
+  assert.ok(creation.includes("Switch ${walletConnection.label} to Injective EVM testnet"));
+  assert.match(creation, /Gas estimation failed before signing/);
+  assert.match(creation, /transaction broadcast failed|Transaction could not be broadcast/);
+  assert.match(creation, /transaction was mined and reverted/);
+  assert.match(creation, /receipt is still uncertain/);
+  assert.ok(creation.includes("igit remote add inj igit://"));
+  assert.ok(repository.includes("forked from {forkSource ?"));
+  assert.match(repository, /Suite v3 copies up to 64 refs and iGit's public-IPFS pack references/);
+  assert.match(repository, /more than 64 refs and cannot be forked/);
+  assert.match(repository, /Suite v4 BYOS storage is user-controlled/);
+  assert.match(repository, /fork transaction: /i);
+  assert.ok(repository.includes("navigate(repositoryPath(connected.address, normalizedName, location.search)"));
+});
+
+test("Fork destinations preserve suite selection and encode owner and repository segments", () => {
+  assert.equal(repositoryPath("0x1111111111111111111111111111111111111111", "new-fork", "?suite=4"), "/0x1111111111111111111111111111111111111111/new-fork?suite=4");
+  assert.equal(repositoryPath("owner/name", "repo name", "suite=3"), "/owner%2Fname/repo%20name?suite=3");
 });
 
 test("revenue split writes accept the V1 twenty-recipient limit and reject twenty-one", async () => {

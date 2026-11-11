@@ -1,7 +1,15 @@
-import { zeroAddress, zeroHash, type Address, type Hex } from "viem";
+import { encodeAbiParameters, keccak256, zeroAddress, zeroHash, type Address, type Hex } from "viem";
 import { sameAddress, toEvmAddress, toInjectiveAddress } from "./address";
-import { readModule, rawModuleRead, verifySuite, writeModule, type Eip1193, type SuiteBinding } from "./transport";
-import { successorCoreAbi } from "./abis";
+import { coreAbi, successorCoreAbi, SUITE_SUCCESSOR_VERSION, SUITE_VERSION } from "./abis";
+import {
+  readModule,
+  rawModuleRead,
+  verifySuite,
+  writeModule,
+  writeVerifiedModule,
+  type Eip1193,
+  type SuiteBinding,
+} from "./transport";
 import { refShapeForVersion } from "./suite-compat";
 import { fetchVerifiedManifest } from "./successorReader";
 import { parseSuiteDirectories, type AppConfig } from "./profile";
@@ -51,6 +59,19 @@ export interface RepoInfoPatch {
   defaultBranch?: string;
 }
 
+export interface RepositoryWriteResult {
+  txHash: Hex;
+  /** A second transaction is used only when a fork's editable metadata changes. */
+  metadataTxHash?: Hex;
+}
+
+export class EVMForkMetadataError extends Error {
+  constructor(public readonly forkTxHash: Hex, cause: unknown) {
+    super(`fork was created, but updating its metadata failed: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+    this.name = "EVMForkMetadataError";
+  }
+}
+
 export interface PendingOwnershipTransfer {
   newOwner: string;
   executeAfter: number;
@@ -87,6 +108,172 @@ interface RawRef {
 const PAGE_SIZE = 64n;
 const queryCache = new Map<string, { value: unknown; timestamp: number }>();
 const CACHE_TTL_MS = 30_000;
+const MAX_REPOSITORY_NAME_BYTES = 64;
+const MAX_DESCRIPTION_BYTES = 1024;
+const MAX_DEFAULT_BRANCH_BYTES = 64;
+const REPOSITORY_NAME_PATTERN = /^[A-Za-z0-9._-]+$/;
+
+function utf8Length(value: string): number {
+  return new TextEncoder().encode(value).length;
+}
+
+/** Mirror RepositoryCore's name checks before asking the wallet to sign. */
+export function validateRepositoryName(value: string): string {
+  const name = value;
+  if (!name) throw new Error("repository name is required");
+  if (utf8Length(name) > MAX_REPOSITORY_NAME_BYTES) {
+    throw new Error(`repository name must be at most ${MAX_REPOSITORY_NAME_BYTES} UTF-8 bytes`);
+  }
+  if (!REPOSITORY_NAME_PATTERN.test(name)) {
+    throw new Error("repository name may contain only letters, numbers, '-', '_' and '.'");
+  }
+  return name;
+}
+
+export function validateRepositoryMetadata(description: string, defaultBranch: string): { description: string; defaultBranch: string } {
+  const normalizedDescription = description.trim();
+  const normalizedBranch = defaultBranch.trim() || "main";
+  if (utf8Length(normalizedDescription) > MAX_DESCRIPTION_BYTES) {
+    throw new Error(`description must be at most ${MAX_DESCRIPTION_BYTES} UTF-8 bytes`);
+  }
+  if (utf8Length(normalizedBranch) > MAX_DEFAULT_BRANCH_BYTES) {
+    throw new Error(`default branch must be at most ${MAX_DEFAULT_BRANCH_BYTES} UTF-8 bytes`);
+  }
+  return { description: normalizedDescription, defaultBranch: normalizedBranch };
+}
+
+export async function repositoryNameAvailable(
+  cfg: AppConfig,
+  owner: string,
+  name: string,
+): Promise<void> {
+  const normalizedName = validateRepositoryName(name);
+  try {
+    // Writes target the first verified Directory, so check that same suite.
+    const primaryDirectory = cfg.suiteDirectory.split(",")[0].trim();
+    const existing = await resolveRepoSingleDir({ ...cfg, suiteDirectory: primaryDirectory }, owner, normalizedName);
+    throw new Error(`repository name is already used by ${existing.canonical.owner}/${existing.canonical.name}`);
+  } catch (error) {
+    if (error instanceof EVMLocatorNotFoundError) return;
+    throw error;
+  }
+}
+
+function coreWriteAbi(version: bigint) {
+  return version === SUITE_SUCCESSOR_VERSION ? successorCoreAbi : coreAbi;
+}
+
+export async function createRepositoryWithEvm(
+  provider: Eip1193,
+  cfg: AppConfig,
+  name: string,
+  description: string,
+  defaultBranch: string,
+  expectedAccount?: string,
+): Promise<Hex> {
+  const normalizedName = validateRepositoryName(name);
+  const metadata = validateRepositoryMetadata(description, defaultBranch);
+  const binding = await verifySuite(cfg, true);
+  if (binding.version !== SUITE_VERSION && binding.version !== SUITE_SUCCESSOR_VERSION) {
+    throw new Error(`Web repository creation is disabled for unrecognised Suite v${binding.version}`);
+  }
+  if (!expectedAccount) throw new Error("Connect a wallet before creating a repository");
+  const writeConfig = { ...cfg, suiteDirectory: binding.directory };
+  await repositoryNameAvailable(writeConfig, expectedAccount, normalizedName);
+  const hash = await writeVerifiedModule(
+    provider,
+    writeConfig,
+    "core",
+    coreWriteAbi(binding.version),
+    "createRepository",
+    [normalizedName, metadata.description, metadata.defaultBranch],
+    undefined,
+    expectedAccount,
+    binding.version,
+  );
+  clearQueryCache();
+  return hash;
+}
+
+/**
+ * Fork a Suite v3 public-IPFS repository, then apply the form's editable
+ * metadata. Suite v4 BYOS is deliberately rejected: its storage is owned by
+ * the repository user, so Web cannot promise a durable independent fork.
+ */
+export async function forkRepositoryWithEvm(
+  provider: Eip1193,
+  cfg: AppConfig,
+  sourceRepoId: Hex,
+  newName: string,
+  metadata: RepoInfoPatch,
+  expectedAccount?: string,
+): Promise<RepositoryWriteResult> {
+  const normalizedName = validateRepositoryName(newName);
+  if (!expectedAccount) throw new Error("Connect a wallet before forking a repository");
+  const normalizedPatch: RepoInfoPatch = {
+    ...(metadata.description === undefined ? {} : { description: metadata.description.trim() }),
+    ...(metadata.defaultBranch === undefined ? {} : { defaultBranch: metadata.defaultBranch.trim() || "main" }),
+  };
+  if (normalizedPatch.description !== undefined && utf8Length(normalizedPatch.description) > MAX_DESCRIPTION_BYTES) {
+    throw new Error(`description must be at most ${MAX_DESCRIPTION_BYTES} UTF-8 bytes`);
+  }
+  if (normalizedPatch.defaultBranch !== undefined && utf8Length(normalizedPatch.defaultBranch) > MAX_DEFAULT_BRANCH_BYTES) {
+    throw new Error(`default branch must be at most ${MAX_DEFAULT_BRANCH_BYTES} UTF-8 bytes`);
+  }
+  const binding = await verifySuite(cfg, true);
+  if (binding.version !== SUITE_VERSION) {
+    throw new Error("Web Fork is available only for the verified Suite v3 public-IPFS path; Suite v4 BYOS forks are disabled because their storage is user-controlled.");
+  }
+  const writeConfig = { ...cfg, suiteDirectory: binding.directory };
+  const source = await repoInfoById(writeConfig, sourceRepoId, binding);
+  if (source.moderation_status !== "active") {
+    throw new Error("This repository cannot be forked because it is not active");
+  }
+  await repositoryNameAvailable(writeConfig, expectedAccount, normalizedName);
+  const forkTxHash = await writeVerifiedModule(
+    provider,
+    writeConfig,
+    "core",
+    coreAbi,
+    "forkRepository",
+    [sourceRepoId, normalizedName],
+    undefined,
+    expectedAccount,
+    binding.version,
+  );
+  clearQueryCache();
+  if (normalizedPatch.description === undefined && normalizedPatch.defaultBranch === undefined) {
+    return { txHash: forkTxHash };
+  }
+  try {
+    const changedPatch: RepoInfoPatch = {
+      ...(normalizedPatch.description === undefined || normalizedPatch.description === source.description
+        ? {} : { description: normalizedPatch.description }),
+      ...(normalizedPatch.defaultBranch === undefined || normalizedPatch.defaultBranch === source.default_branch
+        ? {} : { defaultBranch: normalizedPatch.defaultBranch }),
+    };
+    if (changedPatch.description === undefined && changedPatch.defaultBranch === undefined) {
+      return { txHash: forkTxHash };
+    }
+    const metadataTxHash = await updateRepoInfoWithEvm(
+      provider,
+      writeConfig,
+      repositoryIdForName(cfg.evmChainId, binding.directory, expectedAccount, normalizedName),
+      changedPatch,
+      expectedAccount,
+    );
+    return { txHash: forkTxHash, metadataTxHash };
+  } catch (cause) {
+    throw new EVMForkMetadataError(forkTxHash, cause);
+  }
+}
+
+function repositoryIdForName(chainId: number, directory: Address, owner: string, name: string): Hex {
+  return keccak256(encodeAbiParameters(
+    [{ type: "string" }, { type: "uint256" }, { type: "address" }, { type: "address" }, { type: "string" }],
+    ["igit:suite:v3:repo", BigInt(chainId), directory, toEvmAddress(owner), name],
+  ));
+}
 
 export class EVMRepoNotFoundError extends Error {
   constructor(public readonly repoId: string) {
@@ -374,18 +561,23 @@ export function acceptOwnershipWithEvm(provider: Eip1193, cfg: AppConfig, repoId
 }
 
 export async function updateRepoInfoWithEvm(
-  provider: Eip1193, cfg: AppConfig, repoId: Hex, patch: RepoInfoPatch,
+  provider: Eip1193, cfg: AppConfig, repoId: Hex, patch: RepoInfoPatch, expectedAccount?: string,
 ): Promise<Hex> {
   if (patch.description === undefined && patch.defaultBranch === undefined) {
     throw new Error("repository metadata patch is empty");
   }
-  const hash = await writeModule(provider, cfg, "core", "updateMetadata", [
-    repoId,
-    patch.description !== undefined,
-    patch.description ?? "",
-    patch.defaultBranch !== undefined,
-    patch.defaultBranch ?? "",
-  ]);
+  const binding = await verifySuite(cfg, true);
+  const abi = coreWriteAbi(binding.version);
+  const writeConfig = { ...cfg, suiteDirectory: binding.directory };
+  const hash = await writeVerifiedModule(
+    provider, writeConfig, "core", abi, "updateMetadata", [
+      repoId,
+      patch.description !== undefined,
+      patch.description ?? "",
+      patch.defaultBranch !== undefined,
+      patch.defaultBranch ?? "",
+    ], undefined, expectedAccount, binding.version,
+  );
   clearQueryCache();
   return hash;
 }

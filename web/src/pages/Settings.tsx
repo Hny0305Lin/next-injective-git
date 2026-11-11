@@ -1,6 +1,7 @@
 import { CheckCircle2, ExternalLink, LoaderCircle, Lock, RotateCcw, Save } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { PublicDirectoryHero } from "../components/PublicDirectoryHero";
 import {
   NETWORK_PROFILES,
   configForProfile,
@@ -79,9 +80,10 @@ export default function Settings() {
 
   return (
     <div className="settings-page">
+      <PublicDirectoryHero variant="settings" />
       <div className="page-heading">
         <div>
-          <h1>Settings</h1>
+          <h2>Settings</h2>
           <p>Configure the network profile and inspect local test wallets.</p>
         </div>
       </div>

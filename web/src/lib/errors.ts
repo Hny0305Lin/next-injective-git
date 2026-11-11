@@ -33,6 +33,22 @@ export class EVMTransactionRevertedError extends Error {
   }
 }
 
+export class EVMGasEstimationError extends Error {
+  constructor(cause: unknown) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    super(`gas estimation failed: ${detail}`, { cause });
+    this.name = "EVMGasEstimationError";
+  }
+}
+
+export class EVMTransactionBroadcastError extends Error {
+  constructor(cause: unknown) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    super(`transaction broadcast failed: ${detail}`, { cause });
+    this.name = "EVMTransactionBroadcastError";
+  }
+}
+
 export function findRpcData(value: unknown, depth = 0): `0x${string}` | undefined {
   if (depth > 6 || value == null) return undefined;
   if (typeof value === "string") {

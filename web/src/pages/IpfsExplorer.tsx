@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { HardDrive } from "lucide-react";
 import { Link } from "react-router-dom";
+import { PublicDirectoryHero } from "../components/PublicDirectoryHero";
 import { useWallet } from "../lib/WalletContext";
 import { listRefs, listRepos, loadConfig, resolveOwner, type RepoInfo } from "../lib/chain";
 import { inspectCid, type CidInfo } from "../lib/gitstore";
@@ -107,8 +108,9 @@ export default function IpfsExplorer() {
 
   return (
     <div className="explorer">
+      <PublicDirectoryHero variant="ipfs" />
       <div className="explorer-head">
-        <h1>IPFS Explorer</h1>
+        <h2>IPFS Explorer</h2>
       </div>
       <p className="muted">
         Packfiles are stored on IPFS and referenced on-chain. Gateway:{" "}

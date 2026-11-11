@@ -64,6 +64,7 @@ import "./lib/architecture-icons";
 
 const LazyOwner = lazy(() => import("./pages/Owner"));
 const LazyRepo = lazy(() => import("./pages/Repo/index"));
+const LazyCreateRepository = lazy(() => import("./pages/CreateRepository"));
 const LazyMonitor = lazy(() => import("./pages/Monitor"));
 const LazyMapMonitor = lazy(() => import("./pages/MapMonitor"));
 const LazyIpfsExplorer = lazy(() => import("./pages/IpfsExplorer"));
@@ -820,6 +821,7 @@ export default function App() {
             <ErrorBoundary>
               <Routes>
                 <Route path="/" element={<Home />} />
+                <Route path="/new" element={<Suspense fallback={<RouteSpinner />}><LazyCreateRepository /></Suspense>} />
                 <Route path="/search" element={<SearchPage />} />
                 <Route path="/discover" element={<Discover />} />
                 <Route path="/settings" element={<Settings />} />

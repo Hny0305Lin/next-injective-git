@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, Compass, Copy, Database, ExternalLink, GitBranch, LoaderCircle, Search, SlidersHorizontal } from "lucide-react";
+import { Check, Copy, Database, ExternalLink, GitBranch, LoaderCircle, Search, SlidersHorizontal } from "lucide-react";
 import { Link } from "react-router-dom";
 import { ContractTypeBadge } from "../components/ContractTypeBadge";
+import { PublicDirectoryHero } from "../components/PublicDirectoryHero";
 import { showToast } from "../components/Toast";
 import { formatError, isSuiteDirectoryConfigured, loadConfig, timeAgo } from "../lib/chain";
 import { filterDiscoverRepositories, pageDiscoverRepositories, type DiscoverRepository, type DiscoverStatus, type DiscoverSuiteVersion } from "../lib/discover";
@@ -98,21 +99,18 @@ export default function Discover() {
   const indexedCount = repoIndexShared(cfg).publicEntries.length;
   const copyClone = async (row: DiscoverRepository) => {
     const command = `igit clone igit://${row.owner}/${row.name}`;
-    try { await navigator.clipboard.writeText(command); setCopied(row.repo_id); showToast("Clone command copied"); window.setTimeout(() => setCopied((value) => value === row.repo_id ? null : value), 1500); }
+    try { await navigator.clipboard.writeText(command); setCopied(row.repo_id); showToast("Command copied"); window.setTimeout(() => setCopied((value) => value === row.repo_id ? null : value), 1500); }
     catch { showToast("Could not copy clone command"); }
   };
 
   return (
     <div className="discover-page">
-      <div className="discover-hero">
-        <div><p className="eyebrow">PUBLIC REPOSITORY DIRECTORY</p><h1>Explore repositories on Injective</h1><p>igit is Git hosting with repository metadata and moderation state anchored in the Injective EVM Suite. Browse public repositories without connecting a wallet.</p></div>
-        <div className="discover-hero-icon"><Compass size={22} aria-hidden="true" /></div>
-      </div>
+      <PublicDirectoryHero />
       <section className="discover-toolbar card" aria-label="Repository filters">
         <label className="discover-search"><Search size={15} aria-hidden="true" /><input className="field" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, owner, or description" aria-label="Search repositories" /></label>
         <label><span>Owner</span><input className="field" value={owner} onChange={(e) => setOwner(e.target.value)} placeholder="inj1..." aria-label="Filter by owner" /></label>
         <label><span>Status</span><select className="field" value={status} onChange={(e) => setStatus(e.target.value as DiscoverStatus)} aria-label="Filter by moderation status"><option value="all">All statuses</option><option value="active">Active</option><option value="frozen">Frozen</option><option value="delisted">Delisted</option></select></label>
-        <label><span>Suite</span><select className="field" value={suiteVersion} onChange={(e) => setSuiteVersion(e.target.value === "all" ? "all" : Number(e.target.value) as 3 | 4)} aria-label="Filter by Suite version"><option value="all">Suite v3 + v4</option><option value="3">Suite v3</option><option value="4">Suite v4</option></select></label>
+        <label><span>Suite</span><select className="field" value={suiteVersion} onChange={(e) => setSuiteVersion(e.target.value === "all" ? "all" : Number(e.target.value) as 3 | 4)} aria-label="Filter by Suite version"><option value="all">all</option><option value="3">Suite v3</option><option value="4">Suite v4</option></select></label>
         <span className="discover-sort"><SlidersHorizontal size={14} aria-hidden="true" /> Recently updated</span>
       </section>
       <p className="discover-scope muted"><GitBranch size={13} aria-hidden="true" /> Scope: newest {Math.min(indexedCount, HYDRATION_LIMIT)} repositories discovered from verified Suite events in this browser. This is a bounded client index, not a claim of complete network enumeration. {indexStatus?.building ? "Index is still refreshing." : ""}</p>
@@ -121,7 +119,7 @@ export default function Discover() {
       {state === "unconfigured" && <div className="surface-panel empty-state"><Database size={22} /><h3>Public discovery is not configured</h3><p>This client has no configured SuiteDirectory. Add a verified Directory in Settings before reading repository data.</p><Link className="btn" to="/settings">Open Settings</Link></div>}
       {state === "error" && rows.length === 0 && <div className="surface-panel empty-state"><Database size={22} /><h3>Repositories could not be loaded</h3><p>Check the RPC connection and the verified SuiteDirectory, then try again.</p><button type="button" onClick={() => void refresh()}>Try again</button></div>}
       {state === "ready" && filtered.length === 0 && <div className="surface-panel empty-state"><Search size={22} /><h3>No repositories match these filters</h3><p>Try a different keyword, owner, status, or Suite version.</p></div>}
-      {visible.length > 0 && <div className="discover-results" aria-live="polite">{visible.map((row) => <article className="discover-card card" key={`${row.suite_directory}:${row.repo_id}`}><div className="discover-card-main"><div className="discover-card-title"><GitBranch size={16} aria-hidden="true" /><Link to={`/${encodeURIComponent(row.owner)}/${encodeURIComponent(row.name)}?suite=${row.suite_version}`}>{row.owner}/{row.name}</Link><ContractTypeBadge kind="evm-v2" suiteVersion={row.suite_version} /><span className={`badge ${row.moderation_status}`}>{statusLabel(row.moderation_status)}</span></div><p className="discover-description">{row.description || <i>No description</i>}</p><div className="discover-meta muted"><span>Default <code>{row.default_branch}</code></span><span>Updated {timeAgo(row.updated_at)}</span><span>Suite v{row.suite_version?.toString()}</span>{row.forked_from && <span>Forked from <code>{row.forked_from}</code></span>}</div></div><div className="discover-card-actions"><Link className="btn" to={`/${encodeURIComponent(row.owner)}/${encodeURIComponent(row.name)}?suite=${row.suite_version}`}><ExternalLink size={13} /> Open</Link><button type="button" className="btn" onClick={() => void copyClone(row)} title={`igit clone igit://${row.owner}/${row.name}`} aria-label={`Copy clone command for ${row.name}`}>{copied === row.repo_id ? <Check size={13} /> : <Copy size={13} />} {copied === row.repo_id ? "Copied" : "Clone"}</button></div></article>)}</div>}
+      {visible.length > 0 && <div className="discover-results" aria-live="polite">{visible.map((row) => <article className="discover-card card" key={`${row.suite_directory}:${row.repo_id}`}><div className="discover-card-main"><div className="discover-card-title"><GitBranch size={16} aria-hidden="true" /><Link to={`/${encodeURIComponent(row.owner)}/${encodeURIComponent(row.name)}?suite=${row.suite_version}`}>{row.owner}/{row.name}</Link><ContractTypeBadge kind="evm-v2" suiteVersion={row.suite_version} /><span className={`badge ${row.moderation_status}`}>{statusLabel(row.moderation_status)}</span></div><p className="discover-description">{row.description || <i>No description</i>}</p><div className="discover-meta muted"><span>Default <code>{row.default_branch}</code></span><span>Updated {timeAgo(row.updated_at)}</span><span>{row.suite_version === 4n ? "EVM V4 (BYOS)" : "EVM V2 + V3"}</span>{row.forked_from && <span>Forked from <code>{row.forked_from}</code></span>}</div></div><div className="discover-card-actions"><Link className="btn" to={`/${encodeURIComponent(row.owner)}/${encodeURIComponent(row.name)}?suite=${row.suite_version}`}><ExternalLink size={13} /> Open</Link><button type="button" className="btn" onClick={() => void copyClone(row)} title={`igit clone igit://${row.owner}/${row.name}`} aria-label={`Copy clone command for ${row.name}`}>{copied === row.repo_id ? <Check size={13} /> : <Copy size={13} />} {copied === row.repo_id ? "Copied" : "Copy"}</button></div></article>)}</div>}
       {filtered.length > PAGE_SIZE && <div className="discover-pagination" aria-label="Repository pages"><button type="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>Previous</button><span className="muted">Page {page} of {pageCount}</span><button type="button" disabled={page >= pageCount} onClick={() => setPage((value) => value + 1)}>Next</button></div>}
     </div>
   );

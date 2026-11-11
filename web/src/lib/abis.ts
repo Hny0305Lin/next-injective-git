@@ -43,6 +43,10 @@ export const boundModuleAbi = parseAbi([
 ]);
 
 export const coreAbi = parseAbi([
+  "error LocatorNotFound(address owner,string name)",
+  "function createRepository(string name,string description,string defaultBranch) returns (bytes32 repoId)",
+  "function forkRepository(bytes32 sourceRepoId,string newName) returns (bytes32 forkId)",
+  "function updateMetadata(bytes32 repoId,bool updateDescription,string description,bool updateDefaultBranch,string defaultBranch)",
   "function resolveRepository(address owner, string name) view returns ((bytes32 id,address owner,string name,string description,string defaultBranch,bytes32 forkedFrom,uint64 createdAt,uint64 updatedAt,bool exists) repository,bool canonical)",
   "function getRepository(bytes32 repoId) view returns ((bytes32 id,address owner,string name,string description,string defaultBranch,bytes32 forkedFrom,uint64 createdAt,uint64 updatedAt,bool exists))",
   "function listRepositoriesPage(address owner,uint256 cursor,uint256 limit) view returns ((bytes32 id,address owner,string name,string description,string defaultBranch,bytes32 forkedFrom,uint64 createdAt,uint64 updatedAt,bool exists)[] page,uint256 nextCursor)",
@@ -50,7 +54,6 @@ export const coreAbi = parseAbi([
   "function listRefsPage(bytes32 repoId,uint256 cursor,uint256 limit) view returns (string[] names,(string commitSha,string[] packUris,uint64 updatedAt,address updatedBy,bool exists)[] refs,uint256 nextCursor)",
   "function listCollaboratorsPage(bytes32 repoId,uint256 cursor,uint256 limit) view returns (address[] accounts,uint8[] roles,uint256 nextCursor)",
   "function pendingOwnershipTransfer(bytes32 repoId) view returns ((address newOwner,uint64 executeAfter,uint64 expiresAt))",
-  "function updateMetadata(bytes32 repoId,bool updateDescription,string description,bool updateDefaultBranch,string defaultBranch)",
   "function beginOwnershipTransfer(bytes32 repoId,address newOwner)",
   "function cancelOwnershipTransfer(bytes32 repoId)",
   "function expireOwnershipTransfer(bytes32 repoId)",
@@ -143,6 +146,10 @@ export const activityAbis = [coreAbi, moderationAbi, economicAbi, badgeAbi] as c
 export const SUITE_SUCCESSOR_VERSION = 4n;
 
 export const successorCoreAbi = parseAbi([
+  "error LocatorNotFound(address owner,string name)",
+  "function createRepository(string name,string description,string defaultBranch) returns (bytes32 repoId)",
+  "function forkRepository(bytes32 sourceRepoId,string newName) returns (bytes32 forkId)",
+  "function updateMetadata(bytes32 repoId,bool updateDescription,string description,bool updateDefaultBranch,string defaultBranch)",
   "function resolveRepository(address owner, string name) view returns ((bytes32 id,address owner,string name,string description,string defaultBranch,bytes32 forkedFrom,uint64 createdAt,uint64 updatedAt,bool exists) repository,bool canonical)",
   "function getRef(bytes32 repoId,string refName) view returns ((bytes32 manifestDigest,uint96 manifestSize,string bootstrapLocator,uint64 revision,uint64 updatedAt,address updatedBy,bool exists))",
   "function listRefsPage(bytes32 repoId,uint256 cursor,uint256 limit) view returns (string[] names,(bytes32 manifestDigest,uint96 manifestSize,string bootstrapLocator,uint64 revision,uint64 updatedAt,address updatedBy,bool exists)[] refs,uint256 nextCursor)",

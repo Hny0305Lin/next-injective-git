@@ -217,6 +217,43 @@ test.describe('Wallet Integration', () => {
   });
 });
 
+test.describe('Web repository creation', () => {
+  test('shows a wallet connection guide and keeps creation disabled while disconnected', async ({ page }) => {
+    await page.route('https://**/*', (route) => route.abort());
+    await page.goto('/new');
+
+    await expect(page.getByRole('heading', { name: 'Create repository' })).toBeVisible();
+    await expect(page.getByText('No wallet connected.')).toBeVisible();
+    await expect(page.getByLabel('Before you create').getByRole('button', { name: 'Connect wallet' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Create repository' })).toBeDisabled();
+    await expect(page.getByLabel('Repository name')).toHaveAttribute('maxlength', '64');
+    await expect(page.getByLabel(/Description/)).toHaveAttribute('maxlength', '1024');
+  });
+
+  test('keeps creation disabled when the connected wallet is on another network', async ({ page }) => {
+    await page.route('https://**/*', (route) => route.abort());
+    await page.addInitScript(() => {
+      const address = '0x1111111111111111111111111111111111111111';
+      localStorage.setItem('igit-wallet-provider', 'metamask');
+      Object.defineProperty(window, 'ethereum', {
+        configurable: true,
+        value: {
+          isMetaMask: true,
+          request: async ({ method }: { method: string }) => {
+            if (method === 'eth_accounts') return [address];
+            if (method === 'eth_chainId') return '0x1';
+            return null;
+          },
+        },
+      });
+    });
+    await page.goto('/new');
+
+    await expect(page.getByText(/Switch MetaMask to Injective EVM testnet/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Create repository' })).toBeDisabled();
+  });
+});
+
 test.describe('Global Search', () => {
   test('should focus search with "/" keyboard shortcut', async ({ page }) => {
     await page.goto('/');
@@ -316,5 +353,86 @@ test.describe('Accessibility', () => {
     // Should have focus on some element
     const focusedElement = await page.evaluate(() => document.activeElement?.tagName);
     expect(focusedElement).toBeTruthy();
+  });
+});
+
+test.describe('Injective brand watermarks', () => {
+  test('loads a transparent Ocean watermark on the five standard pages only', async ({ page }) => {
+    const pages = ['/', '/discover', '/monitor', '/ipfs', '/settings'];
+    const oceanAssets = [
+      '/injective-brand/icon-ocean.svg',
+      '/injective-brand/icon-background-ocean.svg',
+      '/injective-brand/logo-ocean.svg',
+      '/injective-brand/logotype-ocean.svg',
+    ];
+    let previousKind: string | null = null;
+
+    for (const path of pages) {
+      await page.goto(path);
+      const watermark = page.locator('.public-directory-hero .injective-watermark');
+      await expect(watermark).toBeVisible();
+      const currentAsset = await watermark.getAttribute('src');
+      const currentKind = (await watermark.getAttribute('class'))?.split(' ').find((name) => name.startsWith('injective-watermark-') && name !== 'injective-watermark');
+      expect(oceanAssets).toContain(currentAsset);
+      expect(currentKind).toBeTruthy();
+      expect(currentKind).not.toBe(previousKind);
+      previousKind = currentKind ?? null;
+      await expect.poll(() => watermark.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
+    }
+
+    await page.reload();
+    const reloadedWatermark = page.locator('.public-directory-hero .injective-watermark');
+    const reloadedKind = (await reloadedWatermark.getAttribute('class'))?.split(' ').find((name) => name.startsWith('injective-watermark-') && name !== 'injective-watermark');
+    expect(reloadedKind).not.toBe(previousKind);
+    const oceanAsset = await reloadedWatermark.getAttribute('src');
+    expect(oceanAssets).toContain(oceanAsset);
+    const lightOpacity = await reloadedWatermark.evaluate((image: HTMLImageElement) => Number(getComputedStyle(image).opacity));
+
+    await page.evaluate(() => document.documentElement.classList.add('dark'));
+    await expect(reloadedWatermark).toHaveAttribute('src', oceanAsset ?? '');
+    await expect.poll(() => reloadedWatermark.evaluate((image: HTMLImageElement) => Number(getComputedStyle(image).opacity))).toBe(lightOpacity);
+    await expect.poll(() => reloadedWatermark.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
+    await page.evaluate(() => document.documentElement.classList.remove('dark'));
+    await expect(reloadedWatermark).toHaveAttribute('src', oceanAsset ?? '');
+
+    await page.goto('/mapmonitor');
+    await expect(page.locator('.public-directory-hero .injective-watermark')).toHaveCount(0);
+  });
+
+  test('keeps the hero and watermark clear at mobile width', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    for (const path of ['/', '/discover', '/monitor', '/ipfs', '/settings']) {
+      await page.goto(path);
+      const hero = page.locator('.public-directory-hero');
+      const watermark = hero.locator('.injective-watermark');
+      const description = hero.locator('div:first-child > p:last-child');
+      await expect(hero).toBeVisible();
+      await expect(watermark).toBeVisible();
+      const measurements = await page.evaluate(() => {
+        const card = document.querySelector<HTMLElement>('.public-directory-hero');
+        const mark = card?.querySelector<HTMLImageElement>('.injective-watermark');
+        const copy = card?.querySelector<HTMLElement>('div:first-child > p:last-child');
+        if (!card || !mark || !copy) throw new Error('mobile hero elements missing');
+        const cardRect = card.getBoundingClientRect();
+        const markRect = mark.getBoundingClientRect();
+        const copyRect = copy.getBoundingClientRect();
+        return {
+          viewportWidth: document.documentElement.clientWidth,
+          documentWidth: document.documentElement.scrollWidth,
+          cardLeft: cardRect.left,
+          cardRight: cardRect.right,
+          markLeft: markRect.left,
+          markRight: markRect.right,
+          markTop: markRect.top,
+          copyBottom: copyRect.bottom,
+        };
+      });
+      expect(measurements.documentWidth).toBeLessThanOrEqual(measurements.viewportWidth);
+      expect(measurements.cardLeft).toBeGreaterThanOrEqual(0);
+      expect(measurements.cardRight).toBeLessThanOrEqual(measurements.viewportWidth);
+      expect(measurements.markLeft).toBeGreaterThanOrEqual(measurements.cardLeft);
+      expect(measurements.markRight).toBeLessThanOrEqual(measurements.cardRight);
+      expect(measurements.markTop).toBeGreaterThanOrEqual(measurements.copyBottom + 12);
+    }
   });
 });

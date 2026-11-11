@@ -17,11 +17,14 @@ import {
   MODULE_IDS,
   MODULE_KEYS,
   boundModuleAbi,
+  successorCoreAbi,
   directoryAbi,
   type SuiteModuleKey,
 } from "./abis";
 import {
   EVMReceiptUnconfirmedError,
+  EVMGasEstimationError,
+  EVMTransactionBroadcastError,
   EVMTransactionRevertedError,
   SuiteConfigurationError,
   SuiteVerificationError,
@@ -120,7 +123,7 @@ export async function rpcRequest<T>(cfg: AppConfig, method: string, params: unkn
 function rpcContractError(error: unknown): Error {
   const data = findRpcData(error);
   if (data) {
-    const abis: Abi[] = [directoryAbi, boundModuleAbi, ...Object.values(MODULE_ABIS)];
+    const abis: Abi[] = [directoryAbi, boundModuleAbi, successorCoreAbi, ...Object.values(MODULE_ABIS)];
     for (const abi of abis) {
       try {
         const decoded = decodeErrorResult({ abi, data });
@@ -356,27 +359,43 @@ async function waitForReceipt(provider: Eip1193, txHash: Hex): Promise<void> {
   throw new EVMReceiptUnconfirmedError(txHash);
 }
 
-export async function writeModule(
+/**
+ * Send a write to a verified Suite module with a caller-supplied checked-in ABI.
+ *
+ * This supports checked-in ABI variants whose function surface differs by
+ * suite version. The module address still comes only from the verified
+ * Directory binding; callers cannot supply an arbitrary contract address.
+ */
+export async function writeVerifiedModule(
   provider: Eip1193,
   cfg: AppConfig,
   module: SuiteModuleKey,
+  abi: Abi,
   functionName: string,
   args: readonly unknown[] = [],
   value?: bigint,
+  expectedAccount?: string,
+  expectedSuiteVersion?: bigint,
 ): Promise<Hex> {
   const identity = provider as object;
   if (transactionLocks.has(identity)) throw new WalletTransactionBusyError();
   transactionLocks.add(identity);
   try {
     const suite = await verifySuite(cfg, true);
+    if (expectedSuiteVersion !== undefined && suite.version !== expectedSuiteVersion) {
+      throw new SuiteVerificationError("Suite version changed while preparing the transaction");
+    }
     const accounts = await provider.request({ method: "eth_requestAccounts" });
     const from = Array.isArray(accounts) ? accounts[0] : undefined;
     if (typeof from !== "string" || !isAddress(from)) throw new Error("EVM wallet returned no valid account");
     await ensureWalletChain(provider, cfg);
-    const data = encodeFunctionData({ abi: MODULE_ABIS[module], functionName, args } as never);
+    const data = encodeFunctionData({ abi, functionName, args } as never);
     const nodeGasPrice = quantity(await provider.request({ method: "eth_gasPrice" }), "gas price");
     const gasPrice = nodeGasPrice < MIN_INJECTIVE_GAS_PRICE ? MIN_INJECTIVE_GAS_PRICE : nodeGasPrice;
     const account = getAddress(from);
+    if (expectedAccount !== undefined && account.toLowerCase() !== getAddress(expectedAccount).toLowerCase()) {
+      throw new Error("wallet account changed while preparing the transaction; reconnect the intended account and try again");
+    }
     const publicClient = createPublicClient({ transport: custom(provider) });
     const walletClient = createWalletClient({ transport: custom(provider) });
     const base = {
@@ -387,13 +406,19 @@ export async function writeModule(
       gasPrice,
       ...(value === undefined ? {} : { value }),
     };
-    const estimate = await publicClient.estimateGas(base);
+    let estimate: bigint;
+    try {
+      estimate = await publicClient.estimateGas(base);
+    } catch (error) {
+      throw new EVMGasEstimationError(rpcContractError(error));
+    }
     const gas = (estimate * 14n) / 10n + GAS_HEADROOM;
     let txHash: Hex;
     try {
       txHash = await walletClient.sendTransaction({ ...base, gas, chain: null });
     } catch (error) {
-      throw rpcContractError(error);
+      if (providerErrorCode(error) === 4001) throw error;
+      throw new EVMTransactionBroadcastError(rpcContractError(error));
     }
     if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
       throw new Error("EVM wallet returned an invalid transaction hash");
@@ -404,6 +429,17 @@ export async function writeModule(
   } finally {
     transactionLocks.delete(identity);
   }
+}
+
+export async function writeModule(
+  provider: Eip1193,
+  cfg: AppConfig,
+  module: SuiteModuleKey,
+  functionName: string,
+  args: readonly unknown[] = [],
+  value?: bigint,
+): Promise<Hex> {
+  return writeVerifiedModule(provider, cfg, module, MODULE_ABIS[module], functionName, args, value);
 }
 
 export async function nativeBalance(cfg: AppConfig, address: Address): Promise<bigint> {

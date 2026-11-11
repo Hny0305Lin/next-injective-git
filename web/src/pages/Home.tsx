@@ -1,6 +1,7 @@
 import {
   CircleDot,
   GitBranch,
+  Plus,
   Search,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -16,10 +17,11 @@ import {
 } from "../lib/chain";
 import { useWallet } from "../lib/WalletContext";
 import { ContractTypeBadge } from "../components/ContractTypeBadge";
+import { PublicDirectoryHero } from "../components/PublicDirectoryHero";
 
 export default function Home() {
   const cfg = useMemo(() => loadConfig(), []);
-  const { address } = useWallet();
+  const { address, connected, openWalletModal } = useWallet();
   const [repos, setRepos] = useState<RepoInfo[] | null>(null);
   const [repoFilter, setRepoFilter] = useState("");
   const [err, setErr] = useState("");
@@ -57,11 +59,17 @@ export default function Home() {
 
   return (
     <div className="dashboard-page">
+      <PublicDirectoryHero variant="dashboard" />
       <div className="page-heading">
         <div>
-          <h1>{address ? "Your repositories" : "Dashboard"}</h1>
+          <h2>{address ? "Your repositories" : "Dashboard"}</h2>
           <p>Browse repositories and resolve IPFS objects.</p>
         </div>
+        {connected?.writable ? (
+          <Link className="page-heading-action" to="/new"><Plus size={14} /> New repository</Link>
+        ) : (
+          <button className="page-heading-action" type="button" onClick={openWalletModal} title={address ? "Connect to Injective EVM testnet to create a repository" : "Connect a wallet to create a repository"}><Plus size={14} /> New repository</button>
+        )}
       </div>
 
       <div className="overview-strip" aria-label="Workspace overview">
@@ -133,8 +141,8 @@ export default function Home() {
           <div className="surface-panel empty-state">
             <GitBranch size={22} />
             <h3>No repositories yet</h3>
-            <p>Create the first repository from your terminal.</p>
-            <code className="command-line">igit init my-repo "hello chain"</code>
+            <p>Create a repository here, then use the CLI to push its first Git content.</p>
+            <Link className="btn" to="/new">Create repository</Link>
           </div>
         )}
 
