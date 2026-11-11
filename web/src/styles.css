@@ -961,6 +961,25 @@ input.field:focus {
   z-index: 1200;
 }
 
+/* The map already has an expensive tile compositor and several animated
+   layers. The boundary notice only needs a dimmed backdrop; blur would force
+   the browser to re-rasterize the whole map while the dialog is open. */
+.mapmonitor-boundary-overlay {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.mapmonitor-boundary-dialog [data-slot="alert-dialog-header"] {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  text-align: left;
+}
+
+.mapmonitor-boundary-dialog [data-slot="alert-dialog-title"] {
+  min-width: 0;
+}
+
 /* ---- wallet modal ---- */
 .modal-overlay {
   position: fixed;
@@ -4204,6 +4223,15 @@ textarea.field:focus,
 .mapmonitor-map {
   position: absolute;
   inset: 0;
+}
+
+/* A modal notice should leave the map visually stable. Stopping Leaflet's
+   current flight happens in the engine; these rules suspend the continuous
+   marker and marquee animations while the notice is visible. */
+.mapmonitor-page.mapmonitor-notice-open .mapmonitor-dot.lit,
+.mapmonitor-page.mapmonitor-notice-open .mapmonitor-dot.edge.lit,
+.mapmonitor-page.mapmonitor-notice-open .mapmonitor-marquee-track {
+  animation-play-state: paused;
 }
 
 /* Custom InfoWindow shell (isCustom:true) themed with CSS variables. */

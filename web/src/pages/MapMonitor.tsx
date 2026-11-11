@@ -573,6 +573,7 @@ function livePointRepos(
 
 type MapEngine = {
   showStop(point: InfraPoint): void;
+  setPaused(paused: boolean): void;
   /** Re-render marker pins and open popup content from current callbacks. */
   refresh(): void;
   destroy(): void;
@@ -607,6 +608,7 @@ function createLeafletEngine(element: HTMLElement, cb: EngineCallbacks, basemap:
   const markers = new Map<string, L.Marker>();
   const edgeMarkers = new Map<string, L.Marker[]>();
   let activePointId = "";
+  let paused = false;
   const map = L.map(element, {
     center: [20, 10],
     zoom: 2,
@@ -651,6 +653,7 @@ function createLeafletEngine(element: HTMLElement, cb: EngineCallbacks, basemap:
 
   return {
     showStop(point: InfraPoint) {
+      if (paused) return;
       activePointId = point.id;
       for (const list of edgeMarkers.values()) {
         for (const marker of list) marker.remove();
@@ -678,7 +681,12 @@ function createLeafletEngine(element: HTMLElement, cb: EngineCallbacks, basemap:
         markers.get(point.id)?.openPopup();
       }
     },
+    setPaused(nextPaused: boolean) {
+      paused = nextPaused;
+      if (paused) map.stop();
+    },
     refresh() {
+      if (paused) return;
       for (const candidate of INFRA_POINTS) {
         const marker = markers.get(candidate.id);
         if (marker == null) continue;
@@ -716,6 +724,16 @@ export default function MapMonitor() {
   // The auto-tour holds off while the user explores after a marker click.
   const pauseUntilRef = useRef(0);
   const [mapReady, setMapReady] = useState(false);
+  const [noticeVisible, setNoticeVisible] = useState(false);
+  const [noticeResolved, setNoticeResolved] = useState(false);
+  const noticeVisibleRef = useRef(false);
+  const handleNoticeVisibilityChange = useCallback((visible: boolean) => {
+    noticeVisibleRef.current = visible;
+    setNoticeVisible(visible);
+    if (!visible) setNoticeResolved(true);
+    engineRef.current?.setPaused(visible);
+    if (!visible) engineRef.current?.refresh();
+  }, []);
 
   // Compact overlay cards for small viewports: both cards start collapsed as
   // corner chips, only one stays expanded at a time (opening one closes the
@@ -1113,6 +1131,9 @@ export default function MapMonitor() {
   // third-party map SDK and no key to negotiate, so booting is synchronous.
   // The 45s tour timer lives here too.
   useEffect(() => {
+    // Resolve the first-visit notice before requesting map tiles. The modal
+    // can render immediately while Leaflet and the tile network stay idle.
+    if (!noticeResolved || noticeVisible) return;
     const element = mapElementRef.current;
     if (element == null) return;
 
@@ -1129,12 +1150,13 @@ export default function MapMonitor() {
 
     if (element.isConnected) {
       engineRef.current = createLeafletEngine(element, callbacks, ACTIVE_BASEMAP);
+      engineRef.current.setPaused(noticeVisibleRef.current);
       setMapReady(true);
     }
 
     const tourTimer = window.setInterval(() => {
       // Skip the tick while the post-click grace window is open.
-      if (Date.now() < pauseUntilRef.current) return;
+      if (noticeVisibleRef.current || Date.now() < pauseUntilRef.current) return;
       setActiveIndex((index) => (index + 1) % INFRA_POINTS.length);
     }, TOUR_INTERVAL_MS);
 
@@ -1143,7 +1165,7 @@ export default function MapMonitor() {
       engineRef.current?.destroy();
       engineRef.current = null;
     };
-  }, []);
+  }, [noticeResolved]);
 
   // Fly to the active stop, light it up, and open its info bubble. Runs on
   // mount once the engine is ready and on every tour tick after it.
@@ -1152,8 +1174,8 @@ export default function MapMonitor() {
   }, [current, mapReady]);
 
   return (
-    <div className="mapmonitor-page">
-      <MapMonitorBoundaryNotice />
+    <div className={"mapmonitor-page" + (noticeVisible ? " mapmonitor-notice-open" : "")}>
+      <MapMonitorBoundaryNotice onVisibilityChange={handleNoticeVisibilityChange} />
       <div className="monitor-heading">
         <div>
           <div className="monitor-eyebrow">

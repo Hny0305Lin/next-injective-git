@@ -90,7 +90,11 @@ export function shouldShowBoundaryNotice(
 
 type NoticeState = "checking" | "hidden" | "shown";
 
-export function MapMonitorBoundaryNotice() {
+export function MapMonitorBoundaryNotice({
+  onVisibilityChange,
+}: {
+  onVisibilityChange?: (visible: boolean) => void;
+}) {
   const [state, setState] = useState<NoticeState>("checking");
 
   // The alert dialog closes on its action button, on Escape, and on nothing
@@ -100,7 +104,8 @@ export function MapMonitorBoundaryNotice() {
   const acknowledge = useCallback(() => {
     writeAcknowledged();
     setState("hidden");
-  }, []);
+    onVisibilityChange?.(false);
+  }, [onVisibilityChange]);
 
   // Detect once per mount, after paint: the probes touch canvas/Intl, and a
   // map page should not block its first frame on a compliance check.
@@ -110,14 +115,16 @@ export function MapMonitorBoundaryNotice() {
       if (cancelled) return;
       const acknowledged = readAcknowledged();
       const assessment = assessRegion(collectRegionEnvironment());
-      setState(shouldShowBoundaryNotice(assessment, acknowledged) ? "shown" : "hidden");
+      const visible = shouldShowBoundaryNotice(assessment, acknowledged);
+      setState(visible ? "shown" : "hidden");
+      onVisibilityChange?.(visible);
     };
     const handle = window.setTimeout(run, 0);
     return () => {
       cancelled = true;
       window.clearTimeout(handle);
     };
-  }, []);
+  }, [onVisibilityChange]);
 
   if (state !== "shown") return null;
 
@@ -130,16 +137,17 @@ export function MapMonitorBoundaryNotice() {
     >
       <AlertDialogContent
         size="default"
+        overlayClassName="mapmonitor-boundary-overlay"
         lang="zh-Hans"
         // styles.css is unlayered legacy CSS, so it outranks Tailwind's
         // `utilities` layer no matter the specificity: the `!` suffixes are
         // required to beat the component's own data-[size] max-width and the
         // element-level `button` reset. Stacking is handled globally (see the
         // alert-dialog rule in styles.css) so the dialog clears the map cards.
-        className="max-h-[calc(100dvh-2rem)]! w-[calc(100vw-2rem)]! max-w-[calc(100vw-2rem)]! gap-3 overflow-y-auto text-left sm:w-[560px]! sm:max-w-[560px]!"
+        className="mapmonitor-boundary-dialog max-h-[calc(100dvh-2rem)]! w-[calc(100vw-2rem)]! max-w-[calc(100vw-2rem)]! gap-3 overflow-y-auto text-left sm:w-[560px]! sm:max-w-[560px]!"
       >
-        <AlertDialogHeader className="place-items-start gap-2 text-left">
-          <AlertDialogMedia className="mb-0 size-9">
+        <AlertDialogHeader className="flex flex-row items-center gap-3 text-left">
+          <AlertDialogMedia className="mb-0 size-9 shrink-0">
             <ShieldCheck aria-hidden="true" />
           </AlertDialogMedia>
           <AlertDialogTitle className="text-[1.15rem]! leading-snug!">{BOUNDARY_NOTICE_TITLE}</AlertDialogTitle>

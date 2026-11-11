@@ -239,6 +239,9 @@ test("the notice renders only as a dialog, never into the page body", async () =
   // The dismissal is versioned so changed wording is shown again.
   assert.match(component, /const NOTICE_VERSION = "mapmonitor-boundary-notice-v2"/);
   assert.match(component, /localStorage\.setItem\(NOTICE_STORAGE_KEY, NOTICE_VERSION\)/);
+  assert.match(component, /overlayClassName="mapmonitor-boundary-overlay"/);
+  assert.match(component, /className="mapmonitor-boundary-dialog/);
+  assert.match(component, /AlertDialogHeader className="flex flex-row items-center/);
   // Detection is local-only: no fetch/XHR in the detector or the component.
   for (const file of [component, await source("../src/lib/region-notice.ts")]) {
     assert.doesNotMatch(file, /fetch\(|XMLHttpRequest|sendBeacon|navigator\.geolocation/);
@@ -248,7 +251,15 @@ test("the notice renders only as a dialog, never into the page body", async () =
 test("MapMonitor mounts the notice component", async () => {
   const page = await source("../src/pages/MapMonitor.tsx");
   assert.match(page, /import \{ MapMonitorBoundaryNotice \} from "\.\.\/components\/mapmonitor-boundary-notice"/);
-  assert.match(page, /<MapMonitorBoundaryNotice \/>/);
+  assert.match(page, /<MapMonitorBoundaryNotice onVisibilityChange=\{handleNoticeVisibilityChange\} \/>/);
+  assert.match(page, /if \(!noticeResolved \|\| noticeVisible\) return/);
+  assert.match(page, /Resolve the first-visit notice before requesting map tiles/);
+  assert.match(page, /setPaused\(nextPaused: boolean\)/);
+  assert.match(page, /if \(paused\) map\.stop\(\)/);
+  assert.match(page, /noticeVisibleRef\.current \|\| Date\.now\(\) < pauseUntilRef\.current/);
+  const styles = await source("../src/styles.css");
+  assert.match(styles, /mapmonitor-boundary-overlay \{[\s\S]*?backdrop-filter: none !important/);
+  assert.match(styles, /mapmonitor-page\.mapmonitor-notice-open[\s\S]*?animation-play-state: paused/);
 });
 
 test("the threshold keeps every measured non-China environment quiet", () => {
