@@ -66,6 +66,7 @@ export const DOCS_URL = "https://docs.igit.xyz/";
 
 export const PAGE_SUGGESTIONS: readonly PageSuggestion[] = [
   { label: "Dashboard", to: "/", keywords: ["dashboard", "home"] },
+  { label: "Discover repositories", to: "/discover", keywords: ["discover", "repositories", "explore repositories"] },
   { label: "Monitor", to: "/monitor", keywords: ["monitor"] },
   { label: "MapMonitor", to: "/mapmonitor", keywords: ["mapmonitor", "map monitor", "map"] },
   { label: "Activity", to: "/explorer", keywords: ["explorer", "activity"] },

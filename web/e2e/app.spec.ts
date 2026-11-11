@@ -15,6 +15,11 @@ test.describe('Navigation and Routing', () => {
     await page.goto('/settings');
     await expect(page.locator('h2').first()).toBeVisible();
 
+    // Public Discover page is reachable before wallet connection.
+    await page.goto('/discover');
+    await expect(page.getByRole('heading', { name: /Explore repositories on Injective/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Connect wallet/i })).toBeVisible();
+
     // Archive page
     await page.goto('/archive');
     await expect(page.locator('body')).toBeVisible();

@@ -68,6 +68,7 @@ const SUGGESTION_ICONS: Record<string, typeof LayoutDashboard> = {
   Monitor: Gauge,
   MapMonitor: MapIcon,
   Activity: Activity,
+  "Discover repositories": GitFork,
   IPFS: HardDrive,
   "V1 Archive": ArchiveIcon,
   Settings: SettingsIcon,

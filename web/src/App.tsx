@@ -16,6 +16,7 @@ import {
   Map as MapIcon,
   Moon,
   Search,
+  Compass,
   Settings as SettingsIcon,
   Sun,
   User,
@@ -56,6 +57,7 @@ import {
 } from "./lib/chain";
 import Home from "./pages/Home";
 import SearchPage from "./pages/Search";
+import Discover from "./pages/Discover";
 import Settings from "./pages/Settings";
 import { isCosmWasmV1ArchivePath } from "./pages/Repo/useRepoViews";
 import "./lib/architecture-icons";
@@ -70,6 +72,7 @@ const LazyArchiveOwner = lazy(() => import("./pages/ArchiveOwner"));
 
 const primaryNav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
+  { to: "/discover", label: "Discover", icon: Compass },
   { to: "/monitor", label: "Monitor", icon: Gauge },
   { to: "/mapmonitor", label: "MapMonitor", icon: MapIcon },
   { to: "/ipfs", label: "IPFS", icon: HardDrive },
@@ -90,6 +93,7 @@ const primaryTopnavCount = 4;
 // dropdown (same mapping as the search results page's SUGGESTION_ICONS).
 const PAGE_SUGGESTION_ICONS: Record<string, typeof LayoutDashboard> = {
   Dashboard: LayoutDashboard,
+  "Discover repositories": Compass,
   Monitor: Gauge,
   MapMonitor: MapIcon,
   Activity,
@@ -817,6 +821,7 @@ export default function App() {
               <Routes>
                 <Route path="/" element={<Home />} />
                 <Route path="/search" element={<SearchPage />} />
+                <Route path="/discover" element={<Discover />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/monitor" element={<Suspense fallback={<RouteSpinner />}><LazyMonitor /></Suspense>} />
                 <Route path="/mapmonitor" element={<Suspense fallback={<RouteSpinner />}><LazyMapMonitor /></Suspense>} />

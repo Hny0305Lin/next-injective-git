@@ -574,6 +574,12 @@ export class RepoIndexer {
     return this.mergedEntries();
   }
 
+  /** EVM entries discovered from verified Suite events; owner-only listings
+   * are intentionally excluded because they are not a global enumeration. */
+  get publicEntries(): RepoIndexEntry[] {
+    return this.entries.filter((entry) => entry.repoId !== null && entry.suiteDirectory !== "");
+  }
+
   private mergedEntries(): RepoIndexEntry[] {
     const shardEntries: RepoIndexEntry[] = [];
     for (const shard of this.shards.values()) shardEntries.push(...shard.entries.values());

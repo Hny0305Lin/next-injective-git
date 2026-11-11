@@ -77,6 +77,12 @@ export default function Home() {
         </div>
       </div>
 
+      <Link to="/discover" className="discover-entry-card card">
+        <span className="discover-entry-icon"><GitBranch size={17} aria-hidden="true" /></span>
+        <span><strong>Explore repositories</strong><small>Browse public EVM Suite repositories without connecting a wallet.</small></span>
+        <span aria-hidden="true">→</span>
+      </Link>
+
       {err && <div className="error" role="alert">{err}</div>}
 
       <section className="dashboard-main" aria-labelledby="repositories-title">
